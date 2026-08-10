@@ -1,0 +1,14 @@
+[package]
+name = "triexbook"
+edition = "2024"
+version = "0.0.1"
+
+[dependencies]
+token = { local = "../token" }
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
+
+[environments]
+localnet = "c7f5dcae"
+testnet_utopia = "0x0"
+testnet_stillness = "4c78adac"
+testnet_wip = "0xa9ec4afe4757ad2b90102e02b133fcd0cb7cc526722524ce20fcdf53be4ec309"

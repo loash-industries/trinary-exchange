@@ -1,0 +1,10 @@
+[package]
+name = "token"
+edition = "2024"
+
+[dependencies]
+
+[environments]
+testnet_utopia = "0xe4cb182f957824bee442b63be2299e899c27fbf10c7efcaabe36618e9d00120f"
+testnet_stillness = "4c78adac"
+testnet_wip = "0xfbcbd9155669e157ce3999e073930b4c4b67255c3cf88d0d80c76342a31e6710"
