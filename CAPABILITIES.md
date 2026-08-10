@@ -1,7 +1,7 @@
 # Capability Objects in Trinary Exchange
 
 This document catalogs every capability ("cap") object across the two packages in
-this repository — [`triexbook/`](packages/triexbook/) and [`token/`](packages/token/) — and spells
+this repository — [`triex/`](packages/triex/) and [`token/`](packages/token/) — and spells
 out what the operator (Trinary Exchange) can and cannot do with each one.
 
 On Sui, a capability is an object whose *possession* is the authorization: any
@@ -22,10 +22,10 @@ proof-of-ownership tokens.
 
 ## 1. `TriexbookAdminCap` — the operator's protocol cap
 
-Defined in [`registry.move`](packages/triexbook/sources/registry.move). Minted exactly
+Defined in [`registry.move`](packages/triex/sources/registry.move). Minted exactly
 once in the package `init` and transferred to the publisher (the operator). It
 has `key, store`, so it can be transferred, moved to a multisig, or locked in a
-timelock/governance wrapper later.
+timelock wrapper later.
 
 Every admin entry point takes it as a read-only reference (`_cap:
 &TriexbookAdminCap`). The operator's powers fall into three modules:
@@ -45,7 +45,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | Function | What the operator can do |
 |---|---|
 | `create_pool_admin` | Create a pool with **zero creation fee**, bypassing the fee charged on the permissionless `create_pool` path. |
-| `set_next_epoch_fee` | Directly set the trading fee for the next epoch. Per the in-code comment, this deliberately **replaces the CRED-governance proposal/voting system** with direct admin control. |
+| `set_next_epoch_fee` | Directly set the trading fee for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. |
 | `unregister_pool_admin` | Unregister a pool from the registry so the trading pair can be redeployed. The pool object itself keeps operating for existing state, but is marked unregistered. |
 | `update_allowed_versions` | Sync a pool's allowed-versions set from the registry. Note: a permissionless equivalent, `update_pool_allowed_versions`, exists, so this is not an exclusive power. |
 | `withdraw_pool_fees` | **Withdraw accumulated quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Emits a `PoolFeesWithdrawn` event. |
@@ -120,7 +120,7 @@ the private `create_coin`. Consequences for the operator:
 
 ## 3. BalanceManager delegation caps — user-level, not operator-level
 
-Defined in [`balance_manager.move`](packages/triexbook/sources/balance_manager.move).
+Defined in [`balance_manager.move`](packages/triex/sources/balance_manager.move).
 A `BalanceManager` is a shared object holding a user's balances across all
 pools. Its **owner** can mint up to 1,000 delegation caps (combined) tied to
 that specific manager (each cap records its `balance_manager_id`):
@@ -156,7 +156,7 @@ and they bound every guarantee above:
   `TreasuryCap` and mints — so the "no mint" guarantee is really "no mint
   unless the operator upgrades the token package." Operators wanting to make
   fixed supply trustless should burn the `token` package's `UpgradeCap` or
-  transfer it to an immutable/governance address. Similarly, the `triexbook`
+  transfer it to an immutable address. Similarly, the `triexbook`
   `UpgradeCap` plus the AdminCap's `enable_version` is the intended path for
   protocol upgrades (new version published → `enable_version` →
   `update_pool_allowed_versions` on each pool).

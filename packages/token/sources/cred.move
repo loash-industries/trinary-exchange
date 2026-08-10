@@ -45,7 +45,7 @@ fun create_coin(
         6,
         b"CRED",
         b"Inter-Galactic Credits",
-        b"The CRED token secures the TriexBook protocol, the premier wholesale liquidity venue for on-chain trading.",
+        b"CRED is the neutral trading currency for EVE Frontier. It is used to price and trade in-game items and settle balances between players and tribes.",
         std::option::some<sui::url::Url>(
             sui::url::new_unsafe_from_bytes(b"https://trinary.exchange/trilith.svg"),
         ),

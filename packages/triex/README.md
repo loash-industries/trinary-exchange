@@ -1,10 +1,10 @@
-# triexbook
+# triex
 
-Sui Move package implementing **TriexBook**, the core on-chain exchange for
-[trinary-exchange](../../README.md): a decentralized central limit order book
+Sui Move package implementing [**Trinary Exchange**](../../README.md):
+a decentralized central limit order book
 (CLOB) derived from Mysten Labs' DeepBook (Apache-2.0). It provides
 permissionless trading pools, an order matching engine, per-account balance
-management, fee collection, admin governance, and a gas-price volatility
+management, fee collection, admin controls, and a gas-price volatility
 tracker.
 
 The package ships two parallel pool implementations:
@@ -29,7 +29,7 @@ order:
 1. **Book** (`sources/book/`) — the order book itself. Places, matches,
    modifies, and cancels orders; produces `Fill`s.
 2. **State** (`sources/state/`) — per-account data, epoch volume history,
-   governance/trade parameters, and fee accounting. Processes each action's
+   trade parameters, and fee accounting. Processes each action's
    results and computes settlement amounts.
 3. **Vault** (`sources/vault/`) — holds the pool's assets and settles the
    computed balances against the user's `BalanceManager` at the end of the
@@ -76,16 +76,19 @@ The public entry points live in `triexbook::pool` and
 
 Pools support two fee modes:
 
-- **CRED fees** — fees denominated in the protocol's `CRED` token (from the
-  sibling [`token`](../token/) package); `burn_cred` burns collected CRED.
+- **CRED fees** — fees denominated in `CRED` (from the sibling
+  [`token`](../token/) package), the protocol's neutral trading currency;
+  `burn_cred` burns collected CRED. CRED is not a governance token — it is
+  used only to pay fees and confers no voting or staking rights.
 - **Quote fees** — the `..._with_quote_fees` order variants accrue fees in
   the pool's quote currency into a `quote_fee_reserve`
   (`triexbook::quote_fee`), which the admin sweeps with
   `withdraw_pool_fees`.
 
 Trade parameters are admin-set per epoch (`set_next_epoch_fee`); the original
-DeepBook stake/proposal/vote governance, flash loans, and referral system are
-present in the source but currently disabled (commented out). An optional
+DeepBook stake/proposal/vote system, flash loans, and referral system are
+present in the source but disabled (commented out) — none of them are part of
+this protocol. An optional
 EWMA state (`triexbook::ewma`) tracks smoothed reference gas price mean and
 variance and can add a taker-fee penalty when the current gas price's z-score
 signals congestion.
@@ -171,4 +174,4 @@ the `CRED` token, adding the MultiCoin pool/vault variants
 (`multicoin_pool`, `multicoin_vault`) with runtime-identified base assets and
 adjusted price scaling, adding quote-denominated fee collection
 (`quote_fee`), adding the EWMA gas-price fee penalty (`ewma`), and disabling
-the upstream staking/voting governance, flash loan, and referral features.
+the upstream staking/voting, flash loan, and referral features.
