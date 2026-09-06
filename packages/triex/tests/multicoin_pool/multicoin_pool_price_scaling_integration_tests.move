@@ -28,7 +28,7 @@ const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
 // Matches quote_fee: FEE_PRECISION = 10_000, default pool fee = 200 bps (2%).
-const FEE_BPS: u64 = 200;
+const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 
 /// A full bid fill at 100 "USDC"/item must produce the correct cumulative_quote
@@ -411,8 +411,10 @@ fun test_vault_fee_reserve_correct_after_fill() {
 
         // Vault must hold the correct fee, not the undercharged amount.
         assert!(pool.quote_fee_reserve_balance() == expected_fees, 0);
-        // Confirm the ratio: fix collects FLOAT_SCALING× more than the bug.
-        assert!(expected_fees / buggy_fees == constants::float_scaling(), 1);
+        // Confirm the ratio: the fix collects at least FLOAT_SCALING× more
+        // than the bug (the buggy fee also truncates, so the ratio can
+        // exceed it).
+        assert!(expected_fees / buggy_fees >= constants::float_scaling(), 1);
 
         return_shared(pool);
         return_shared(clock);
@@ -849,10 +851,10 @@ fun test_fee_truncation_floor_and_threshold() {
 
     // price = 1 raw CRED/NFT so that quote = qty exactly; easy to reason about.
     let price = 1u64;
-    let qty_below: u64 = 49; // quote = 49 → fee = 0 (truncated)
-    let qty_threshold: u64 = 50; // quote = 50 → fee = 1 (minimum non-zero)
+    let qty_below: u64 = 45; // quote = 45 → fee = 45 × 220 / 10_000 = 0 (truncated)
+    let qty_threshold: u64 = 46; // quote = 46 → fee = 1 (minimum non-zero)
 
-    // Alice needs 49 + 50 = 99 NFTs; Bob needs 49 + 51 = 100 raw CRED.
+    // Alice needs 45 + 46 = 91 NFTs; Bob needs 45 + 47 = 92 raw CRED.
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(ALICE, 0, 0, &mut test);
     let bob_bm_id = mc_utils::create_balance_manager_with_funds(BOB, 0, 200, &mut test);
 
@@ -919,7 +921,7 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 0, 0); // 49 × 200 / 10_000 = 0
+        assert!(info.paid_fees() == 0, 0); // 45 × 220 / 10_000 = 0
         assert!(pool.quote_fee_reserve_balance() == 0, 1);
 
         return_shared(pool);
@@ -969,7 +971,7 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 1, 2); // 50 × 200 / 10_000 = 1
+        assert!(info.paid_fees() == 1, 2); // 46 × 220 / 10_000 = 1
         assert!(pool.quote_fee_reserve_balance() == 1, 3); // cumulative: 0 + 1
 
         return_shared(pool);

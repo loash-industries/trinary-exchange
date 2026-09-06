@@ -70,7 +70,8 @@ public struct MultiCoinPoolCreated<phantom QuoteAsset> has copy, drop, store {
     pool_id: ID,
     collection_id: ID,
     asset_id: u64,
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
     whitelisted_pool: bool,
     treasury_address: address,
 }
@@ -140,7 +141,8 @@ public(package) fun create_pool<QuoteAsset>(
         registered_pool: true,
     };
     let params = pool_inner.state.governance().trade_params();
-    let fee = params.fee();
+    let taker_fee = params.taker_fee();
+    let maker_fee = params.maker_fee();
     let treasury_address = registry.treasury_address();
     let pool = MultiCoinPool<QuoteAsset> {
         id: pool_id,
@@ -155,7 +157,8 @@ public(package) fun create_pool<QuoteAsset>(
         pool_id,
         collection_id,
         asset_id,
-        fee,
+        taker_fee,
+        maker_fee,
         whitelisted_pool,
         treasury_address,
     });
@@ -689,15 +692,16 @@ public fun withdraw_settled_amounts_permissionless<QuoteAsset>(
 
 // === Public-Mutative Functions * ADMIN * ===
 
-/// Admin function to set the fee for the next epoch.
+/// Admin function to set the fees for the next epoch.
 /// #ref:functions
 public fun set_next_epoch_fee<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
     _cap: &TriexbookAdminCap,
 ) {
     let pool_inner = self.load_inner_mut();
-    pool_inner.state.set_next_epoch_fee(fee);
+    pool_inner.state.set_next_epoch_fee(taker_fee, maker_fee);
 }
 
 /// Unregister a pool in case it needs to be redeployed.
@@ -825,10 +829,12 @@ public fun get_quantity_out_input_fee<QuoteAsset>(
 ): (u64, u64) {
     let self_inner = self.load_inner();
     let params = self_inner.state.governance().trade_params();
+    // Asks quote fee-free until ask-side charging lands (TRIEX-135 Phase 2),
+    // keeping dry-runs aligned with settlement.
     let trade_specific_taker_fee = if (quote_quantity > 0) {
-        params.taker_fee_for_user(true)
+        params.taker_fee()
     } else {
-        params.taker_fee_for_user(false)
+        0
     };
     self_inner
         .book
@@ -958,10 +964,8 @@ public fun locked_balance<QuoteAsset>(
     let mut cred_quantity = 0;
 
     account_orders.do_ref!(|order| {
-        let fee_rate = pool_inner.state.history().historic_fee_rate(order.epoch());
-        let fee_rate_applied = if (order.is_bid()) { fee_rate } else { 0 };
         let locked_balance = order.locked_balance(
-            fee_rate_applied,
+            order.maker_fee_rate(),
             pool_inner.book.price_scaling(),
         );
         base_quantity = base_quantity + locked_balance.base();
@@ -977,14 +981,20 @@ public fun locked_balance<QuoteAsset>(
     (base_quantity, quote_quantity, cred_quantity)
 }
 
-public fun pool_trade_params<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+/// Returns the (taker_fee, maker_fee) trade params for the pool.
+public fun pool_trade_params<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): (u64, u64) {
     let pool_inner = self.load_inner();
-    pool_inner.state.governance().trade_params().fee()
+    let trade_params = pool_inner.state.governance().trade_params();
+
+    (trade_params.taker_fee(), trade_params.maker_fee())
 }
 
-public fun pool_trade_params_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+/// Returns the (taker_fee, maker_fee) trade params for the next epoch.
+public fun pool_trade_params_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): (u64, u64) {
     let pool_inner = self.load_inner();
-    pool_inner.state.governance().next_trade_params().fee()
+    let trade_params = pool_inner.state.governance().next_trade_params();
+
+    (trade_params.taker_fee(), trade_params.maker_fee())
 }
 
 public fun account<QuoteAsset>(
@@ -1046,6 +1056,10 @@ fun place_order_int<QuoteAsset>(
     let order_info = {
         let pool_inner = self.load_inner_mut();
 
+        // Roll governance into the current epoch before snapshotting the
+        // maker rate, so an order placed on an epoch-boundary transaction
+        // records the freshly promoted rate rather than last epoch's.
+        let maker_fee_rate = pool_inner.state.governance_mut(ctx).trade_params().maker_fee();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1056,6 +1070,7 @@ fun place_order_int<QuoteAsset>(
             quantity,
             is_bid,
             ctx.epoch(),
+            maker_fee_rate,
             expire_timestamp,
             market_order,
             clock.timestamp_ms(),

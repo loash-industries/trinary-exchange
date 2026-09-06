@@ -1738,8 +1738,9 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, constants::cred_multiplier());
-        // Quote-only fees reduce returned quote slightly
-        assert_eq!(quote, 1795 * constants::float_scaling());
+        // Quote-only fees reduce returned quote slightly:
+        // 2000 in, 200 spent on base, fee = 200 × 2.2% × 1.25 = 5.5
+        assert_eq!(quote, 17945 * constants::float_scaling() / 10);
     };
 
     let order_info = place_limit_order<SUI, USDC>(
@@ -1785,7 +1786,8 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, 10 * constants::float_scaling());
-        assert_eq!(quote, 1_979_500_000_000);
+        // 2000 in, 20 spent on base, fee = 20 × 2.2% × 1.25 = 0.55
+        assert_eq!(quote, 1_979_450_000_000);
     };
 
     // Place second order, should match with the 10 remaining orders.

@@ -130,12 +130,9 @@ public(package) fun process_create(
     //         math::mul_u128(account_volume, avg_executed_price as u128),
     //     );
 
-    // taker fee will always be calculated as 0 for whitelisted pools by
-    // default, as account_volume_in_cred is 0
-    let taker_fee = self.governance.trade_params().taker_fee_for_user(order_info.is_bid());
-    // .taker_fee_for_user(account_stake, account_volume_in_cred); // #feat:fees
+    let taker_fee = self.governance.trade_params().taker_fee();
     // let taker_fee = ewma_state.apply_taker_penalty(taker_fee, ctx);
-    let maker_fee = self.governance.trade_params().maker_fee_for_user(order_info.is_bid());
+    let maker_fee = self.governance.trade_params().maker_fee();
 
     if (order_info.order_inserted()) {
         assert!(account.open_orders().length() < constants::max_open_orders(), EMaxOpenOrders);
@@ -183,15 +180,8 @@ public(package) fun process_cancel(
     self.update_account(balance_manager_id, ctx);
     order.set_canceled();
 
-    let epoch = order.epoch();
-    let historic_fee_rate = self.history.historic_fee_rate(epoch); // #feat:fees
-    let historic_fee_to_apply = if (order.is_bid()) {
-        historic_fee_rate
-    } else {
-        0
-    }; // apply historic fee rate from epoch only for bids
     let balances = order.calculate_cancel_refund(
-        historic_fee_to_apply,
+        order.maker_fee_rate(),
         option::none(),
         price_scaling,
     );
@@ -217,15 +207,8 @@ public(package) fun process_modify(
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
 
-    let epoch = order.epoch();
-    let historic_fee_rate = self.history.historic_fee_rate(epoch);
-    let historic_fee_to_apply = if (order.is_bid()) {
-        historic_fee_rate
-    } else {
-        0
-    }; // apply historic fee rate from epoch only for bids
     let balances = order.calculate_cancel_refund(
-        historic_fee_to_apply,
+        order.maker_fee_rate(),
         option::some(cancel_quantity),
         price_scaling,
     );
@@ -488,8 +471,8 @@ fun update_account(self: &mut State, balance_manager_id: ID, ctx: &TxContext) {
     // }
 }
 
-/// Admin function to set the fee for the next epoch.
+/// Admin function to set the fees for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
-public(package) fun set_next_epoch_fee(self: &mut State, fee: u64) {
-    self.governance.set_next_trade_params(fee);
+public(package) fun set_next_epoch_fee(self: &mut State, taker_fee: u64, maker_fee: u64) {
+    self.governance.set_next_trade_params(taker_fee, maker_fee);
 }

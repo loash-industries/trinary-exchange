@@ -22,6 +22,11 @@ public struct Order has drop, store {
     quantity: u64,
     filled_quantity: u64,
     epoch: u64,
+    /// Maker fee rate snapshotted at placement. Cancel/modify/locked-balance
+    /// and fill-time maker fees read this instead of replaying a global
+    /// per-epoch rate, so the order settles at its placement rate even after
+    /// rates change.
+    maker_fee_rate: u64,
     status: u8,
     expire_timestamp: u64,
 }
@@ -74,6 +79,10 @@ public fun epoch(self: &Order): u64 {
     self.epoch
 }
 
+public fun maker_fee_rate(self: &Order): u64 {
+    self.maker_fee_rate
+}
+
 public fun status(self: &Order): u8 {
     self.status
 }
@@ -96,6 +105,7 @@ public(package) fun new(
     quantity: u64,
     filled_quantity: u64,
     epoch: u64,
+    maker_fee_rate: u64,
     status: u8,
     expire_timestamp: u64,
 ): Order {
@@ -107,6 +117,7 @@ public(package) fun new(
         quantity,
         filled_quantity,
         epoch,
+        maker_fee_rate,
         status,
         expire_timestamp,
     }
@@ -151,6 +162,7 @@ public(package) fun generate_fill(
         quote_quantity,
         is_bid,
         self.epoch,
+        self.maker_fee_rate,
     )
 }
 
@@ -307,6 +319,7 @@ public(package) fun copy_order(order: &Order): Order {
         quantity: order.quantity,
         filled_quantity: order.filled_quantity,
         epoch: order.epoch,
+        maker_fee_rate: order.maker_fee_rate,
         status: order.status,
         expire_timestamp: order.expire_timestamp,
     }

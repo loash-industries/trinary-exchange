@@ -48,6 +48,7 @@ fun process_maker_fill_ok() {
         500,
         false,
         0,
+        0,
     );
     account.process_maker_fill(&fill);
     let (settled, owed) = account.settle();
@@ -68,6 +69,7 @@ fun process_maker_fill_ok() {
         100,
         500,
         true,
+        0,
         0,
     );
     account.process_maker_fill(&fill);
@@ -91,6 +93,7 @@ fun process_maker_fill_ok() {
         500,
         true,
         0,
+        0,
     );
     account.process_maker_fill(&fill);
     let (settled, owed) = account.settle();
@@ -113,6 +116,7 @@ fun process_maker_fill_ok() {
         100,
         500,
         true,
+        0,
         0,
     );
     account.process_maker_fill(&fill);
@@ -192,6 +196,7 @@ fun update_ok() {
         100,
         500,
         false,
+        0,
         0,
     );
     account.process_maker_fill(&fill);

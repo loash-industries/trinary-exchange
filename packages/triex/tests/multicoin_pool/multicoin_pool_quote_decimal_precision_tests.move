@@ -48,7 +48,7 @@ const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
 // Pool governance default: 2% taker fee on bids
-const FEE_BPS: u64 = 200;
+const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 
 // Large enough to cover the maximum test quote (100 × FLOAT_SCALING per item)
@@ -272,16 +272,17 @@ fun test_mq9_fee_correct_not_1e9_undercharged() {
 
     // price_scaling = 1 → quote = qty × price (direct product)
     let expected_quote = qty * price; // = 100_000_000_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_000_000_000
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_200_000_000
 
     // buggy path: math::mul would divide by FLOAT_SCALING
     let buggy_quote = math::mul(qty, price); // = 100
-    let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2
+    let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2 (truncated)
 
     assert!(paid_fees == expected_fee, 0);
     assert!(vault_reserve == expected_fee, 1);
-    // The fix captures FLOAT_SCALING× more fee than the bug would have
-    assert!(expected_fee / buggy_fee == constants::float_scaling(), 2);
+    // The fix captures at least FLOAT_SCALING× more fee than the bug would
+    // have (the buggy fee also truncates, so the ratio can exceed it)
+    assert!(expected_fee / buggy_fee >= constants::float_scaling(), 2);
 
     destroy(collection_cap);
     end(test);
