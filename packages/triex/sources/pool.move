@@ -484,7 +484,7 @@ public fun modify_order<BaseAsset, QuoteAsset>(
         .book
         .modify_order(order_id, new_quantity, clock.timestamp_ms());
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed, released_fee) = self
+    let (settled, owed, fee_release) = self
         .state
         .process_modify(
             balance_manager.id(),
@@ -494,15 +494,26 @@ public fun modify_order<BaseAsset, QuoteAsset>(
             self.book.price_scaling(),
             ctx,
         );
+    // The refund is already in `settled`, so it must reach the pool balance
+    // before settlement pays it out.
+    self.vault.unlock_quote_fees(
+        self.pool_id,
+        order_id,
+        balance_manager.id(),
+        fee_release.release_refunded(),
+        clock.timestamp_ms(),
+    );
     self.vault.settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none());
-    // A modify-down forfeits the released escrow on the same terms as a
-    // cancel, so it becomes sweepable revenue.
-    self.vault.recognize_locked_maker_fees(released_fee);
+    // A modify-down retains its share on the same terms as a cancel, so
+    // requoting down cannot dodge the retention.
+    self.vault.recognize_locked_maker_fees(fee_release.release_retained());
 
     order.emit_order_modified(
         self.pool_id,
         previous_quantity,
         ctx.sender(),
+        fee_release.release_refunded(),
+        fee_release.release_retained(),
         clock.timestamp_ms(),
     );
 }
@@ -524,7 +535,7 @@ public fun cancel_order<BaseAsset, QuoteAsset>(
     let self = self.load_inner_mut();
     let mut order = self.book.cancel_order(order_id);
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed, released_fee) = self
+    let (settled, owed, fee_release) = self
         .state
         .process_cancel(
             &mut order,
@@ -533,14 +544,25 @@ public fun cancel_order<BaseAsset, QuoteAsset>(
             self.book.price_scaling(),
             ctx,
         );
+    // The refund is already in `settled`, so it must reach the pool balance
+    // before settlement pays it out.
+    self.vault.unlock_quote_fees(
+        self.pool_id,
+        order_id,
+        balance_manager.id(),
+        fee_release.release_refunded(),
+        clock.timestamp_ms(),
+    );
     self.vault.settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none());
-    // Cancelling forfeits the escrow, so it stops being a user claim and
-    // becomes revenue the admin may sweep.
-    self.vault.recognize_locked_maker_fees(released_fee);
+    // The retained share stops being a user claim and becomes revenue the
+    // admin may sweep.
+    self.vault.recognize_locked_maker_fees(fee_release.release_retained());
 
     order.emit_order_canceled(
         self.pool_id,
         ctx.sender(),
+        fee_release.release_refunded(),
+        fee_release.release_retained(),
         clock.timestamp_ms(),
     );
 }
@@ -725,10 +747,11 @@ public fun set_next_epoch_fee<BaseAsset, QuoteAsset>(
     self: &mut Pool<BaseAsset, QuoteAsset>,
     taker_fee: u64,
     maker_fee: u64,
+    cancel_retention_bps: u64,
     _cap: &TriexbookAdminCap,
 ) {
     let self = self.load_inner_mut();
-    self.state.set_next_epoch_fee(taker_fee, maker_fee);
+    self.state.set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps);
 }
 
 // #feat:flashloan - DISABLED
@@ -1435,7 +1458,9 @@ fun place_order_int<BaseAsset, QuoteAsset>(
         // Roll governance into the current epoch before snapshotting the
         // maker rate, so an order placed on an epoch-boundary transaction
         // records the freshly promoted rate rather than last epoch's.
-        let maker_fee_rate = pool_inner.state.governance_mut(ctx).trade_params().maker_fee();
+        let trade_params = pool_inner.state.governance_mut(ctx).trade_params();
+        let maker_fee_rate = trade_params.maker_fee();
+        let cancel_retention_bps = trade_params.cancel_retention_bps();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1447,6 +1472,7 @@ fun place_order_int<BaseAsset, QuoteAsset>(
             is_bid,
             ctx.epoch(),
             maker_fee_rate,
+            cancel_retention_bps,
             expire_timestamp,
             market_order,
             clock.timestamp_ms(),
@@ -1461,6 +1487,24 @@ fun place_order_int<BaseAsset, QuoteAsset>(
                 pool_inner.pool_id,
                 ctx,
             );
+        // Makers whose orders expired during this match get the refundable
+        // share of their escrow credited to settled balances, so it has to
+        // leave the reserve for the pool balance that pays settlements out.
+        let refunds = fee_flows.refunded();
+        let mut refund_idx = 0;
+        while (refund_idx < refunds.length()) {
+            let refund = &refunds[refund_idx];
+            pool_inner
+                .vault
+                .unlock_quote_fees(
+                    pool_inner.pool_id,
+                    refund.refund_order_id(),
+                    refund.refund_balance_manager_id(),
+                    refund.refund_amount(),
+                    clock.timestamp_ms(),
+                );
+            refund_idx = refund_idx + 1;
+        };
         // Bid fees ride in with the quote the user pays (fee deposit); ask
         // fees were carved out of quote proceeds and are moved to the
         // reserve after settlement below.
@@ -1502,7 +1546,8 @@ fun place_order_int<BaseAsset, QuoteAsset>(
                 );
             fee_idx = fee_idx + 1;
         };
-        // Escrow these fills earned out is revenue now, and sweepable.
+        // Escrow these fills earned out, plus the share retained from any
+        // expiries, is revenue now and sweepable.
         pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());

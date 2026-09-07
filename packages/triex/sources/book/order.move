@@ -27,11 +27,22 @@ public struct Order has drop, store {
     /// per-epoch rate, so the order settles at its placement rate even after
     /// rates change.
     maker_fee_rate: u64,
+    /// Cancel-retention rate snapshotted at placement, in basis points. The
+    /// share of released escrow the protocol keeps on cancel/modify-down/
+    /// expiry; the rest is refunded. Snapshotted for the same reason the fee
+    /// rate is — an admin policy change must not re-price a resting order.
+    cancel_retention_bps: u64,
     status: u8,
     expire_timestamp: u64,
 }
 
 /// Emitted when a maker order is canceled.
+///
+/// `fee_refunded` / `fee_retained` are the two halves of the maker fee escrow
+/// this cancellation released, so an indexer reads the whole outcome off one
+/// event. The refund also surfaces as a `PoolFeesRefunded` carrying this same
+/// `order_id`, which is where the vault-side movement is recorded. Both are
+/// zero for asks, which never escrow a fee.
 public struct OrderCanceled has copy, drop, store {
     balance_manager_id: ID,
     pool_id: ID,
@@ -41,10 +52,14 @@ public struct OrderCanceled has copy, drop, store {
     is_bid: bool,
     original_quantity: u64,
     base_asset_quantity_canceled: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 }
 
-/// Emitted when a maker order is modified.
+/// Emitted when a maker order is modified. A modify-down releases escrow on
+/// the quantity removed, split on the same terms as a cancel; see
+/// `OrderCanceled` for how the two halves relate to `PoolFeesRefunded`.
 public struct OrderModified has copy, drop, store {
     balance_manager_id: ID,
     pool_id: ID,
@@ -55,6 +70,8 @@ public struct OrderModified has copy, drop, store {
     previous_quantity: u64,
     filled_quantity: u64,
     new_quantity: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 }
 
@@ -83,6 +100,10 @@ public fun maker_fee_rate(self: &Order): u64 {
     self.maker_fee_rate
 }
 
+public fun cancel_retention_bps(self: &Order): u64 {
+    self.cancel_retention_bps
+}
+
 public fun status(self: &Order): u8 {
     self.status
 }
@@ -106,6 +127,7 @@ public(package) fun new(
     filled_quantity: u64,
     epoch: u64,
     maker_fee_rate: u64,
+    cancel_retention_bps: u64,
     status: u8,
     expire_timestamp: u64,
 ): Order {
@@ -118,6 +140,7 @@ public(package) fun new(
         filled_quantity,
         epoch,
         maker_fee_rate,
+        cancel_retention_bps,
         status,
         expire_timestamp,
     }
@@ -163,6 +186,7 @@ public(package) fun generate_fill(
         is_bid,
         self.epoch,
         self.maker_fee_rate,
+        self.cancel_retention_bps,
     )
 }
 
@@ -179,31 +203,54 @@ public(package) fun modify(self: &mut Order, new_quantity: u64, timestamp: u64) 
     self.quantity = new_quantity;
 }
 
-/// Calculate the refund for a canceled order. The refund is any
-/// unfilled quantity and the maker fee. If the cancel quantity is
-/// not provided, the remaining quantity is used. Cancel quantity is
-/// provided when modifying an order, so that the refund can be calculated
+/// Calculate the refund for a canceled order: the unfilled principal plus
+/// the refundable share of the maker fee escrowed against it. If the cancel
+/// quantity is not provided, the remaining quantity is used. Cancel quantity
+/// is provided when modifying an order, so that the refund can be calculated
 /// based on the quantity that's reduced.
+///
+/// The fee half only ever applies to bids — asks lock nothing. The caller
+/// must move the same quote out of the fee reserve before settling, since
+/// settled quote is paid from the pool balance.
 public(package) fun calculate_cancel_refund(
     self: &Order,
-    _maker_fee: u64,
+    maker_fee: u64,
     cancel_quantity: Option<u64>,
     price_scaling: u64,
 ): Balances {
+    let (fee_refund, _retained) = self.released_fee_split(
+        maker_fee,
+        cancel_quantity,
+        price_scaling,
+    );
     let cancel_quantity = cancel_quantity.get_with_default(
         self.quantity - self.filled_quantity,
     );
     let mut base_out = 0;
     let mut quote_out = 0;
     if (self.is_bid()) {
-        quote_out = math::qty_to_quote(cancel_quantity, self.price(), price_scaling);
+        quote_out = math::qty_to_quote(cancel_quantity, self.price(), price_scaling) + fee_refund;
     } else {
         base_out = cancel_quantity;
     };
 
-    // Bid cancellations leave quote-denominated maker fees in the fee reserve; no refund of
-    // previously locked fees is issued on cancel.
     balances::new(base_out, quote_out, 0)
+}
+
+/// Split the escrow this cancel/modify-down releases into the part refunded
+/// to the maker and the part the protocol retains as revenue, at the
+/// retention rate snapshotted on the order. The two always sum to
+/// `locked_fee_released`, so the caller can decrement `locked_maker_fees` by
+/// the whole released amount.
+public(package) fun released_fee_split(
+    self: &Order,
+    maker_fee: u64,
+    cancel_quantity: Option<u64>,
+    price_scaling: u64,
+): (u64, u64) {
+    let basis = self.locked_fee_released(maker_fee, cancel_quantity, price_scaling);
+
+    quote_fee::split_released_fee(basis, self.cancel_retention_bps)
 }
 
 /// The maker fee escrowed against the portion of this order being released,
@@ -259,10 +306,19 @@ public(package) fun locked_balance(self: &Order, maker_fee: u64, price_scaling: 
     }
 }
 
+#[test_only]
+/// Fields of an `OrderCanceled` for tests asserting the fee split reported on
+/// the cancellation matches the refund the vault emitted.
+public fun canceled_event_parts(self: &OrderCanceled): (u64, u64, u64) {
+    (self.order_id, self.fee_refunded, self.fee_retained)
+}
+
 public(package) fun emit_order_canceled(
     self: &Order,
     pool_id: ID,
     trader: address,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     let is_bid = self.is_bid();
@@ -276,6 +332,8 @@ public(package) fun emit_order_canceled(
         trader,
         original_quantity: self.quantity,
         base_asset_quantity_canceled: remaining_quantity,
+        fee_refunded,
+        fee_retained,
         timestamp,
         price,
     });
@@ -286,6 +344,8 @@ public(package) fun emit_order_modified(
     pool_id: ID,
     previous_quantity: u64,
     trader: address,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     let is_bid = self.is_bid();
@@ -300,6 +360,8 @@ public(package) fun emit_order_modified(
         previous_quantity,
         filled_quantity: self.filled_quantity,
         new_quantity: self.quantity,
+        fee_refunded,
+        fee_retained,
         timestamp,
     });
 }
@@ -313,6 +375,8 @@ public(package) fun emit_cancel_maker(
     is_bid: bool,
     original_quantity: u64,
     base_asset_quantity_canceled: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     event::emit(OrderCanceled {
@@ -324,6 +388,8 @@ public(package) fun emit_cancel_maker(
         is_bid,
         original_quantity,
         base_asset_quantity_canceled,
+        fee_refunded,
+        fee_retained,
         timestamp,
     });
 }
@@ -339,6 +405,7 @@ public(package) fun copy_order(order: &Order): Order {
         filled_quantity: order.filled_quantity,
         epoch: order.epoch,
         maker_fee_rate: order.maker_fee_rate,
+        cancel_retention_bps: order.cancel_retention_bps,
         status: order.status,
         expire_timestamp: order.expire_timestamp,
     }

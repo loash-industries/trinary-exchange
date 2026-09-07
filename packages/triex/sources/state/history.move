@@ -227,6 +227,11 @@ public(package) fun add_total_fees_collected(self: &mut History, fees: Balances)
 
 // === Test Functions ===
 #[test_only]
+public fun total_fees_collected_for_testing(self: &History): Balances {
+    self.volumes.total_fees_collected
+}
+
+#[test_only]
 public fun set_current_volumes(
     history: &mut History,
     total_volume: u64,

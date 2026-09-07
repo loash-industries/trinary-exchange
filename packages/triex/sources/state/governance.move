@@ -19,6 +19,7 @@ const EInvalidTakerFee: u64 = 2;
 // const EProposalDoesNotExist: u64 = 3; // #feat:gov - DISABLED
 // const EMaxProposalsReachedNotEnoughVotes: u64 = 4; // #feat:gov - DISABLED
 const EWhitelistedPoolCannotChange: u64 = 5;
+const EInvalidCancelRetention: u64 = 7;
 // const EInvalidFeeRate: u64 = 6;
 
 // === Constants ===
@@ -28,6 +29,11 @@ const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
 // admin can ever set, independent of the launch defaults below.
 const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+
+/// Share of released bid-maker escrow the protocol keeps on cancel, modify-down
+/// or expiry. Full basis points, so the cap is a 100% retention (no refund).
+const MAX_CANCEL_RETENTION_BPS: u64 = 10000;
+const DEFAULT_CANCEL_RETENTION_BPS: u64 = 2000; // 20% retained, 80% refunded
 
 const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
 const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
@@ -78,7 +84,13 @@ public struct TradeParamsUpdateEvent has copy, drop {
 
 // === Public-Package Functions ===
 public(package) fun empty(whitelisted: bool, ctx: &TxContext): Governance {
-    new_governance(whitelisted, DEFAULT_TAKER_FEE, DEFAULT_MAKER_FEE, ctx)
+    new_governance(
+        whitelisted,
+        DEFAULT_TAKER_FEE,
+        DEFAULT_MAKER_FEE,
+        DEFAULT_CANCEL_RETENTION_BPS,
+        ctx,
+    )
 }
 
 public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governance {
@@ -86,6 +98,7 @@ public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governa
         whitelisted,
         DEFAULT_TAKER_FEE_MULTICOIN,
         DEFAULT_MAKER_FEE_MULTICOIN,
+        DEFAULT_CANCEL_RETENTION_BPS,
         ctx,
     )
 }
@@ -94,14 +107,15 @@ fun new_governance(
     whitelisted: bool,
     taker_fee: u64,
     maker_fee: u64,
+    cancel_retention_bps: u64,
     ctx: &TxContext,
 ): Governance {
     Governance {
         epoch: ctx.epoch(),
         whitelisted,
         // proposals: vec_map::empty(), // #feat:gov - DISABLED
-        trade_params: trade_params::new(taker_fee, maker_fee),
-        next_trade_params: trade_params::new(taker_fee, maker_fee),
+        trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
+        next_trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
         // voting_power: 0, // #feat:stake #feat:gov - DISABLED
         // quorum: 0, // #feat:gov - DISABLED
     }
@@ -246,7 +260,12 @@ public(package) fun next_trade_params(self: &Governance): TradeParams {
 
 /// Admin function to set trade parameters for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
-public(package) fun set_next_trade_params(self: &mut Governance, taker_fee: u64, maker_fee: u64) {
+public(package) fun set_next_trade_params(
+    self: &mut Governance,
+    taker_fee: u64,
+    maker_fee: u64,
+    cancel_retention_bps: u64,
+) {
     assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
     assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
     assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
@@ -255,8 +274,10 @@ public(package) fun set_next_trade_params(self: &mut Governance, taker_fee: u64,
     assert!(taker_fee >= MIN_TAKER_FEE, EInvalidTakerFee);
     assert!(taker_fee <= MAX_TAKER_FEE, EInvalidTakerFee);
     assert!(maker_fee <= MAX_MAKER_FEE, EInvalidMakerFee);
+    // A zero retention refunds the whole escrow; the cap keeps all of it.
+    assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
 
-    self.next_trade_params = trade_params::new(taker_fee, maker_fee);
+    self.next_trade_params = trade_params::new(taker_fee, maker_fee, cancel_retention_bps);
 }
 
 // === Private Functions ===

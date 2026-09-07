@@ -468,6 +468,7 @@ public fun create_order(
         0,
         epoch,
         0,
+        2000,
         constants::live(),
         expire_timestamp,
     )
@@ -491,6 +492,7 @@ fun generate_fill_propagates_maker_fee_rate_ok() {
         0,
         1,
         maker_fee_rate,
+        2000,
         constants::live(),
         constants::max_u64(),
     );
@@ -518,3 +520,143 @@ fun generate_fill_propagates_maker_fee_rate_ok() {
 }
 
 // @todo: add a test for inserting order at same price to make sure same-prices are ordered for FIFO.
+
+// === Cancel refund with fee escrow ===
+// A bid maker's cancel returns the unfilled principal plus the refundable
+// share of the escrow held against it, at the rate and retention snapshotted
+// on the order.
+
+#[test_only]
+// A resting bid of 100 @ 2 (200 quote notional) at a 1.8% maker rate, so the
+// escrow is 3.6 and the default 20% retention splits it 2.88 / 0.72.
+fun bid_with_escrow(retention_bps: u64): Order {
+    order::new(
+        1,
+        id_from_address(ALICE),
+        2 * constants::float_scaling(),
+        true,
+        100 * constants::float_scaling(),
+        0,
+        1,
+        18_000_000,
+        retention_bps,
+        constants::live(),
+        constants::max_u64(),
+    )
+}
+
+#[test]
+fun calculate_cancel_refund_includes_refundable_escrow() {
+    let order = bid_with_escrow(2000);
+    let principal = 200 * constants::float_scaling();
+    let refund = 288 * constants::float_scaling() / 100;
+
+    assert_eq!(
+        order.calculate_cancel_refund(
+            order.maker_fee_rate(),
+            option::none(),
+            constants::float_scaling(),
+        ),
+        balances::new(0, principal + refund, 0),
+    );
+}
+
+#[test]
+fun calculate_cancel_refund_honors_snapshotted_retention() {
+    // A zero-retention order refunds the whole escrow; a full-retention one
+    // refunds none. Both read the rate off the order, not from governance.
+    let principal = 200 * constants::float_scaling();
+    let escrow = 36 * constants::float_scaling() / 10;
+
+    let free = bid_with_escrow(0);
+    assert_eq!(
+        free.calculate_cancel_refund(
+            free.maker_fee_rate(),
+            option::none(),
+            constants::float_scaling(),
+        ),
+        balances::new(0, principal + escrow, 0),
+    );
+
+    let punitive = bid_with_escrow(10000);
+    assert_eq!(
+        punitive.calculate_cancel_refund(
+            punitive.maker_fee_rate(),
+            option::none(),
+            constants::float_scaling(),
+        ),
+        balances::new(0, principal, 0),
+    );
+}
+
+#[test]
+fun calculate_cancel_refund_ask_gets_no_fee_refund() {
+    // Asks never lock escrow, so their cancel returns base only — a refund
+    // here would pay out of another maker's locked fee.
+    let order = order::new(
+        1,
+        id_from_address(ALICE),
+        2 * constants::float_scaling(),
+        false,
+        100 * constants::float_scaling(),
+        0,
+        1,
+        18_000_000,
+        2000,
+        constants::live(),
+        constants::max_u64(),
+    );
+
+    assert_eq!(
+        order.calculate_cancel_refund(
+            order.maker_fee_rate(),
+            option::none(),
+            constants::float_scaling(),
+        ),
+        balances::new(100 * constants::float_scaling(), 0, 0),
+    );
+    let (refund, retained) = order.released_fee_split(
+        order.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
+    assert_eq!(refund, 0);
+    assert_eq!(retained, 0);
+}
+
+#[test]
+fun released_fee_split_sums_to_released() {
+    // The pool decrements `locked_maker_fees` by refund + retained, so any
+    // gap between that sum and the released basis would strand escrow.
+    let order = bid_with_escrow(2000);
+    let basis = order.locked_fee_released(
+        order.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
+    let (refund, retained) = order.released_fee_split(
+        order.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
+
+    assert_eq!(basis, 36 * constants::float_scaling() / 10);
+    assert_eq!(refund + retained, basis);
+}
+
+#[test]
+fun released_fee_split_prorates_on_modify_down() {
+    // Cutting 100 to 40 releases the escrow on 60 (120 quote at 1.8% = 2.16),
+    // split 1.728 / 0.432 — a modify-down is taxed like a cancel, so
+    // modify-to-minimum-then-cancel dodges nothing.
+    let order = bid_with_escrow(2000);
+    let cancel_quantity = 60 * constants::float_scaling();
+    let (refund, retained) = order.released_fee_split(
+        order.maker_fee_rate(),
+        option::some(cancel_quantity),
+        constants::float_scaling(),
+    );
+
+    assert_eq!(refund, 1728 * constants::float_scaling() / 1000);
+    assert_eq!(retained, 216 * constants::float_scaling() / 100 - refund);
+}

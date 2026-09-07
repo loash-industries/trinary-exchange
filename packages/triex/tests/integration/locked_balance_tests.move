@@ -249,7 +249,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool1_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
         return_shared(pool);
         destroy(admin_cap);
     };

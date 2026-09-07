@@ -46,14 +46,21 @@ public struct MultiCoinVault<phantom QuoteAsset> has key, store {
     /// Quote fee reserve (quote-denominated fees collected during settlement)
     quote_fee_reserve: Balance<QuoteAsset>,
     /// The portion of `quote_fee_reserve` that is a bid maker's escrow rather
-    /// than earned revenue: locked when the order is placed, recognized as
-    /// earned as the order fills. Admin withdrawals are capped at the
-    /// unlocked remainder so a sweep can never spend an open order's escrow.
+    /// than earned revenue: locked when the order is placed, then drawn down
+    /// as the order resolves — recognized as revenue by fills and by the
+    /// retained share of a cancel, unlocked back to the maker by the refunded
+    /// share. Admin withdrawals are capped at the unlocked remainder so a
+    /// sweep can never spend an open order's escrow.
     ///
     /// Recognition floors per fill while the lock floors once over the whole
-    /// order, so a fully filled order can leave a few units still counted as
-    /// locked. That errs toward under-withdrawing, never toward spending
-    /// escrow, which is the safe direction for this counter.
+    /// order, so a resolved order can leave a few units still counted as
+    /// locked. This counter is pool-lifetime and only ever decrements, so
+    /// those residues accumulate: `withdrawable_quote_fees` drifts
+    /// permanently below the reserve, by at most one raw quote unit per
+    /// release, and nothing reconciles it. That errs toward under-withdrawing
+    /// rather than toward spending escrow, which is the safe direction here,
+    /// and it is deliberately left uncorrected — clearing it would need
+    /// per-order residue tracking the vault does not keep.
     locked_maker_fees: u64,
 }
 
@@ -332,6 +339,32 @@ public(package) fun deposit_quote_fees<QuoteAsset>(
     fee_balance: Balance<QuoteAsset>,
 ) {
     self.quote_fee_reserve.join(fee_balance);
+}
+
+/// Release bid-maker escrow back to the pool balance so it can settle out to
+/// the maker. Mirror of `vault::unlock_quote_fees`; see there for why the
+/// funds must move buckets rather than just crediting settled balances.
+public(package) fun unlock_quote_fees<QuoteAsset>(
+    self: &mut MultiCoinVault<QuoteAsset>,
+    pool_id: ID,
+    order_id: u64,
+    balance_manager_id: ID,
+    amount: u64,
+    timestamp: u64,
+) {
+    if (amount == 0) return;
+    assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
+    let refund_balance = self.quote_fee_reserve.split(amount);
+    self.quote_balance.join(refund_balance);
+    // The refund leaves the reserve entirely, so it stops being escrow too.
+    self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
+    vault::emit_pool_fees_refunded<QuoteAsset>(
+        pool_id,
+        order_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    );
 }
 
 /// Deposit CRED directly into vault.

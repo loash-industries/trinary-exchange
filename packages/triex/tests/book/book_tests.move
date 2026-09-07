@@ -184,6 +184,7 @@ fun create_test_order(price: u64, quantity: u64, is_bid: bool, order_id: u64): O
         0,
         epoch,
         0,
+        2000,
         constants::live(),
         expire_timestamp,
     )

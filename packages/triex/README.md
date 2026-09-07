@@ -83,13 +83,23 @@ Pools support two fee modes:
 - **Quote fees** — the `..._with_quote_fees` order variants accrue fees in
   the pool's quote currency into a `quote_fee_reserve`
   (`triexbook::quote_fee`), which the admin sweeps with
-  `withdraw_pool_fees`.
+  `withdraw_pool_fees`. A bid maker's fee is *escrow*, not revenue, until
+  their order resolves: `locked_maker_fees` tracks it and the sweep is capped
+  at `withdrawable_pool_fees` (reserve minus escrow), so an admin can never
+  spend a fee still backing an open order.
 
 Trade parameters carry separate taker and maker rates (coin pools default to
 taker 2.2% / maker 1.8%; multicoin pools to taker 1.1% / maker 0.9%) and are
 admin-set per epoch
-(`set_next_epoch_fee(taker_fee, maker_fee)`); each order snapshots the maker
-rate at placement and settles against it for its lifetime. Fees are charged
+(`set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps)`); each order
+snapshots the maker rate and the retention rate at placement and settles
+against them for its lifetime. Cancelling, modifying down or expiring a
+resting bid refunds `10000 - cancel_retention_bps` of the escrow on the
+released quantity (default 80%) and keeps the rest as revenue, so an
+unexecuted order costs only the retention plus gas. `OrderCanceled`,
+`OrderModified` and `OrderExpired` carry both halves of that split, and the
+vault's `PoolFeesRefunded` carries the same `order_id`, so a refund is always
+attributable to the order and the maker it belongs to. Fees are charged
 on both sides of a trade, always denominated in quote: bid takers pay on top
 of the quote they owe and bid makers lock their fee at placement, while ask
 takers and ask makers have theirs deducted from the quote proceeds at fill

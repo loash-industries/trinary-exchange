@@ -9,6 +9,7 @@ use std::unit_test;
 use sui::{
     clock::{Self, Clock},
     coin::{Self, mint_for_testing},
+    event,
     test_scenario::{Scenario, begin, end, return_shared}
 };
 use token::cred::CRED;
@@ -21,7 +22,8 @@ use triexbook::{
     multicoin_pool::{Self, MultiCoinPool},
     order_info::OrderInfo,
     pool::{Self, Pool},
-    registry::{Self, Registry}
+    registry::{Self, Registry},
+    vault
 };
 
 // Test addresses
@@ -1215,7 +1217,7 @@ fun multicoin_test_modify_order(
 // === Advanced Fill Scenarios ===
 
 /// Acceptance (multicoin mirror): cancelling a resting bid releases its
-/// escrow, which is forfeited into revenue rather than left locked forever.
+/// escrow, 80% refunded to the maker and 20% kept as revenue.
 #[test]
 fun test_multicoin_cancel_releases_bid_escrow() {
     let mut test = begin(OWNER);
@@ -1276,15 +1278,106 @@ fun test_multicoin_cancel_releases_bid_escrow() {
         let proof = bm.generate_proof_as_owner(test.ctx());
         pool.cancel_order(&mut bm, &proof, order_id, &clock, test.ctx());
 
-        // Forfeited: the funds stay in the reserve but stop being a claim.
-        assert!(pool.quote_fee_reserve_balance() == alice_maker_fee, 2);
+        // 80% leaves the reserve back to Alice; the 20% retention stays and
+        // is the only sweepable balance left.
+        let refund = alice_maker_fee * 8000 / 10000;
+        let retained = alice_maker_fee - refund;
+        assert!(pool.quote_fee_reserve_balance() == retained, 2);
         assert!(pool.locked_maker_fees() == 0, 3);
-        assert!(pool.withdrawable_pool_fees() == alice_maker_fee, 4);
+        assert!(pool.withdrawable_pool_fees() == retained, 4);
 
         return_shared(bm);
         return_shared(clock);
         return_shared(pool);
     };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
+/// Acceptance #1 (multicoin mirror): the refund actually reaches the maker's
+/// balance manager, so a place -> cancel round trip costs only the retention.
+#[test]
+fun test_multicoin_cancel_refunds_escrow_to_maker() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let alice_maker_fee;
+    let order_id;
+
+    test.next_tx(ALICE);
+    let balance_before = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        alice_maker_fee = order.maker_fees();
+        order_id = order.order_id();
+        assert!(alice_maker_fee > 0, 0);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut bm, &proof, order_id, &clock, test.ctx());
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    let balance_after = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    let retained = alice_maker_fee - alice_maker_fee * 8000 / 10000;
+    assert!(balance_before - balance_after == retained, 1);
 
     unit_test::destroy(collection_cap);
     end(test);
@@ -3013,6 +3106,169 @@ fun multicoin_test_order_limit(is_bid: bool) {
     assert!(order_info.status() == expected_status, 0);
     assert!(order_info.executed_quantity() == 15 * quantity, 1);
     assert!(order_info.cumulative_quote_quantity() == expected_cumulative_quote_quantity, 2);
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
+/// Expiry mirror for multicoin: the escrow held against an expired bid splits
+/// on cancel terms, and the refund reaches the maker rather than the taker
+/// whose order surfaced the expiry. Multicoin has its own copy of the counter
+/// and the unlock wiring, so it needs its own coverage.
+#[test]
+fun test_multicoin_expired_bid_maker_is_refunded() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+    let bob_bm_id = create_balance_manager_with_funds(
+        BOB,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Bob sells GOLD, so he needs multicoin inventory to back the ask.
+    test.next_tx(OWNER);
+    {
+        let mut collection = test.take_shared<Collection>();
+        let gold_bob = multicoin::mint_and_keep(
+            &collection_cap,
+            &mut collection,
+            ASSET_GOLD,
+            1_000_000 * constants::float_scaling(),
+            test.ctx(),
+        );
+        return_shared(collection);
+        transfer::public_transfer(gold_bob, BOB);
+    };
+    test.next_tx(BOB);
+    {
+        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let gold = test.take_from_sender<multicoin::Balance>();
+        bob_bm.deposit_multicoin(gold, test.ctx());
+        return_shared(bob_bm);
+    };
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100;
+    let expire_timestamp = get_time(&mut test) + 100;
+    let alice_escrow;
+    let alice_order_id;
+
+    test.next_tx(ALICE);
+    let balance_before = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            expire_timestamp,
+            &clock,
+            test.ctx(),
+        );
+        alice_escrow = order.maker_fees();
+        alice_order_id = order.order_id();
+        assert!(alice_escrow > 0, 0);
+        assert!(pool.locked_maker_fees() == alice_escrow, 1);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Past the expiry, Bob's crossing ask expires the stale bid out.
+    set_time(200, &mut test);
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let refund = alice_escrow * 8000 / 10000;
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 2);
+        let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            &refunds[0],
+        );
+        // Bob sent the transaction; Alice owns the refund.
+        assert!(refund_bm == alice_bm_id, 3);
+        assert!(refund_order_id == alice_order_id, 4);
+        assert!(refund_amount == refund, 5);
+
+        // Only the retention is left, and no escrow is outstanding.
+        assert!(pool.locked_maker_fees() == 0, 6);
+        assert!(pool.quote_fee_reserve_balance() == alice_escrow - refund, 7);
+        assert!(pool.withdrawable_pool_fees() == alice_escrow - refund, 8);
+
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Alice withdraws the settled principal plus the refund.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.withdraw_settled_amounts(&mut bm, &proof, test.ctx());
+        return_shared(bm);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    let balance_after = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    // Expiring cost Alice exactly the retention a cancel would have.
+    let retained = alice_escrow - alice_escrow * 8000 / 10000;
+    assert!(balance_before - balance_after == retained, 9);
 
     unit_test::destroy(collection_cap);
     end(test);

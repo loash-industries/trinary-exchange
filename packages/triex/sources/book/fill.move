@@ -32,6 +32,9 @@ public struct Fill has copy, drop, store {
     maker_epoch: u64,
     // Maker fee rate snapshotted on the maker order at placement
     maker_fee_rate: u64,
+    // Cancel-retention rate snapshotted on the maker order at placement,
+    // applied when an expiry releases the escrow held against this fill
+    cancel_retention_bps: u64,
     // Taker fee paid for fill
     taker_fee: u64,
     // Maker fee paid for fill
@@ -83,6 +86,10 @@ public fun maker_fee_rate(self: &Fill): u64 {
     self.maker_fee_rate
 }
 
+public fun cancel_retention_bps(self: &Fill): u64 {
+    self.cancel_retention_bps
+}
+
 public fun taker_fee(self: &Fill): u64 {
     self.taker_fee
 }
@@ -104,6 +111,7 @@ public(package) fun new(
     taker_is_bid: bool,
     maker_epoch: u64,
     maker_fee_rate: u64,
+    cancel_retention_bps: u64,
 ): Fill {
     Fill {
         maker_order_id,
@@ -117,6 +125,7 @@ public(package) fun new(
         taker_is_bid,
         maker_epoch,
         maker_fee_rate,
+        cancel_retention_bps,
         taker_fee: 0,
         maker_fee: 0,
     }
@@ -141,17 +150,43 @@ public(package) fun maker_fee_charged(self: &Fill): u64 {
     }
 }
 
+/// The escrow an expiry hands back to a bid maker, and the share the protocol
+/// keeps, at the retention rate snapshotted on their order. An expiry is a
+/// cancellation the maker did not have to send, so it splits on the same
+/// terms — otherwise spam orders would dodge the retention by carrying a
+/// near-term `expire_timestamp` and never cancelling. Non-expired fills and
+/// ask makers release nothing here: the former earn their escrow out, the
+/// latter never locked any.
+public(package) fun maker_fee_refunded(self: &Fill): u64 {
+    let (refund, _retained) = self.expiry_fee_split();
+
+    refund
+}
+
+public(package) fun maker_fee_retained(self: &Fill): u64 {
+    let (_refund, retained) = self.expiry_fee_split();
+
+    retained
+}
+
+fun expiry_fee_split(self: &Fill): (u64, u64) {
+    if (!self.expired || self.taker_is_bid) return (0, 0);
+
+    quote_fee::split_released_fee(self.maker_fee_escrowed(), self.cancel_retention_bps)
+}
+
 /// Calculate the quantities to settle for the maker.
 /// Bid makers locked their fee in quote at placement, so their (base) fills
 /// settle without deductions. Ask makers lock nothing — their fee comes out
 /// of the quote proceeds here, at the rate recorded on the fill. Expired
-/// fills return principal untouched.
+/// fills return principal, plus the refundable share of the escrow held
+/// against it for a bid maker.
 public(package) fun get_settled_maker_quantities(self: &Fill): Balances {
     let (base, quote) = if (self.expired) {
         if (self.taker_is_bid) {
             (self.base_quantity, 0)
         } else {
-            (0, self.quote_quantity)
+            (0, self.quote_quantity + self.maker_fee_refunded())
         }
     } else {
         if (self.taker_is_bid) {

@@ -30,14 +30,21 @@ public struct Vault<phantom BaseAsset, phantom QuoteAsset> has store {
     cred_balance: Balance<CRED>,
     quote_fee_reserve: Balance<QuoteAsset>,
     /// The portion of `quote_fee_reserve` that is a bid maker's escrow rather
-    /// than earned revenue: locked when the order is placed, recognized as
-    /// earned as the order fills. Admin withdrawals are capped at the
-    /// unlocked remainder so a sweep can never spend an open order's escrow.
+    /// than earned revenue: locked when the order is placed, then drawn down
+    /// as the order resolves — recognized as revenue by fills and by the
+    /// retained share of a cancel, unlocked back to the maker by the refunded
+    /// share. Admin withdrawals are capped at the unlocked remainder so a
+    /// sweep can never spend an open order's escrow.
     ///
     /// Recognition floors per fill while the lock floors once over the whole
-    /// order, so a fully filled order can leave a few units still counted as
-    /// locked. That errs toward under-withdrawing, never toward spending
-    /// escrow, which is the safe direction for this counter.
+    /// order, so a resolved order can leave a few units still counted as
+    /// locked. This counter is pool-lifetime and only ever decrements, so
+    /// those residues accumulate: `withdrawable_quote_fees` drifts
+    /// permanently below the reserve, by at most one raw quote unit per
+    /// release, and nothing reconciles it. That errs toward under-withdrawing
+    /// rather than toward spending escrow, which is the safe direction here,
+    /// and it is deliberately left uncorrected — clearing it would need
+    /// per-order residue tracking the vault does not keep.
     locked_maker_fees: u64,
 }
 
@@ -97,6 +104,30 @@ public(package) fun emit_pool_fees_deposited<QuoteAsset>(
     });
 }
 
+#[test_only]
+/// Fields of a `PoolFeesRefunded` for tests asserting that a refund is
+/// attributable to the order and maker it belongs to.
+public fun refunded_event_parts(self: &PoolFeesRefunded): (u64, u64, ID) {
+    (self.order_id, self.amount, self.balance_manager_id)
+}
+
+public(package) fun emit_pool_fees_refunded<QuoteAsset>(
+    pool_id: ID,
+    order_id: u64,
+    amount: u64,
+    balance_manager_id: ID,
+    timestamp: u64,
+) {
+    event::emit(PoolFeesRefunded {
+        pool_id,
+        quote_type: type_name::with_defining_ids<QuoteAsset>(),
+        order_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    });
+}
+
 public(package) fun emit_pool_fees_withdrawn<QuoteAsset>(pool_id: ID, amount: u64, timestamp: u64) {
     event::emit(PoolFeesWithdrawn {
         pool_id,
@@ -110,6 +141,23 @@ public(package) fun emit_pool_fees_withdrawn<QuoteAsset>(pool_id: ID, amount: u6
 public struct PoolFeesDeposited has copy, drop {
     pool_id: ID,
     quote_type: TypeName,
+    amount: u64,
+    balance_manager_id: ID,
+    timestamp: u64,
+}
+
+/// Emitted when escrowed maker fees leave the reserve back to the maker on a
+/// cancel, modify-down or expiry. Carries the refunded amount only; the
+/// retained share stays in the reserve and is not re-emitted here.
+///
+/// `order_id` ties this to the `OrderCanceled`, `OrderModified` or
+/// `OrderExpired` emitted for the same release, which carry both halves of the
+/// split. One order can produce several of these across its life: a
+/// modify-down each time it is cut, then a final cancel or expiry.
+public struct PoolFeesRefunded has copy, drop {
+    pool_id: ID,
+    quote_type: TypeName,
+    order_id: u64,
     amount: u64,
     balance_manager_id: ID,
     timestamp: u64,
@@ -180,6 +228,38 @@ public(package) fun recognize_locked_maker_fees<BaseAsset, QuoteAsset>(
     amount: u64,
 ) {
     self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
+}
+
+/// Release bid-maker escrow back to the pool balance so it can settle out to
+/// the maker on a cancel, modify-down or expiry. The funds move
+/// `quote_fee_reserve` -> `quote_balance`, which is what makes the refund
+/// payable: settled quote comes from the pool balance, so crediting settled
+/// balances alone would pay the refund out of other users' principal.
+///
+/// Must run before `settle_balance_manager` for the same transaction. The
+/// reserve is guaranteed to cover this — `locked_maker_fees` never exceeds
+/// the reserve, and the amount released never exceeds what the order locked.
+public(package) fun unlock_quote_fees<BaseAsset, QuoteAsset>(
+    self: &mut Vault<BaseAsset, QuoteAsset>,
+    pool_id: ID,
+    order_id: u64,
+    balance_manager_id: ID,
+    amount: u64,
+    timestamp: u64,
+) {
+    if (amount == 0) return;
+    assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
+    let refund_balance = self.quote_fee_reserve.split(amount);
+    self.quote_balance.join(refund_balance);
+    // The refund leaves the reserve entirely, so it stops being escrow too.
+    self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
+    emit_pool_fees_refunded<QuoteAsset>(
+        pool_id,
+        order_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    );
 }
 
 public(package) fun empty<BaseAsset, QuoteAsset>(): Vault<BaseAsset, QuoteAsset> {

@@ -5,7 +5,7 @@
 module triexbook::vault_tests;
 
 use std::unit_test::destroy;
-use sui::{balance, test_scenario::{next_tx, begin, end}};
+use sui::{balance, object::id_from_address, test_scenario::{next_tx, begin, end}};
 use triexbook::{
     balance_manager::{Self, BalanceManager},
     balance_manager_tests::{USDC, SPAM, create_acct_and_share_with_funds},
@@ -605,4 +605,73 @@ fun test_fee_reserve_separate_from_quote_balance() {
     destroy(vault);
     destroy(balance_manager);
     test.end();
+}
+
+// === unlock_quote_fees ===
+// The refund primitive. Unlike recognition, this moves real funds out of the
+// reserve, so it has to keep the `reserve >= locked` invariant intact.
+
+#[test]
+fun test_unlock_quote_fees_moves_funds_and_clears_escrow() {
+    let mut test = begin(ALICE);
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    // A cancel releasing 1_000 of escrow refunds 800 of it.
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 800, 0);
+
+    // The refund left the reserve entirely — it is not revenue.
+    assert!(vault.quote_fee_reserve_balance() == 9_200);
+    assert!(vault.locked_maker_fees() == 3_200);
+    // Recognizing the retained 200 leaves the remaining 3_000 of escrow locked.
+    vault.recognize_locked_maker_fees(200);
+    assert!(vault.locked_maker_fees() == 3_000);
+    assert!(vault.withdrawable_quote_fees() == 6_200);
+
+    destroy(vault);
+    test.end();
+}
+
+#[test]
+fun test_unlock_quote_fees_zero_is_noop() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    // Ask cancels release nothing, so this is the common case.
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 0, 0);
+
+    assert!(vault.quote_fee_reserve_balance() == 10_000);
+    assert!(vault.locked_maker_fees() == 4_000);
+
+    destroy(vault);
+}
+
+#[test]
+fun test_unlock_preserves_reserve_covers_locked() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(5_000));
+    vault.lock_maker_fees_for_testing(5_000);
+
+    // Refunding the whole escrow drains exactly as much as it unlocks, so a
+    // fully-escrowed reserve stays solvent rather than going negative.
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 4_000, 0);
+    assert!(vault.quote_fee_reserve_balance() == 1_000);
+    assert!(vault.locked_maker_fees() == 1_000);
+    assert!(vault.withdrawable_quote_fees() == 0);
+
+    destroy(vault);
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EInsufficientFeeReserve)]
+fun test_unlock_more_than_reserve_e() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(1_000));
+    vault.lock_maker_fees_for_testing(1_000);
+
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 1_001, 0);
+
+    destroy(vault);
 }

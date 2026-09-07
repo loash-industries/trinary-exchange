@@ -11,7 +11,7 @@ use triexbook::trade_params;
 fun test_trade_params_basic() {
     let taker_fee = 22_000_000; // 2.2%
     let maker_fee = 18_000_000; // 1.8%
-    let params = trade_params::new(taker_fee, maker_fee);
+    let params = trade_params::new(taker_fee, maker_fee, 2000);
 
     assert_eq!(params.taker_fee(), taker_fee);
     assert_eq!(params.maker_fee(), maker_fee);
@@ -19,7 +19,7 @@ fun test_trade_params_basic() {
 
 #[test]
 fun test_trade_params_rates_independent() {
-    let params = trade_params::new(10_000_000, 0);
+    let params = trade_params::new(10_000_000, 0, 2000);
 
     assert_eq!(params.taker_fee(), 10_000_000);
     assert_eq!(params.maker_fee(), 0);
@@ -27,7 +27,7 @@ fun test_trade_params_rates_independent() {
 
 #[test]
 fun test_trade_params_copy_semantics() {
-    let params = trade_params::new(1_000_000, 500_000);
+    let params = trade_params::new(1_000_000, 500_000, 2000);
     let copied = params;
 
     assert_eq!(copied.taker_fee(), params.taker_fee());
