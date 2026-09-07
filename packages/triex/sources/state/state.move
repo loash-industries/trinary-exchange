@@ -76,10 +76,9 @@ public struct State has store {
 //     claim_amount: u64,
 // }
 
-public(package) fun empty(whitelisted: bool, stable_pool: bool, ctx: &mut TxContext): State {
+public(package) fun empty(whitelisted: bool, ctx: &mut TxContext): State {
     let governance = governance::empty(
         whitelisted,
-        stable_pool,
         ctx,
     );
     let trade_params = governance.trade_params();

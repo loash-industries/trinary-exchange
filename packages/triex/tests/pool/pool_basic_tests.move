@@ -341,14 +341,14 @@ fun place_cancel_whitelisted_pool_case() {
 }
 
 #[test_only]
-fun create_pool_case(whitelisted_pool: bool, stable_pool: bool) {
+fun create_pool_case(whitelisted_pool: bool) {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
     pool_test_utils::setup_pool_with_default_fees<SUI, CRED>(
         OWNER,
         registry_id,
         whitelisted_pool,
-        stable_pool,
+        false,
         &mut test,
     );
     end(test);
@@ -433,30 +433,6 @@ fun get_pool_id_by_asset_case() {
 }
 
 #[test_only]
-fun add_stablecoin<T>(sender: address, registry_id: ID, test: &mut Scenario) {
-    test.next_tx(sender);
-    let admin_cap = triexbook::registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    {
-        triexbook::registry::add_stablecoin<T>(&mut registry, &admin_cap);
-    };
-    return_shared(registry);
-    destroy(admin_cap);
-}
-
-#[test_only]
-fun remove_stablecoin<T>(sender: address, registry_id: ID, test: &mut Scenario) {
-    test.next_tx(sender);
-    let admin_cap = triexbook::registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    {
-        triexbook::registry::remove_stablecoin<T>(&mut registry, &admin_cap);
-    };
-    return_shared(registry);
-    destroy(admin_cap);
-}
-
-#[test_only]
 fun assert_pool_whitelisted<BaseAsset, QuoteAsset>(
     pool_id: ID,
     whitelisted: bool,
@@ -475,8 +451,6 @@ fun permissionless_pools_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
 
-    // Only 1 coin is stable
-    add_stablecoin<USDC>(OWNER, registry_id, &mut test);
     let pool_id_1 = pool_test_utils::setup_default_permissionless_pool<SUI, USDC>(
         OWNER,
         registry_id,
@@ -491,9 +465,8 @@ fun permissionless_pools_case() {
     );
     assert_pool_whitelisted<USDT, USDC>(pool_id_2, false, &mut test);
 
-    // Now both coins are stable
+    // Unregister and recreate the pool
     pool_test_utils::unregister_pool<USDT, USDC>(pool_id_2, registry_id, &mut test);
-    add_stablecoin<USDT>(OWNER, registry_id, &mut test);
     let pool_id_2 = pool_test_utils::setup_default_permissionless_pool<USDT, USDC>(
         OWNER,
         registry_id,
@@ -507,28 +480,6 @@ fun permissionless_pools_case() {
         &mut test,
     );
     assert_pool_whitelisted<CRED, USDC>(pool_id_3, false, &mut test);
-
-    end(test);
-}
-
-#[test_only]
-fun adding_duplicate_stablecoin_case() {
-    let mut test = begin(OWNER);
-    let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-
-    add_stablecoin<USDC>(OWNER, registry_id, &mut test);
-    add_stablecoin<USDC>(OWNER, registry_id, &mut test);
-
-    end(test);
-}
-
-#[test_only]
-fun removing_not_whitelisted_stablecoin_case() {
-    let mut test = begin(OWNER);
-    let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-
-    add_stablecoin<USDC>(OWNER, registry_id, &mut test);
-    remove_stablecoin<USDT>(OWNER, registry_id, &mut test);
 
     end(test);
 }
@@ -702,11 +653,6 @@ fun test_place_cancel_whitelisted_pool() {
     place_cancel_whitelisted_pool_case();
 }
 
-#[test, expected_failure(abort_code = ::triexbook::pool::EPoolCannotBeBothWhitelistedAndStable)]
-fun test_create_pool_e() {
-    create_pool_case(true, true);
-}
-
 #[test, expected_failure(abort_code = ::triexbook::pool::EQuoteNotApproved)]
 fun test_create_pool_unapproved_quote_e() {
     create_pool_unapproved_quote_case();
@@ -714,17 +660,12 @@ fun test_create_pool_unapproved_quote_e() {
 
 #[test]
 fun test_create_pool_1_ok() {
-    create_pool_case(false, true);
+    create_pool_case(false);
 }
 
 #[test]
 fun test_create_pool_2_ok() {
-    create_pool_case(true, false);
-}
-
-#[test]
-fun test_create_pool_3_ok() {
-    create_pool_case(false, false);
+    create_pool_case(true);
 }
 
 #[test]
@@ -745,16 +686,6 @@ fun test_get_pool_id_by_asset_ok() {
 #[test]
 fun test_permissionless_pools() {
     permissionless_pools_case();
-}
-
-#[test, expected_failure(abort_code = ::triexbook::registry::ECoinAlreadyWhitelisted)]
-fun test_adding_duplicate_stablecoin_e() {
-    adding_duplicate_stablecoin_case();
-}
-
-#[test, expected_failure(abort_code = ::triexbook::registry::ECoinNotWhitelisted)]
-fun test_removing_not_whitelisted_stablecoin_e() {
-    removing_not_whitelisted_stablecoin_case();
 }
 
 #[test, expected_failure(abort_code = ::triexbook::order_info::EInvalidOrderType)]

@@ -39,7 +39,6 @@ const EPackageVersionDisabled: u64 = 11;
 const EMinimumQuantityOutNotMet: u64 = 12;
 // const EInvalidStake: u64 = 13; // #feat:stake - DISABLED
 const EPoolNotRegistered: u64 = 14;
-const EPoolCannotBeBothWhitelistedAndStable: u64 = 15;
 // const EInvalidReferralMultiplier: u64 = 16;
 // const EInvalidEWMAAlpha: u64 = 17;
 // const EInvalidZScoreThreshold: u64 = 18;
@@ -123,16 +122,12 @@ public fun create_permissionless_pool<BaseAsset, QuoteAsset>(
     ctx: &mut TxContext,
 ): ID {
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
-    let base_type = type_name::with_defining_ids<BaseAsset>();
-    let quote_type = type_name::with_defining_ids<QuoteAsset>();
     let whitelisted_pool = false;
-    let stable_pool = registry.is_stablecoin(base_type) && registry.is_stablecoin(quote_type);
 
     create_pool<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }
@@ -886,7 +881,6 @@ public fun burn_cred<BaseAsset, QuoteAsset>(
 public fun create_pool_admin<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
     whitelisted_pool: bool,
-    stable_pool: bool,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
 ): ID {
@@ -895,7 +889,6 @@ public fun create_pool_admin<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }
@@ -1317,10 +1310,8 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
     creation_fee: Coin<CRED>,
     whitelisted_pool: bool,
-    stable_pool: bool,
     ctx: &mut TxContext,
 ): ID {
-    assert!(!(whitelisted_pool && stable_pool), EPoolCannotBeBothWhitelistedAndStable);
     assert!(
         type_name::with_defining_ids<BaseAsset>() != type_name::with_defining_ids<QuoteAsset>(),
         ESameBaseAndQuote,
@@ -1335,7 +1326,7 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
         allowed_versions: registry.allowed_versions(),
         pool_id: pool_id.to_inner(),
         book: book::empty(ctx),
-        state: state::empty(whitelisted_pool, stable_pool, ctx),
+        state: state::empty(whitelisted_pool, ctx),
         vault: vault::empty(),
         registered_pool: true,
     };

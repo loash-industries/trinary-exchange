@@ -38,7 +38,6 @@ const EInvalidOrderBalanceManager: u64 = 9;
 const EPackageVersionDisabled: u64 = 11;
 const EMinimumQuantityOutNotMet: u64 = 13;
 const EPoolNotRegistered: u64 = 14;
-const EPoolCannotBeBothWhitelistedAndStable: u64 = 15;
 const EQuoteNotApproved: u64 = 20;
 // qty × price (raw) would exceed u64::MAX — lower the quantity or price.
 
@@ -95,14 +94,12 @@ public fun create_permissionless_pool<QuoteAsset>(
 ): ID {
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
     let whitelisted_pool = false;
-    let stable_pool = false;
     create_pool<QuoteAsset>(
         registry,
         collection,
         asset_id,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }
@@ -116,11 +113,8 @@ public(package) fun create_pool<QuoteAsset>(
     asset_id: u64,
     creation_fee: Coin<CRED>,
     whitelisted_pool: bool,
-    stable_pool: bool,
     ctx: &mut TxContext,
 ): ID {
-    assert!(!(whitelisted_pool && stable_pool), EPoolCannotBeBothWhitelistedAndStable);
-
     // Derive collection_id from the on-chain Collection object — any collection is valid.
     let collection_id = object::id(collection);
 
@@ -136,7 +130,7 @@ public(package) fun create_pool<QuoteAsset>(
         asset_id,
         quote_type,
         book: book::empty_multicoin(ctx),
-        state: state::empty(whitelisted_pool, stable_pool, ctx),
+        state: state::empty(whitelisted_pool, ctx),
         vault: multicoin_vault::empty(collection_id, asset_id, ctx),
         registered_pool: true,
     };
@@ -176,7 +170,6 @@ public fun create_pool_admin<QuoteAsset>(
     collection: &Collection,
     asset_id: u64,
     whitelisted_pool: bool,
-    stable_pool: bool,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
 ): ID {
@@ -187,7 +180,6 @@ public fun create_pool_admin<QuoteAsset>(
         asset_id,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }

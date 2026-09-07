@@ -103,7 +103,6 @@ fun create_pool<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scen
     let pool_id = pool::create_pool_admin<SUI, QuoteAsset>(
         &mut registry,
         true, // whitelisted
-        false, // not stable
         &admin_cap,
         test.ctx(),
     );

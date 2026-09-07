@@ -116,7 +116,6 @@ fun create_pool_with_quote<QuoteAsset>(
         &collection,
         ASSET_GOLD,
         true, // whitelisted
-        false, // not stable
         &admin_cap,
         test.ctx(),
     );

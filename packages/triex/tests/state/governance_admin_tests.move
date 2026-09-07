@@ -14,8 +14,7 @@ fun default_rates_ok() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let gov = governance::empty(whitelisted, test.ctx());
 
     // Pool creation defaults: taker 2.2%, maker 1.8%
     assert!(gov.trade_params().taker_fee() == 22000000, 0);
@@ -28,12 +27,11 @@ fun default_rates_ok() {
 }
 
 #[test]
-fun admin_set_fee_volatile_ok() {
+fun admin_set_fee_ok() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Set new rates: taker 1%, maker 0.5%
     gov.set_next_trade_params(10000000, 5000000);
@@ -57,19 +55,18 @@ fun admin_set_fee_volatile_ok() {
 }
 
 #[test]
-fun admin_set_fee_stable_ok() {
+fun admin_set_fees_at_caps_ok() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = true;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Set new rates for stable pool (taker 0.05%, maker 0.03%)
-    gov.set_next_trade_params(50000, 30000);
+    // Both rates at their 5% caps — above the launch defaults
+    gov.set_next_trade_params(50000000, 50000000);
 
     let next_params = gov.next_trade_params();
-    assert!(next_params.taker_fee() == 50000, 0);
-    assert!(next_params.maker_fee() == 30000, 0);
+    assert!(next_params.taker_fee() == 50000000, 0);
+    assert!(next_params.maker_fee() == 50000000, 0);
 
     governance::destroy_for_testing(gov);
     end(test);
@@ -80,8 +77,7 @@ fun admin_set_maker_fee_zero_ok() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Maker rate has no floor: zero is allowed while the taker keeps its floor
     gov.set_next_trade_params(10000000, 0);
@@ -99,8 +95,7 @@ fun admin_set_taker_fee_not_multiple_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Taker fee not a multiple of FEE_MULTIPLE (1000)
     gov.set_next_trade_params(10001, 5000000);
@@ -113,8 +108,7 @@ fun admin_set_maker_fee_not_multiple_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Maker fee not a multiple of FEE_MULTIPLE (1000)
     gov.set_next_trade_params(10000000, 5000001);
@@ -123,85 +117,40 @@ fun admin_set_maker_fee_not_multiple_e() {
 }
 
 #[test, expected_failure(abort_code = governance::EInvalidTakerFee)]
-fun admin_set_fee_volatile_too_low_e() {
+fun admin_set_taker_fee_too_low_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Taker fee below MIN_TAKER_VOLATILE (100,000)
+    // Taker fee below MIN_TAKER_FEE (100,000)
     gov.set_next_trade_params(50000, 0);
 
     abort 1
 }
 
 #[test, expected_failure(abort_code = governance::EInvalidTakerFee)]
-fun admin_set_fee_volatile_too_high_e() {
+fun admin_set_taker_fee_too_high_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Taker fee above MAX_TAKER_VOLATILE (22,000,000 = 2.2%)
-    gov.set_next_trade_params(23000000, 5000000);
+    // Taker fee above MAX_TAKER_FEE (50,000,000 = 5%)
+    gov.set_next_trade_params(51000000, 5000000);
 
     abort 1
 }
 
 #[test, expected_failure(abort_code = governance::EInvalidMakerFee)]
-fun admin_set_maker_fee_volatile_too_high_e() {
+fun admin_set_maker_fee_too_high_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Maker fee above MAX_MAKER_VOLATILE (18,000,000 = 1.8%)
-    gov.set_next_trade_params(10000000, 19000000);
-
-    abort 1
-}
-
-#[test, expected_failure(abort_code = governance::EInvalidTakerFee)]
-fun admin_set_fee_stable_too_low_e() {
-    let mut test = begin(OWNER);
-
-    let whitelisted = false;
-    let stable_pool = true;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
-
-    // Taker fee below MIN_FEE_RATE_STABLE (10,000)
-    gov.set_next_trade_params(5000, 0);
-
-    abort 1
-}
-
-#[test, expected_failure(abort_code = governance::EInvalidTakerFee)]
-fun admin_set_fee_stable_too_high_e() {
-    let mut test = begin(OWNER);
-
-    let whitelisted = false;
-    let stable_pool = true;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
-
-    // Taker fee above MAX_FEE_RATE_STABLE (100,000)
-    gov.set_next_trade_params(150000, 50000);
-
-    abort 1
-}
-
-#[test, expected_failure(abort_code = governance::EInvalidMakerFee)]
-fun admin_set_maker_fee_stable_too_high_e() {
-    let mut test = begin(OWNER);
-
-    let whitelisted = false;
-    let stable_pool = true;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
-
-    // Maker fee above MAX_FEE_RATE_STABLE (100,000)
-    gov.set_next_trade_params(50000, 150000);
+    // Maker fee above MAX_MAKER_FEE (50,000,000 = 5%)
+    gov.set_next_trade_params(10000000, 51000000);
 
     abort 1
 }
@@ -211,8 +160,7 @@ fun admin_set_fee_whitelisted_e() {
     let mut test = begin(OWNER);
 
     let whitelisted = true;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Setting fees on a whitelisted pool should fail
     gov.set_next_trade_params(500000, 0);
@@ -225,8 +173,7 @@ fun admin_multiple_fee_changes_ok() {
     let mut test = begin(OWNER);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut gov = governance::empty(whitelisted, stable_pool, test.ctx());
+    let mut gov = governance::empty(whitelisted, test.ctx());
 
     // Change 1: taker 0.5%, maker 0.25%
     gov.set_next_trade_params(5000000, 2500000);

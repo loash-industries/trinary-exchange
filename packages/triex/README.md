@@ -39,7 +39,7 @@ Two shared objects sit alongside the pools:
 
 - **`Registry`** (`sources/registry.move`) — singleton created at publish
   time. Tracks all pools (preventing duplicates per asset pair), the treasury
-  address, allowed package versions, approved quote/stable coins, and the
+  address, allowed package versions, approved quote coins, and the
   `TriexbookAdminCap` capability that gates all admin functions.
 - **`BalanceManager`** (`sources/balance_manager.move`) — holds all of one
   account's balances (both regular coins and multicoin assets) and is passed

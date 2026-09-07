@@ -4838,7 +4838,7 @@ fun setup_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
     whitelisted_pool: bool,
-    stable_pool: bool,
+    _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     test.next_tx(sender);
@@ -4850,7 +4850,6 @@ fun setup_pool<BaseAsset, QuoteAsset>(
             pool::create_pool_admin<BaseAsset, QuoteAsset>(
                 &mut registry,
                 whitelisted_pool,
-                stable_pool,
                 &admin_cap,
                 test.ctx(),
             );

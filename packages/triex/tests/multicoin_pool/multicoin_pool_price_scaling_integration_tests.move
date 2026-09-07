@@ -549,7 +549,6 @@ fun test_trade_nft_for_100_billion_cred() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
@@ -701,7 +700,6 @@ fun test_fee_large_quote_no_u64_overflow() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
@@ -839,7 +837,6 @@ fun test_fee_truncation_floor_and_threshold() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
