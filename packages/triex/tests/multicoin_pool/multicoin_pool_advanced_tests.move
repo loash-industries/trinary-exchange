@@ -3288,7 +3288,7 @@ fun test_multicoin_fill_accrues_turnover_and_schedule_activates() {
         // The schedule promoted on this first action of the new epoch.
         assert!(pool.pool_fee_schedule().tier_count() == 2, 2);
         // Escrowed but unearned, so it is not yet turnover.
-        assert!(pool.account_fee_turnover(&bm) == 0, 3);
+        assert!(pool.account_fee_turnover(&bm, test.ctx()) == 0, 3);
 
         return_shared(bm);
         return_shared(clock);
@@ -3316,7 +3316,7 @@ fun test_multicoin_fill_accrues_turnover_and_schedule_activates() {
         );
 
         // Bob paid a taker fee out of proceeds, so he has turnover now.
-        assert!(pool.account_fee_turnover(&bm) > 0, 4);
+        assert!(pool.account_fee_turnover(&bm, test.ctx()) > 0, 4);
 
         return_shared(bm);
         return_shared(clock);
@@ -3329,7 +3329,7 @@ fun test_multicoin_fill_accrues_turnover_and_schedule_activates() {
         let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
 
         // Alice's escrow became revenue at fill, and counts from then.
-        assert!(pool.account_fee_turnover(&bm) == (alice_maker_fee as u128), 5);
+        assert!(pool.account_fee_turnover(&bm, test.ctx()) == (alice_maker_fee as u128), 5);
 
         return_shared(bm);
         return_shared(pool);

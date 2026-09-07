@@ -7443,8 +7443,8 @@ public(package) fun test_resting_bid_earns_no_tier_progress() {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
         assert!(pool.locked_maker_fees() > 0, 0);
-        assert_eq!(pool.account_fee_turnover(&balance_manager), 0);
-        assert_eq!(pool.account_fee_tier(&balance_manager), 0);
+        assert_eq!(pool.account_fee_turnover(&balance_manager, test.ctx()), 0);
+        assert_eq!(pool.account_fee_tier(&balance_manager, test.ctx()), 0);
         return_shared(balance_manager);
         return_shared(pool);
     };
@@ -7463,8 +7463,8 @@ public(package) fun test_resting_bid_earns_no_tier_progress() {
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
         pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
 
-        assert_eq!(pool.account_fee_turnover(&balance_manager), 0);
-        assert_eq!(pool.account_fee_tier(&balance_manager), 0);
+        assert_eq!(pool.account_fee_turnover(&balance_manager, test.ctx()), 0);
+        assert_eq!(pool.account_fee_tier(&balance_manager, test.ctx()), 0);
 
         return_shared(balance_manager);
         return_shared(clock);
@@ -7535,9 +7535,9 @@ public(package) fun test_fill_accrues_turnover_to_both_sides() {
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
 
         // Alice's escrow became revenue when the fill earned it out.
-        assert_eq!(pool.account_fee_turnover(&alice), expected_maker_fee as u128);
+        assert_eq!(pool.account_fee_turnover(&alice, test.ctx()), expected_maker_fee as u128);
         // Bob paid his taker fee out of proceeds.
-        assert_eq!(pool.account_fee_turnover(&bob), expected_taker_fee as u128);
+        assert_eq!(pool.account_fee_turnover(&bob, test.ctx()), expected_taker_fee as u128);
 
         return_shared(bob);
         return_shared(alice);
@@ -7594,10 +7594,10 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
-        let (taker, maker) = pool.trade_params_for_account(&bob);
+        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
         assert_eq!(taker, 22_000_000);
         assert_eq!(maker, 18_000_000);
-        assert_eq!(pool.account_fee_tier(&bob), 0);
+        assert_eq!(pool.account_fee_tier(&bob, test.ctx()), 0);
         return_shared(bob);
         return_shared(pool);
     };
@@ -7637,10 +7637,10 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
 
         // He was charged 4.4, not the discounted 2.2 — the crossing order paid
         // the old rate.
-        assert_eq!(pool.account_fee_turnover(&bob), (44 * constants::float_scaling() / 10) as u128);
+        assert_eq!(pool.account_fee_turnover(&bob, test.ctx()), (44 * constants::float_scaling() / 10) as u128);
         // And he is promoted for everything that follows.
-        assert_eq!(pool.account_fee_tier(&bob), 1);
-        let (taker, maker) = pool.trade_params_for_account(&bob);
+        assert_eq!(pool.account_fee_tier(&bob, test.ctx()), 1);
+        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
         assert_eq!(taker, 11_000_000);
         assert_eq!(maker, 9_000_000);
 
@@ -7754,6 +7754,728 @@ public(package) fun test_flat_fee_setter_keeps_schedule_in_lockstep() {
 
         return_shared(pool);
         destroy(admin_cap);
+    };
+
+    end(test);
+}
+
+/// Acceptance: turnover rolls off after the window, and an account dormant for
+/// a full window resolves back to the entry tier.
+public(package) fun test_turnover_ages_out_after_the_window() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        assert!(pool.account_fee_turnover(&alice, test.ctx()) > 0, 0);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    // Sit out exactly one full window.
+    let window = constants::turnover_window_epochs();
+    let mut i = 0;
+    while (i < window) {
+        test.next_epoch(OWNER);
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // Reported truthfully even though neither account has been touched
+        // since — the view resolves as of the current epoch, not last touch.
+        assert!(pool.account_fee_turnover(&alice, test.ctx()) == 0, 1);
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == 0, 2);
+        assert!(pool.account_fee_tier(&alice, test.ctx()) == 0, 3);
+
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// One epoch short of the window, the same fees still count. Pins the boundary
+/// from the other side so an off-by-one cannot pass both tests.
+public(package) fun test_turnover_survives_to_the_window_edge() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let expected_taker_fee = 44 * constants::float_scaling() / 10;
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    let window = constants::turnover_window_epochs();
+    let mut i = 0;
+    while (i < window - 1) {
+        test.next_epoch(OWNER);
+        i = i + 1;
+    };
+
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == expected_taker_fee as u128, 0);
+        return_shared(bob);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance: an order resting across a schedule change settles at the rate it
+/// was placed at, not the new one.
+public(package) fun test_resting_order_keeps_placement_rate_across_schedule_change() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    // 200 notional at the default 1.8% maker rate escrows 3.6.
+    let quantity = 100 * constants::float_scaling();
+    let placement_escrow = 36 * constants::float_scaling() / 10;
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            2 * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    // Admin halves the ladder out from under the resting order.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0],
+            vector[11_000_000],
+            vector[9_000_000],
+            2000,
+            &admin_cap,
+        );
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    // Cancelling releases the escrow the order actually holds, split at the
+    // retention rate it snapshotted — both from placement, not from the new
+    // schedule. At 0.9% the escrow would have been 1.8 and the retention 0.36.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        assert!(pool.locked_maker_fees() == placement_escrow, 0);
+
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+
+        let expected_retained = placement_escrow * 2000 / 10000;
+        assert!(pool.quote_fee_reserve_balance() == expected_retained, 1);
+        assert!(pool.locked_maker_fees() == 0, 2);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance: being promoted to a cheaper tier does not reprice an order the
+/// trader already has resting.
+public(package) fun test_resting_order_keeps_placement_rate_across_tier_promotion() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Any fill at all promotes to the cheaper rung.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0, 1],
+            vector[22_000_000, 11_000_000],
+            vector[18_000_000, 9_000_000],
+            2000,
+            &admin_cap,
+        );
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    // Alice rests a bid far below the market, escrowing at the entry rate:
+    // 1.8% of 100 notional = 1.8.
+    let quantity = 100 * constants::float_scaling();
+    let placement_escrow = 18 * constants::float_scaling() / 10;
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        1 * constants::float_scaling(),
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        assert!(pool.locked_maker_fees() == placement_escrow, 0);
+        assert!(pool.account_fee_tier(&alice, test.ctx()) == 0, 1);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    // Bob offers at 3; Alice crosses it as a taker and pays a fee, promoting
+    // herself. Her taker order fills completely, so it escrows nothing.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        3 * constants::float_scaling(),
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        3 * constants::float_scaling(),
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+
+        // She really was promoted, so the test is not vacuous...
+        assert!(pool.account_fee_tier(&alice, test.ctx()) == 1, 2);
+        let (taker, maker) = pool.trade_params_for_account(&alice, test.ctx());
+        assert!(taker == 11_000_000, 3);
+        assert!(maker == 9_000_000, 4);
+
+        // ...and her resting order still holds the escrow it was placed with.
+        // At the tier-1 rate it would be 0.9, half of this.
+        assert!(pool.locked_maker_fees() == placement_escrow, 5);
+
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// An expired maker order charges nothing, so it accrues nothing — the same
+/// rule as a cancel, reached down a different path.
+public(package) fun test_expired_bid_maker_accrues_no_turnover() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let expire_timestamp = get_time(&mut test) + 100;
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        expire_timestamp,
+        &mut test,
+    );
+
+    // Past the expiry, Bob's crossing ask meets the stale order: it expires out
+    // rather than filling.
+    set_time(200, &mut test);
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // Alice's order expired: no fee charged, so no progress — even though
+        // the protocol did keep the retention as revenue.
+        assert!(pool.account_fee_turnover(&alice, test.ctx()) == 0, 0);
+        // Bob matched nothing, so he paid no taker fee either.
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == 0, 1);
+
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Modifying an order down releases escrow on cancel terms, and like a cancel
+/// it buys nothing — otherwise modify-to-minimum would be the cheap ladder.
+public(package) fun test_modify_down_accrues_no_turnover() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let quantity = 100 * constants::float_scaling();
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            2 * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.modify_order(
+            &mut balance_manager,
+            &trade_proof,
+            order_id,
+            quantity / 10,
+            &clock,
+            test.ctx(),
+        );
+
+        assert!(pool.account_fee_turnover(&balance_manager, test.ctx()) == 0, 0);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// A partial fill accrues only what the filled portion actually earned; the
+/// escrow still resting behind it stays uncounted.
+public(package) fun test_partial_fill_accrues_only_the_filled_portion() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Bob takes 40 of the 100.
+    let filled = 40 * constants::float_scaling();
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        filled,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // 40 base at price 2 is 80 quote: maker 1.8% = 1.44, taker 2.2% = 1.76.
+        let earned_maker_fee = 144 * constants::float_scaling() / 100;
+        let taker_fee = 176 * constants::float_scaling() / 100;
+        assert!(pool.account_fee_turnover(&alice, test.ctx()) == earned_maker_fee as u128, 0);
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == taker_fee as u128, 1);
+
+        // The unfilled 60 is still escrowed and still uncounted.
+        assert!(pool.locked_maker_fees() > 0, 2);
+
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// One taker sweeping several makers credits each maker their own fee, and
+/// none of anyone else's.
+public(package) fun test_each_maker_accrues_only_their_own_fee() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let balance_manager_id_owner = create_acct_and_share_with_funds(
+        OWNER,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let alice_quantity = 100 * constants::float_scaling();
+    let owner_quantity = 50 * constants::float_scaling();
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        alice_quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        OWNER,
+        pool_id,
+        balance_manager_id_owner,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        owner_quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Bob sweeps both in one order.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        alice_quantity + owner_quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+        let owner = test.take_shared_by_id<BalanceManager>(balance_manager_id_owner);
+
+        // Alice made 200 quote at 1.8% = 3.6; the owner made 100 at 1.8% = 1.8.
+        let alice_fee = 36 * constants::float_scaling() / 10;
+        let owner_fee = 18 * constants::float_scaling() / 10;
+        assert!(pool.account_fee_turnover(&alice, test.ctx()) == alice_fee as u128, 0);
+        assert!(pool.account_fee_turnover(&owner, test.ctx()) == owner_fee as u128, 1);
+
+        // Bob paid 2.2% across the whole 300 quote he took: 6.6, which is the
+        // sum of neither maker's fee.
+        let bob_fee = 66 * constants::float_scaling() / 10;
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == bob_fee as u128, 2);
+
+        return_shared(owner);
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// An account with no row in the table resolves to the entry tier rather than
+/// aborting — the temporary balance manager behind a manager-less swap takes
+/// this path, and so does any UI querying before a trader's first trade.
+public(package) fun test_untouched_account_reports_entry_tier() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    // Bob has an account object but has never traded on this pool.
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0, 1],
+            vector[22_000_000, 11_000_000],
+            vector[18_000_000, 9_000_000],
+            2000,
+            &admin_cap,
+        );
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        assert!(pool.account_fee_turnover(&bob, test.ctx()) == 0, 0);
+        assert!(pool.account_fee_tier(&bob, test.ctx()) == 0, 1);
+        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
+        assert!(taker == 22_000_000, 2);
+        assert!(maker == 18_000_000, 3);
+
+        return_shared(bob);
+        return_shared(pool);
     };
 
     end(test);

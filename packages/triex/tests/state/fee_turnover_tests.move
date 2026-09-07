@@ -202,3 +202,175 @@ fun gap_shorter_than_the_window_evicts_only_what_aged_out() {
     assert_eq!(turnover.total(), 200);
     assert_invariant(&turnover);
 }
+
+// === Multi-bucket eviction and mixed sequences ===
+
+#[test]
+fun one_roll_evicts_every_bucket_that_aged_out() {
+    // Three consecutive epochs with fees, then a jump far enough that the first
+    // two fall out of the window but the third does not.
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+    turnover.record(10);
+    turnover.roll(1);
+    turnover.record(20);
+    turnover.roll(2);
+    turnover.record(30);
+    assert_eq!(turnover.total(), 60);
+
+    // At epoch window+1 the window covers epochs 2..=window+1, so epochs 0 and
+    // 1 are gone and only epoch 2's 30 survives.
+    turnover.roll(window + 1);
+
+    assert_eq!(turnover.total(), 30);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun eviction_walks_past_the_wrap_point() {
+    // The evicted buckets straddle index 0, so this fails if the ring arithmetic
+    // is off rather than merely the accounting.
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+
+    let mut epoch = 0;
+    while (epoch < window) {
+        if (epoch > 0) turnover.roll(epoch);
+        turnover.record(1);
+        epoch = epoch + 1;
+    };
+    assert_eq!(turnover.total(), window as u128);
+
+    // Advance five more epochs without recording: five oldest buckets age out.
+    turnover.roll(window + 4);
+
+    assert_eq!(turnover.total(), (window - 5) as u128);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun recording_after_dormancy_starts_from_zero() {
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+    turnover.record(9_999);
+
+    turnover.roll(window * 3);
+    turnover.record(7);
+
+    // The stale total is gone and only the fresh fee counts.
+    assert_eq!(turnover.total(), 7);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun many_records_within_one_epoch_accumulate() {
+    // An active trader touches the account many times per epoch; every credit
+    // must land in the same bucket rather than advancing the ring.
+    let mut turnover = fee_turnover::empty(3);
+    let mut i = 0;
+    while (i < 50) {
+        turnover.roll(3); // no-op, as it would be on every account touch
+        turnover.record(2);
+        i = i + 1;
+    };
+
+    assert_eq!(turnover.total(), 100);
+    assert_eq!(turnover.head(), 0);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun sparse_activity_across_a_long_span_keeps_only_the_window() {
+    // Record every fifth epoch for several windows' worth of time.
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+
+    let mut epoch = 0;
+    while (epoch <= window * 3) {
+        turnover.roll(epoch);
+        if (epoch % 5 == 0) turnover.record(100);
+        epoch = epoch + 1;
+    };
+
+    // In-window epochs are (window*3 - window, window*3] = (60, 90] for a
+    // 30-epoch window; the multiples of five in that half-open range are
+    // 65,70,75,80,85,90 — six of them.
+    assert_eq!(turnover.total(), 600);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun large_values_do_not_break_the_rolling_sum() {
+    // Buckets are u64 and the sum is u128, so a window full of very large
+    // epochs must still add up exactly.
+    let window = constants::turnover_window_epochs();
+    let big: u64 = 1_000_000_000_000_000_000;
+    let mut turnover = fee_turnover::empty(0);
+
+    let mut epoch = 0;
+    while (epoch < window) {
+        if (epoch > 0) turnover.roll(epoch);
+        turnover.record(big);
+        epoch = epoch + 1;
+    };
+
+    assert_eq!(turnover.total(), (big as u128) * (window as u128));
+    assert_invariant(&turnover);
+}
+
+// === total_at agrees with rolling ===
+
+#[test]
+fun total_at_matches_what_rolling_would_leave() {
+    // The read-only view and the mutating roll must never disagree, or a
+    // trader's displayed tier differs from the one they are charged at.
+    let window = constants::turnover_window_epochs();
+
+    let mut probe = 0;
+    while (probe <= window + 3) {
+        let mut rolled = fee_turnover::empty(0);
+        rolled.record(10);
+        rolled.roll(1);
+        rolled.record(20);
+        rolled.roll(2);
+        rolled.record(30);
+
+        let mut viewed = fee_turnover::empty(0);
+        viewed.record(10);
+        viewed.roll(1);
+        viewed.record(20);
+        viewed.roll(2);
+        viewed.record(30);
+
+        // `total_at` predicts, `roll` performs — compare them at every offset.
+        let predicted = viewed.total_at(probe);
+        rolled.roll(probe);
+        assert_eq!(predicted, rolled.total());
+
+        probe = probe + 1;
+    };
+}
+
+#[test]
+fun total_at_is_stable_for_the_current_and_past_epochs() {
+    let mut turnover = fee_turnover::empty(5);
+    turnover.record(100);
+
+    assert_eq!(turnover.total_at(5), 100);
+    // Reading "as of" an earlier epoch cannot invent history.
+    assert_eq!(turnover.total_at(4), 100);
+    assert_eq!(turnover.total_at(0), 100);
+}
+
+#[test]
+fun total_at_reports_zero_past_the_window_without_mutating() {
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+    turnover.record(5_000);
+
+    assert_eq!(turnover.total_at(window), 0);
+    // The view left the ring untouched — the stale sum is still there until a
+    // real roll happens on the next trade.
+    assert_eq!(turnover.total(), 5_000);
+    assert_eq!(turnover.anchor_epoch(), 0);
+}

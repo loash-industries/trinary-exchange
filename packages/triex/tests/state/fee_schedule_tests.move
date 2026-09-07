@@ -275,3 +275,95 @@ fun mismatched_maker_column_rejected() {
         18_000_000,
     ]);
 }
+
+// === Boundary cases ===
+
+#[test]
+fun equal_rates_across_tiers_validate() {
+    // Non-increasing, not strictly decreasing: a rung that raises the turnover
+    // requirement without cutting the rate is legal. Useful for staging a
+    // ladder before the discounts are decided.
+    fee_schedule::from_vectors(vector[0, 200_000_000, 1_000_000_000], vector[
+        22_000_000,
+        22_000_000,
+        19_000_000,
+    ], vector[18_000_000, 18_000_000, 18_000_000])
+        .validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+}
+
+#[test]
+fun exactly_max_tiers_validates() {
+    // 17 is rejected by `over_long_schedule_rejected`; the cap itself must be
+    // usable, or the bound is off by one.
+    let mut min_turnovers = vector[];
+    let mut taker_fees = vector[];
+    let mut maker_fees = vector[];
+    let mut i = 0;
+    while (i < 16) {
+        min_turnovers.push_back((i as u128) * 1_000_000);
+        taker_fees.push_back(22_000_000 - (i * FEE_MULTIPLE));
+        maker_fees.push_back(18_000_000 - (i * FEE_MULTIPLE));
+        i = i + 1;
+    };
+    let schedule = fee_schedule::from_vectors(min_turnovers, taker_fees, maker_fees);
+    schedule.validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+
+    assert_eq!(schedule.tier_count(), 16);
+    // And the last rung is still reachable.
+    let (tier, _taker, _maker) = schedule.resolve(15_000_000);
+    assert_eq!(tier, 15);
+}
+
+#[test]
+fun taker_rate_at_the_floor_validates() {
+    fee_schedule::from_vectors(vector[0], vector[MIN_TAKER], vector[0])
+        .validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+}
+
+#[test]
+fun taker_rate_at_the_cap_validates() {
+    fee_schedule::from_vectors(vector[0], vector[MAX_TAKER], vector[MAX_MAKER])
+        .validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+}
+
+#[test, expected_failure(abort_code = fee_schedule::EInvalidMakerFee)]
+fun maker_rate_above_cap_rejected() {
+    fee_schedule::from_vectors(vector[0], vector[22_000_000], vector[
+        MAX_MAKER + FEE_MULTIPLE,
+    ]).validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+}
+
+#[test]
+fun saturating_turnover_resolves_to_the_top_rung() {
+    // Turnover is u128 and the ring sums u64 buckets, so it cannot realistically
+    // reach this — but resolution must not walk off the end regardless.
+    let (tier, taker, maker) = launch_ladder().resolve(340282366920938463463374607431768211455);
+
+    assert_eq!(tier, 7);
+    assert_eq!(taker, 5_500_000);
+    assert_eq!(maker, 4_000_000);
+}
+
+#[test]
+fun a_threshold_above_any_reachable_turnover_is_simply_never_hit() {
+    let schedule = fee_schedule::from_vectors(
+        vector[0, 340282366920938463463374607431768211455],
+        vector[22_000_000, 100_000],
+        vector[18_000_000, 0],
+    );
+    schedule.validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+
+    let (tier, taker, _maker) = schedule.resolve(1_000_000_000_000_000);
+    assert_eq!(tier, 0);
+    assert_eq!(taker, 22_000_000);
+}
+
+#[test]
+fun single_tier_ladder_never_promotes() {
+    let schedule = fee_schedule::flat(22_000_000, 18_000_000);
+    let (tier, _taker, _maker) = schedule.resolve(
+        340282366920938463463374607431768211455,
+    );
+
+    assert_eq!(tier, 0);
+}

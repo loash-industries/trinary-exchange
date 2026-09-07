@@ -116,6 +116,11 @@ public(package) fun fee_turnover_total(self: &Account): u128 {
     self.fee_turnover.total()
 }
 
+/// Turnover as of `epoch`, for read-only callers that cannot roll first.
+public(package) fun fee_turnover_total_at(self: &Account, epoch: u64): u128 {
+    self.fee_turnover.total_at(epoch)
+}
+
 /// Update the account data for the new epoch.
 /// Returns the previous epoch, maker volume, and active stake.
 public(package) fun update(self: &mut Account, ctx: &TxContext): (u64, u128, u64) {

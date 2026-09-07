@@ -184,3 +184,48 @@ fun test_fee_schedule_activates_next_epoch() {
 fun test_flat_fee_setter_keeps_schedule_in_lockstep() {
     pool_test_utils::test_flat_fee_setter_keeps_schedule_in_lockstep();
 }
+
+#[test]
+fun test_turnover_ages_out_after_the_window() {
+    pool_test_utils::test_turnover_ages_out_after_the_window();
+}
+
+#[test]
+fun test_turnover_survives_to_the_window_edge() {
+    pool_test_utils::test_turnover_survives_to_the_window_edge();
+}
+
+#[test]
+fun test_resting_order_keeps_placement_rate_across_schedule_change() {
+    pool_test_utils::test_resting_order_keeps_placement_rate_across_schedule_change();
+}
+
+#[test]
+fun test_resting_order_keeps_placement_rate_across_tier_promotion() {
+    pool_test_utils::test_resting_order_keeps_placement_rate_across_tier_promotion();
+}
+
+#[test]
+fun test_expired_bid_maker_accrues_no_turnover() {
+    pool_test_utils::test_expired_bid_maker_accrues_no_turnover();
+}
+
+#[test]
+fun test_modify_down_accrues_no_turnover() {
+    pool_test_utils::test_modify_down_accrues_no_turnover();
+}
+
+#[test]
+fun test_partial_fill_accrues_only_the_filled_portion() {
+    pool_test_utils::test_partial_fill_accrues_only_the_filled_portion();
+}
+
+#[test]
+fun test_each_maker_accrues_only_their_own_fee() {
+    pool_test_utils::test_each_maker_accrues_only_their_own_fee();
+}
+
+#[test]
+fun test_untouched_account_reports_entry_tier() {
+    pool_test_utils::test_untouched_account_reports_entry_tier();
+}

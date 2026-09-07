@@ -1057,9 +1057,10 @@ public fun pool_fee_schedule_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>):
 public fun trade_params_for_account<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): (u64, u64) {
     let pool_inner = self.load_inner();
-    let turnover = pool_inner.state.account_fee_turnover(balance_manager.id());
+    let turnover = pool_inner.state.account_fee_turnover(balance_manager.id(), ctx);
     let (_tier, taker_fee, maker_fee) = pool_inner.state.fee_schedule().resolve(turnover);
 
     (taker_fee, maker_fee)
@@ -1069,10 +1070,11 @@ public fun trade_params_for_account<QuoteAsset>(
 public fun account_fee_tier<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): u64 {
     let pool_inner = self.load_inner();
 
-    pool_inner.state.account_fee_tier(balance_manager.id())
+    pool_inner.state.account_fee_tier(balance_manager.id(), ctx)
 }
 
 /// Fees this balance manager has paid across the trailing window — the metric
@@ -1080,10 +1082,11 @@ public fun account_fee_tier<QuoteAsset>(
 public fun account_fee_turnover<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): u128 {
     let pool_inner = self.load_inner();
 
-    pool_inner.state.account_fee_turnover(balance_manager.id())
+    pool_inner.state.account_fee_turnover(balance_manager.id(), ctx)
 }
 
 public fun account<QuoteAsset>(

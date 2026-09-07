@@ -211,20 +211,27 @@ public(package) fun resolve_trade_rates(
 }
 
 /// The tier index an account currently occupies, for events and views.
-public(package) fun account_fee_tier(self: &State, balance_manager_id: ID): u64 {
-    if (!self.accounts.contains(balance_manager_id)) return 0;
-
-    let turnover = self.accounts[balance_manager_id].fee_turnover_total();
+///
+/// Resolves against turnover as of the current epoch rather than as of the
+/// account's last touch, so a dormant account is not reported holding a tier
+/// that has already aged out from under it.
+public(package) fun account_fee_tier(self: &State, balance_manager_id: ID, ctx: &TxContext): u64 {
+    let turnover = self.account_fee_turnover(balance_manager_id, ctx);
     let (tier, _taker_fee, _maker_fee) = self.governance.fee_schedule().resolve(turnover);
 
     tier
 }
 
-/// Fees an account has paid across the trailing window.
-public(package) fun account_fee_turnover(self: &State, balance_manager_id: ID): u128 {
+/// Fees an account has paid across the trailing window, as of the current
+/// epoch. An account that has never traded has none.
+public(package) fun account_fee_turnover(
+    self: &State,
+    balance_manager_id: ID,
+    ctx: &TxContext,
+): u128 {
     if (!self.accounts.contains(balance_manager_id)) return 0;
 
-    self.accounts[balance_manager_id].fee_turnover_total()
+    self.accounts[balance_manager_id].fee_turnover_total_at(ctx.epoch())
 }
 
 public(package) fun process_create(

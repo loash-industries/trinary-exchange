@@ -33,9 +33,37 @@ public struct FeeTurnover has copy, drop, store {
 }
 
 // === Public-View Functions ===
-/// Fees this account has paid across the trailing window.
+/// Fees this account has paid across the trailing window, as of the last time
+/// the ring was rolled. Callers on the trade path roll first, so this is exact
+/// there; read-only callers should prefer `total_at`.
 public fun total(self: &FeeTurnover): u128 {
     self.rolling_sum
+}
+
+/// Fees in the trailing window as of `epoch`, without mutating.
+///
+/// Rolling is lazy, so a dormant account's `rolling_sum` still includes buckets
+/// that have since aged out. Views must not report that stale figure — a trader
+/// would see a tier they no longer have, and would be charged the real rate
+/// anyway once `roll` catches up on their next trade. This computes what `roll`
+/// would leave behind, and the two are asserted equal in tests.
+public fun total_at(self: &FeeTurnover, epoch: u64): u128 {
+    if (epoch <= self.anchor_epoch) return self.rolling_sum;
+
+    let window = constants::turnover_window_epochs();
+    let elapsed = epoch - self.anchor_epoch;
+    if (elapsed >= window) return 0;
+
+    let mut total = self.rolling_sum;
+    let mut head = self.head;
+    let mut rolled = 0;
+    while (rolled < elapsed) {
+        head = (head + 1) % window;
+        total = total - (self.buckets[head] as u128);
+        rolled = rolled + 1;
+    };
+
+    total
 }
 
 // === Public-Package Functions ===

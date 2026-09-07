@@ -1346,9 +1346,10 @@ public fun pool_fee_schedule_next<BaseAsset, QuoteAsset>(
 public fun trade_params_for_account<BaseAsset, QuoteAsset>(
     self: &Pool<BaseAsset, QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): (u64, u64) {
     let self = self.load_inner();
-    let turnover = self.state.account_fee_turnover(balance_manager.id());
+    let turnover = self.state.account_fee_turnover(balance_manager.id(), ctx);
     let (_tier, taker_fee, maker_fee) = self.state.fee_schedule().resolve(turnover);
 
     (taker_fee, maker_fee)
@@ -1358,10 +1359,11 @@ public fun trade_params_for_account<BaseAsset, QuoteAsset>(
 public fun account_fee_tier<BaseAsset, QuoteAsset>(
     self: &Pool<BaseAsset, QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): u64 {
     let self = self.load_inner();
 
-    self.state.account_fee_tier(balance_manager.id())
+    self.state.account_fee_tier(balance_manager.id(), ctx)
 }
 
 /// Fees this balance manager has paid across the trailing window — the metric
@@ -1369,10 +1371,11 @@ public fun account_fee_tier<BaseAsset, QuoteAsset>(
 public fun account_fee_turnover<BaseAsset, QuoteAsset>(
     self: &Pool<BaseAsset, QuoteAsset>,
     balance_manager: &BalanceManager,
+    ctx: &TxContext,
 ): u128 {
     let self = self.load_inner();
 
-    self.state.account_fee_turnover(balance_manager.id())
+    self.state.account_fee_turnover(balance_manager.id(), ctx)
 }
 
 public fun account<BaseAsset, QuoteAsset>(
