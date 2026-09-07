@@ -27,6 +27,23 @@ fun default_rates_ok() {
 }
 
 #[test]
+fun default_rates_multicoin_ok() {
+    let mut test = begin(OWNER);
+
+    let whitelisted = false;
+    let gov = governance::empty_multicoin(whitelisted, test.ctx());
+
+    // Multicoin pool creation defaults: taker 1.1%, maker 0.9%
+    assert!(gov.trade_params().taker_fee() == 11000000, 0);
+    assert!(gov.trade_params().maker_fee() == 9000000, 0);
+    assert!(gov.next_trade_params().taker_fee() == 11000000, 0);
+    assert!(gov.next_trade_params().maker_fee() == 9000000, 0);
+
+    governance::destroy_for_testing(gov);
+    end(test);
+}
+
+#[test]
 fun admin_set_fee_ok() {
     let mut test = begin(OWNER);
 

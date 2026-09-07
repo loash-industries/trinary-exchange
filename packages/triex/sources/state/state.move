@@ -77,10 +77,14 @@ public struct State has store {
 // }
 
 public(package) fun empty(whitelisted: bool, ctx: &mut TxContext): State {
-    let governance = governance::empty(
-        whitelisted,
-        ctx,
-    );
+    new_state(governance::empty(whitelisted, ctx), ctx)
+}
+
+public(package) fun empty_multicoin(whitelisted: bool, ctx: &mut TxContext): State {
+    new_state(governance::empty_multicoin(whitelisted, ctx), ctx)
+}
+
+fun new_state(governance: Governance, ctx: &mut TxContext): State {
     let trade_params = governance.trade_params();
     let history = history::empty(trade_params, ctx.epoch(), ctx);
 

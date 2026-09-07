@@ -48,7 +48,7 @@ const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
 // Pool governance default: 2% taker fee on bids
-const FEE_BPS: u64 = 220;
+const FEE_BPS: u64 = 110;
 const FEE_PRECISION: u64 = 10_000;
 
 // Large enough to cover the maximum test quote (100 × FLOAT_SCALING per item)
@@ -512,7 +512,7 @@ fun test_mq1_precision_floor_and_threshold() {
     // Mint enough NFTs for both fills (1 each)
     mint_and_deposit_nfts(alice_bm_id, 5, &collection_cap, &mut test);
 
-    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 200/10_000 = 0
+    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 110/10_000 = 0
     let price_low = 4 * 10u64;
     let (fees_low, reserve_low) = fill_and_get_fees<MQ1>(
         pool_id,
@@ -525,9 +525,9 @@ fun test_mq1_precision_floor_and_threshold() {
     assert!(fees_low == 0, 0);
     assert!(reserve_low == 0, 1);
 
-    // 5 raw Q1 per NFT: quote = 50, fee = 50 × 200/10_000 = 1 (first non-zero)
+    // 10 raw Q1 per NFT: quote = 100, fee = 100 × 110/10_000 = 1 (non-zero)
     // Same pool and BMs — reserve accumulates from both fills (0 + 1 = 1)
-    let price_threshold = 5 * 10u64;
+    let price_threshold = 10 * 10u64;
     let (fees_threshold, reserve_threshold) = fill_and_get_fees<MQ1>(
         pool_id,
         alice_bm_id,

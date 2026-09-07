@@ -32,6 +32,9 @@ const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
 const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
 
+const DEFAULT_TAKER_FEE_MULTICOIN: u64 = 11000000; // 110 basis points (1.1%)
+const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9000000; // 90 basis points (0.9%)
+
 // const MAX_PROPOSALS: u64 = 100; // #feat:gov - DISABLED
 // const VOTING_POWER_THRESHOLD: u64 = 100_000_000_000; // 100k cred // #feat:stake #feat:gov - DISABLED
 
@@ -75,12 +78,30 @@ public struct TradeParamsUpdateEvent has copy, drop {
 
 // === Public-Package Functions ===
 public(package) fun empty(whitelisted: bool, ctx: &TxContext): Governance {
+    new_governance(whitelisted, DEFAULT_TAKER_FEE, DEFAULT_MAKER_FEE, ctx)
+}
+
+public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governance {
+    new_governance(
+        whitelisted,
+        DEFAULT_TAKER_FEE_MULTICOIN,
+        DEFAULT_MAKER_FEE_MULTICOIN,
+        ctx,
+    )
+}
+
+fun new_governance(
+    whitelisted: bool,
+    taker_fee: u64,
+    maker_fee: u64,
+    ctx: &TxContext,
+): Governance {
     Governance {
         epoch: ctx.epoch(),
         whitelisted,
         // proposals: vec_map::empty(), // #feat:gov - DISABLED
-        trade_params: trade_params::new(DEFAULT_TAKER_FEE, DEFAULT_MAKER_FEE),
-        next_trade_params: trade_params::new(DEFAULT_TAKER_FEE, DEFAULT_MAKER_FEE),
+        trade_params: trade_params::new(taker_fee, maker_fee),
+        next_trade_params: trade_params::new(taker_fee, maker_fee),
         // voting_power: 0, // #feat:stake #feat:gov - DISABLED
         // quorum: 0, // #feat:gov - DISABLED
     }

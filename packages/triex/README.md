@@ -85,8 +85,9 @@ Pools support two fee modes:
   (`triexbook::quote_fee`), which the admin sweeps with
   `withdraw_pool_fees`.
 
-Trade parameters carry separate taker and maker rates (defaults 2.2% and
-1.8%) and are admin-set per epoch
+Trade parameters carry separate taker and maker rates (coin pools default to
+taker 2.2% / maker 1.8%; multicoin pools to taker 1.1% / maker 0.9%) and are
+admin-set per epoch
 (`set_next_epoch_fee(taker_fee, maker_fee)`); each order snapshots the maker
 rate at placement and settles against it for its lifetime. The original
 DeepBook stake/proposal/vote system, flash loans, and referral system are

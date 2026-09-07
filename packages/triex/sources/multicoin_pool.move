@@ -130,7 +130,7 @@ public(package) fun create_pool<QuoteAsset>(
         asset_id,
         quote_type,
         book: book::empty_multicoin(ctx),
-        state: state::empty(whitelisted_pool, ctx),
+        state: state::empty_multicoin(whitelisted_pool, ctx),
         vault: multicoin_vault::empty(collection_id, asset_id, ctx),
         registered_pool: true,
     };
