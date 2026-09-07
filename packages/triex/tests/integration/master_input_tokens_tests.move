@@ -46,7 +46,6 @@ fun test_master_input_tokens(error_code: u64) {
         utils::owner(),
         registry_id,
         false,
-        false,
         &mut test,
     );
     std::debug::print(&b"Pool1 created");
@@ -54,7 +53,6 @@ fun test_master_input_tokens(error_code: u64) {
     let pool2_id = pool_tests::setup_pool_with_default_fees<SPAM, USDC>(
         utils::owner(),
         registry_id,
-        false,
         false,
         &mut test,
     );

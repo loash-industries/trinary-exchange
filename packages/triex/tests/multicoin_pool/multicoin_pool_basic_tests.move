@@ -77,7 +77,6 @@ fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    whitelisted_pool: bool,
     stable_pool: bool,
     test: &mut Scenario,
 ): ID {
@@ -86,7 +85,6 @@ fun setup_multicoin_pool(
         registry_id,
         collection_id,
         asset_id,
-        whitelisted_pool,
         stable_pool,
         test,
     )
@@ -136,7 +134,6 @@ fun test_create_multicoin_pool_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true, // whitelisted
         false, // not stable
         &mut test,
     );
@@ -171,7 +168,6 @@ fun test_create_duplicate_multicoin_pool_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -182,7 +178,6 @@ fun test_create_duplicate_multicoin_pool_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -204,7 +199,6 @@ fun test_multicoin_pool_place_order_wrong_asset_id_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -278,7 +272,6 @@ fun test_multicoin_pool_place_limit_order_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -384,7 +377,6 @@ fun test_multicoin_pool_place_and_match_orders_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -546,7 +538,6 @@ fun test_multicoin_pool_cancel_order_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -607,7 +598,6 @@ fun test_multicoin_bid_with_quote_fees_updates_vault_reserve() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -717,7 +707,6 @@ fun test_multicoin_pool_mid_price_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );

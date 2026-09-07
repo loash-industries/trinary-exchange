@@ -159,12 +159,12 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 //     claim_amount: u64,
 // }
 
-public(package) fun empty(whitelisted: bool, ctx: &mut TxContext): State {
-    new_state(governance::empty(whitelisted, ctx), ctx)
+public(package) fun empty(ctx: &mut TxContext): State {
+    new_state(governance::empty(ctx), ctx)
 }
 
-public(package) fun empty_multicoin(whitelisted: bool, ctx: &mut TxContext): State {
-    new_state(governance::empty_multicoin(whitelisted, ctx), ctx)
+public(package) fun empty_multicoin(ctx: &mut TxContext): State {
+    new_state(governance::empty_multicoin(ctx), ctx)
 }
 
 fun new_state(governance: Governance, ctx: &mut TxContext): State {

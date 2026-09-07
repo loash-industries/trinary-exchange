@@ -2105,7 +2105,6 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     let reference_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        true,
         false,
         test,
     );
@@ -2154,7 +2153,6 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     let reference_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        true,
         false,
         test,
     );
@@ -2192,14 +2190,12 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     setup_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         stable_pool,
         test,
     )
@@ -2209,14 +2205,12 @@ public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     test: &mut Scenario,
 ): ID {
     let stable_pool = true;
     setup_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         stable_pool,
         test,
     )
@@ -2226,14 +2220,12 @@ public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees_return_fee<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     test: &mut Scenario,
 ): ID {
     let stable_pool = false;
     let pool_id = setup_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         stable_pool,
         test,
     );
@@ -2985,7 +2977,6 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
         OWNER,
         registry_id,
         false,
-        false,
         test,
     );
     let _reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
@@ -3050,7 +3041,6 @@ fun setup_pool_with_stable_fees_and_reference_pool<
     let target_pool_id = setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
         OWNER,
         registry_id,
-        false,
         test,
     );
     let _reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
@@ -4408,7 +4398,6 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees<SUI, USDC>(
         ALICE,
         registry_id,
-        false,
         false,
         &mut test,
     );
@@ -5961,7 +5950,6 @@ fun share_registry_for_testing(test: &mut Scenario): ID {
 fun setup_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
@@ -5973,7 +5961,6 @@ fun setup_pool<BaseAsset, QuoteAsset>(
         pool_id =
             pool::create_pool_admin<BaseAsset, QuoteAsset>(
                 &mut registry,
-                whitelisted_pool,
                 &admin_cap,
                 test.ctx(),
             );

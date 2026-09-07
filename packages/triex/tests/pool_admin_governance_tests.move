@@ -45,7 +45,6 @@ fun admin_changes_pool_fee_ok() {
         1 * constants::float_scaling(),
         1 * constants::float_scaling(),
         1,
-        false, // not whitelisted
         false, // not stable
         test.ctx(),
     );

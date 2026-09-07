@@ -69,14 +69,12 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         stable_pool,
         test,
     )
@@ -86,13 +84,11 @@ public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         test,
     )
 }
@@ -101,13 +97,11 @@ public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees_return_fee<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    whitelisted_pool: bool,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_pool_with_default_fees_return_fee<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        whitelisted_pool,
         test,
     )
 }

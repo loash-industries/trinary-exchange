@@ -181,7 +181,6 @@ fun update_pool_book_params_case() {
     let pool_id = pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        true,
         false,
         &mut test,
     );
@@ -236,14 +235,13 @@ fun update_pool_book_params_case() {
 }
 
 #[test_only]
-fun place_cancel_whitelisted_pool_case() {
+fun place_cancel_pool_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
 
     let pool_id = pool_test_utils::setup_pool_with_default_fees<SUI, CRED>(
         OWNER,
         registry_id,
-        true,
         false,
         &mut test,
     );
@@ -341,13 +339,12 @@ fun place_cancel_whitelisted_pool_case() {
 }
 
 #[test_only]
-fun create_pool_case(whitelisted_pool: bool) {
+fun create_pool_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
     pool_test_utils::setup_pool_with_default_fees<SUI, CRED>(
         OWNER,
         registry_id,
-        whitelisted_pool,
         false,
         &mut test,
     );
@@ -365,7 +362,6 @@ fun create_pool_unapproved_quote_case() {
         OWNER,
         registry_id,
         false,
-        false,
         &mut test,
     );
 
@@ -380,7 +376,6 @@ fun unregister_pool_case(unregister: bool) {
         OWNER,
         registry_id,
         false,
-        false,
         &mut test,
     );
 
@@ -391,7 +386,6 @@ fun unregister_pool_case(unregister: bool) {
     pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         false,
         &mut test,
     );
@@ -407,13 +401,11 @@ fun get_pool_id_by_asset_case() {
         OWNER,
         registry_id,
         false,
-        false,
         &mut test,
     );
     let pool_id_2 = pool_test_utils::setup_pool_with_default_fees<SPAM, USDC>(
         OWNER,
         registry_id,
-        false,
         false,
         &mut test,
     );
@@ -433,20 +425,6 @@ fun get_pool_id_by_asset_case() {
 }
 
 #[test_only]
-fun assert_pool_whitelisted<BaseAsset, QuoteAsset>(
-    pool_id: ID,
-    whitelisted: bool,
-    test: &mut Scenario,
-) {
-    test.next_tx(OWNER);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        assert!(pool.whitelisted() == whitelisted, 0);
-        return_shared(pool);
-    }
-}
-
-#[test_only]
 fun permissionless_pools_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
@@ -456,14 +434,12 @@ fun permissionless_pools_case() {
         registry_id,
         &mut test,
     );
-    assert_pool_whitelisted<SUI, USDC>(pool_id_1, false, &mut test);
 
     let pool_id_2 = pool_test_utils::setup_default_permissionless_pool<USDT, USDC>(
         OWNER,
         registry_id,
         &mut test,
     );
-    assert_pool_whitelisted<USDT, USDC>(pool_id_2, false, &mut test);
 
     // Unregister and recreate the pool
     pool_test_utils::unregister_pool<USDT, USDC>(pool_id_2, registry_id, &mut test);
@@ -472,16 +448,28 @@ fun permissionless_pools_case() {
         registry_id,
         &mut test,
     );
-    assert_pool_whitelisted<USDT, USDC>(pool_id_2, false, &mut test);
 
     let pool_id_3 = pool_test_utils::setup_default_permissionless_pool<CRED, USDC>(
         OWNER,
         registry_id,
         &mut test,
     );
-    assert_pool_whitelisted<CRED, USDC>(pool_id_3, false, &mut test);
+
+    assert_pool_registered<SUI, USDC>(pool_id_1, &mut test);
+    assert_pool_registered<USDT, USDC>(pool_id_2, &mut test);
+    assert_pool_registered<CRED, USDC>(pool_id_3, &mut test);
 
     end(test);
+}
+
+#[test_only]
+fun assert_pool_registered<BaseAsset, QuoteAsset>(pool_id: ID, test: &mut Scenario) {
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+        assert!(pool.registered_pool(), 0);
+        return_shared(pool);
+    }
 }
 
 #[test_only]
@@ -649,8 +637,8 @@ fun test_update_pool_book_params_ok() {
 }
 
 #[test]
-fun test_place_cancel_whitelisted_pool() {
-    place_cancel_whitelisted_pool_case();
+fun test_place_cancel_pool() {
+    place_cancel_pool_case();
 }
 
 #[test, expected_failure(abort_code = ::triexbook::pool::EQuoteNotApproved)]
@@ -659,13 +647,8 @@ fun test_create_pool_unapproved_quote_e() {
 }
 
 #[test]
-fun test_create_pool_1_ok() {
-    create_pool_case(false);
-}
-
-#[test]
-fun test_create_pool_2_ok() {
-    create_pool_case(true);
+fun test_create_pool_ok() {
+    create_pool_case();
 }
 
 #[test]

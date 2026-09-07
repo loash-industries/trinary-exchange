@@ -55,7 +55,6 @@ fun test_locked_balance(is_bid: bool) {
         utils::owner(),
         registry_id,
         false,
-        false,
         &mut test,
     );
 
@@ -207,7 +206,6 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         utils::owner(),
         registry_id,
-        false,
         false,
         &mut test,
     );

@@ -45,7 +45,6 @@ fun test_master_cred_price(error_code: u64) {
         utils::owner(),
         registry_id,
         false,
-        false,
         &mut test,
     );
 

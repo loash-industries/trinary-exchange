@@ -66,7 +66,6 @@ fun test_master(error_code: u64) {
         utils::owner(),
         registry_id,
         false,
-        false,
         &mut test,
     );
     if (error_code == EDuplicatePool) {
@@ -74,14 +73,12 @@ fun test_master(error_code: u64) {
             utils::owner(),
             registry_id,
             false,
-            false,
             &mut test,
         );
     };
     let pool2_id = pool_tests::setup_pool_with_default_fees<SPAM, USDC>(
         utils::owner(),
         registry_id,
-        false,
         false,
         &mut test,
     );

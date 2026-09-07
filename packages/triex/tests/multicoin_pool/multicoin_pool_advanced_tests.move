@@ -79,7 +79,6 @@ fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    whitelisted_pool: bool,
     stable_pool: bool,
     test: &mut Scenario,
 ): ID {
@@ -88,7 +87,6 @@ fun setup_multicoin_pool(
         registry_id,
         collection_id,
         asset_id,
-        whitelisted_pool,
         stable_pool,
         test,
     )
@@ -144,7 +142,6 @@ fun multicoin_partial_fill_maker_order(
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -311,7 +308,6 @@ fun multicoin_partially_filled_order_taken(is_bid: bool) {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -482,7 +478,6 @@ fun multicoin_test_crossing_multiple(is_bid: bool, num_orders: u64) {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -587,7 +582,7 @@ fun multicoin_test_swap_exact_not_fully_filled(
         &mut test,
     );
 
-    // Setup pool with CRED pricing (uses non-whitelisted pool with reference pool for CRED)
+    // Setup pool with CRED pricing (uses a reference pool for CRED)
     let (pool_id, _reference_pool_id) = setup_multicoin_pool_with_cred_pricing(
         OWNER,
         registry_id,
@@ -1028,7 +1023,6 @@ fun multicoin_test_place_order_edge_price(price: u64) {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -1095,7 +1089,6 @@ fun multicoin_test_modify_order(
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -1229,7 +1222,6 @@ fun test_multicoin_cancel_releases_bid_escrow() {
         collection_id,
         ASSET_GOLD,
         false,
-        false,
         &mut test,
     );
     let alice_bm_id = create_balance_manager_with_funds(
@@ -1307,7 +1299,6 @@ fun test_multicoin_cancel_refunds_escrow_to_maker() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         false,
         &mut test,
     );
@@ -1395,7 +1386,6 @@ fun test_multicoin_locked_fee_escrow_tracks_open_orders() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         false,
         &mut test,
     );
@@ -1503,13 +1493,12 @@ fun test_multicoin_bid_fee_reaches_reserve_when_settled_covers_owed() {
     let mut test = begin(OWNER);
 
     let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
-    // Not whitelisted, so the pool charges the default taker/maker fees
+    // The pool charges the default taker/maker fees
     let pool_id = setup_multicoin_pool(
         OWNER,
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         false,
         &mut test,
     );
@@ -1748,7 +1737,6 @@ fun test_multicoin_pool_cancel_all_orders_empty_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -1803,14 +1791,12 @@ fun test_create_multicoin_pool_stable_ok() {
         registry_id,
         collection_id,
         ASSET_SILVER,
-        false,
         true,
         &mut test,
     );
 
     test.next_tx(OWNER);
     let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-    assert!(!pool.whitelisted(), 0);
     assert!(pool.registered_pool(), 1);
     return_shared(pool);
 
@@ -1828,7 +1814,6 @@ fun test_multicoin_pool_stable_mid_price_empty_orderbook_e() {
         registry_id,
         collection_id,
         ASSET_SILVER,
-        false,
         true,
         &mut test,
     );
@@ -1855,7 +1840,6 @@ fun test_multicoin_pool_unregister_pool_admin_ok() {
         registry_id,
         collection_id,
         ASSET_IRON,
-        true,
         false,
         &mut test,
     );
@@ -1885,7 +1869,6 @@ fun test_multicoin_pool_unregister_pool_admin_twice_e() {
         registry_id,
         collection_id,
         ASSET_IRON,
-        true,
         false,
         &mut test,
     );
@@ -1980,7 +1963,6 @@ fun test_multicoin_unregister_pool_ok() {
         registry_id,
         collection_id,
         ASSET_IRON,
-        true,
         false,
         &mut test,
     );
@@ -2194,7 +2176,6 @@ fun test_multicoin_get_pool_id_by_asset_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -2203,7 +2184,6 @@ fun test_multicoin_get_pool_id_by_asset_ok() {
         registry_id,
         collection_id,
         ASSET_SILVER,
-        true,
         false,
         &mut test,
     );
@@ -2252,7 +2232,6 @@ fun test_multicoin_create_pool_unapproved_quote_e() {
         &mut registry,
         &collection,
         ASSET_GOLD,
-        true,
         &admin_cap,
         test.ctx(),
     );
@@ -2263,18 +2242,17 @@ fun test_multicoin_create_pool_unapproved_quote_e() {
 // === Whitelisted Pool Behavior Tests ===
 
 #[test]
-fun test_multicoin_place_cancel_whitelisted_pool() {
+fun test_multicoin_place_cancel_pool() {
     let mut test = begin(OWNER);
 
     let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Create a whitelisted multicoin pool with CRED as quote
+    // Create a multicoin pool with CRED as quote
     let pool_id = setup_multicoin_pool(
         OWNER,
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
         false,
         &mut test,
     );
@@ -2461,10 +2439,9 @@ fun test_multicoin_permissionless_pools() {
     return_shared(registry);
     return_shared(collection);
 
-    // Verify pool was created and is not whitelisted
+    // Verify pool was created and registered
     test.next_tx(OWNER);
     let pool_1 = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id_1);
-    assert!(!pool_1.whitelisted(), 0);
     assert!(pool_1.registered_pool(), 1);
     return_shared(pool_1);
 
@@ -2488,7 +2465,6 @@ fun test_multicoin_permissionless_pools() {
     // Verify second pool
     test.next_tx(OWNER);
     let pool_2 = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id_2);
-    assert!(!pool_2.whitelisted(), 2);
     assert!(pool_2.registered_pool(), 3);
     return_shared(pool_2);
 
@@ -2583,7 +2559,6 @@ fun multicoin_place_then_fill(
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false, // whitelisted_pool
         is_stable, // stable_pool
         &mut test,
     );
@@ -2740,7 +2715,6 @@ fun multicoin_place_then_fill_correct(is_bid: bool, order_type: u8, alice_quanti
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false, // whitelisted_pool
         false, // stable_pool
         &mut test,
     );
@@ -3125,7 +3099,6 @@ fun test_multicoin_expired_bid_maker_is_refunded() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         false,
         &mut test,
     );

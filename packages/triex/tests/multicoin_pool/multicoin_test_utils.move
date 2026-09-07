@@ -112,7 +112,6 @@ public fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    whitelisted_pool: bool,
     _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
@@ -125,7 +124,6 @@ public fun setup_multicoin_pool(
         &mut registry,
         &collection,
         asset_id,
-        whitelisted_pool,
         &admin_cap,
         test.ctx(),
     );
@@ -150,7 +148,6 @@ public fun setup_cred_usdc_reference_pool(
 
     let reference_pool_id = pool::create_pool_admin<USDC, CRED>(
         &mut registry,
-        true,
         &admin_cap,
         test.ctx(),
     );
@@ -234,7 +231,6 @@ public fun setup_multicoin_pool_with_cred_pricing(
         registry_id,
         collection_id,
         asset_id,
-        false,
         false,
         test,
     );

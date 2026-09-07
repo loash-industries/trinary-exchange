@@ -70,7 +70,6 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
         utils::owner(),
         registry_id,
         false,
-        false,
         &mut test,
     );
 
