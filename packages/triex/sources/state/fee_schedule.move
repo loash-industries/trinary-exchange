@@ -173,31 +173,3 @@ public(package) fun validate(
         i = i + 1;
     };
 }
-
-// === Test Functions ===
-#[test_only]
-public fun empty_schedule_error(): u64 { EEmptySchedule }
-
-#[test_only]
-public fun first_tier_not_zero_error(): u64 { EFirstTierNotZero }
-
-#[test_only]
-public fun thresholds_not_ascending_error(): u64 { EThresholdsNotAscending }
-
-#[test_only]
-public fun taker_rate_not_monotone_error(): u64 { ETakerRateNotMonotone }
-
-#[test_only]
-public fun maker_rate_not_monotone_error(): u64 { EMakerRateNotMonotone }
-
-#[test_only]
-public fun too_many_tiers_error(): u64 { ETooManyTiers }
-
-#[test_only]
-public fun invalid_taker_fee_error(): u64 { EInvalidTakerFee }
-
-#[test_only]
-public fun invalid_maker_fee_error(): u64 { EInvalidMakerFee }
-
-#[test_only]
-public fun vector_length_mismatch_error(): u64 { EVectorLengthMismatch }

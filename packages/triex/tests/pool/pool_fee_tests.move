@@ -157,3 +157,30 @@ fun test_zero_retention_refunds_the_whole_escrow() {
 fun test_refund_rounding_dust_favors_the_retention() {
     pool_test_utils::test_refund_rounding_dust_favors_the_retention();
 }
+
+// === Fee tiers (TRIEX-137) ===
+
+#[test]
+fun test_resting_bid_earns_no_tier_progress() {
+    pool_test_utils::test_resting_bid_earns_no_tier_progress();
+}
+
+#[test]
+fun test_fill_accrues_turnover_to_both_sides() {
+    pool_test_utils::test_fill_accrues_turnover_to_both_sides();
+}
+
+#[test]
+fun test_tier_discount_applies_from_the_next_order() {
+    pool_test_utils::test_tier_discount_applies_from_the_next_order();
+}
+
+#[test]
+fun test_fee_schedule_activates_next_epoch() {
+    pool_test_utils::test_fee_schedule_activates_next_epoch();
+}
+
+#[test]
+fun test_flat_fee_setter_keeps_schedule_in_lockstep() {
+    pool_test_utils::test_flat_fee_setter_keeps_schedule_in_lockstep();
+}

@@ -18,6 +18,7 @@ use triexbook::{
     balance_manager::{Self, BalanceManager, TradeProof, TradeCap, DepositCap, WithdrawCap},
     book::{Self, Book},
     constants,
+    fee_schedule::{Self, FeeSchedule},
     order::Order,
     order_info::{Self, OrderInfo},
     registry::{TriexbookAdminCap, Registry},
@@ -751,6 +752,26 @@ public fun set_next_epoch_fee<BaseAsset, QuoteAsset>(
     self.state.set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps);
 }
 
+/// Admin function to set the tier ladder for the next epoch.
+///
+/// Takes columns rather than tier structs because entry functions cannot accept
+/// Move structs as arguments. `fee_schedule::validate` rejects schedules that
+/// are empty, do not start at zero turnover, have non-ascending thresholds, or
+/// price more turnover higher on either side.
+/// #ref:functions
+public fun set_next_epoch_fee_schedule<BaseAsset, QuoteAsset>(
+    self: &mut Pool<BaseAsset, QuoteAsset>,
+    min_turnovers: vector<u128>,
+    taker_fees: vector<u64>,
+    maker_fees: vector<u64>,
+    cancel_retention_bps: u64,
+    _cap: &TriexbookAdminCap,
+) {
+    let schedule = fee_schedule::from_vectors(min_turnovers, taker_fees, maker_fees);
+    let self = self.load_inner_mut();
+    self.state.set_next_fee_schedule(schedule, cancel_retention_bps);
+}
+
 // #feat:flashloan - DISABLED
 // === Public-Mutative Functions * FLASHLOAN * ===
 // /// Borrow base assets from the Pool. A hot potato is returned,
@@ -1299,6 +1320,59 @@ public fun pool_trade_params_next<BaseAsset, QuoteAsset>(
     let trade_params = self.state.governance().next_trade_params();
 
     (trade_params.taker_fee(), trade_params.maker_fee())
+}
+
+/// Returns the pool's current tier ladder.
+public fun pool_fee_schedule<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+): FeeSchedule {
+    let self = self.load_inner();
+
+    *self.state.fee_schedule()
+}
+
+/// Returns the tier ladder taking effect next epoch.
+public fun pool_fee_schedule_next<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+): FeeSchedule {
+    let self = self.load_inner();
+
+    *self.state.next_fee_schedule()
+}
+
+/// Returns the (taker_fee, maker_fee) this balance manager currently trades at.
+/// `pool_trade_params` reports the entry rung, which is what an account with no
+/// turnover pays; this reports what *this* account pays.
+public fun trade_params_for_account<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+    balance_manager: &BalanceManager,
+): (u64, u64) {
+    let self = self.load_inner();
+    let turnover = self.state.account_fee_turnover(balance_manager.id());
+    let (_tier, taker_fee, maker_fee) = self.state.fee_schedule().resolve(turnover);
+
+    (taker_fee, maker_fee)
+}
+
+/// The tier index this balance manager currently occupies.
+public fun account_fee_tier<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+    balance_manager: &BalanceManager,
+): u64 {
+    let self = self.load_inner();
+
+    self.state.account_fee_tier(balance_manager.id())
+}
+
+/// Fees this balance manager has paid across the trailing window — the metric
+/// tiers resolve against.
+public fun account_fee_turnover<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+    balance_manager: &BalanceManager,
+): u128 {
+    let self = self.load_inner();
+
+    self.state.account_fee_turnover(balance_manager.id())
 }
 
 public fun account<BaseAsset, QuoteAsset>(

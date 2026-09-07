@@ -7398,3 +7398,363 @@ public(package) fun test_refund_rounding_dust_favors_the_retention() {
 
     end(test);
 }
+
+/// A resting order buys no tier progress, however large it is and however often
+/// it is cancelled. This is the constraint the whole fees-paid metric exists to
+/// satisfy: escrow is refundable until it trades, so counting it at placement
+/// would make place-and-cancel a free ladder.
+public(package) fun test_resting_bid_earns_no_tier_progress() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    // A bid this size escrows 3.6 in maker fees at placement.
+    let quantity = 100 * constants::float_scaling();
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            2 * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    // Escrowed, but not earned — so it counts for nothing.
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        assert!(pool.locked_maker_fees() > 0, 0);
+        assert_eq!(pool.account_fee_turnover(&balance_manager), 0);
+        assert_eq!(pool.account_fee_tier(&balance_manager), 0);
+        return_shared(balance_manager);
+        return_shared(pool);
+    };
+
+    // Cancelling refunds most of the escrow and retains the rest as revenue.
+    // Neither half is turnover: the refund was never earned, and retention is
+    // revenue but not trading, on the same reasoning `recognize_retention`
+    // already applies to volume.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+
+        assert_eq!(pool.account_fee_turnover(&balance_manager), 0);
+        assert_eq!(pool.account_fee_tier(&balance_manager), 0);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Fees that actually settle do count, on both sides of the fill.
+public(package) fun test_fill_accrues_turnover_to_both_sides() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 200 notional: maker 1.8% = 3.6, taker 2.2% = 4.4.
+    let expected_maker_fee = 36 * constants::float_scaling() / 10;
+    let expected_taker_fee = 44 * constants::float_scaling() / 10;
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Bob crosses it as an ask taker.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // Alice's escrow became revenue when the fill earned it out.
+        assert_eq!(pool.account_fee_turnover(&alice), expected_maker_fee as u128);
+        // Bob paid his taker fee out of proceeds.
+        assert_eq!(pool.account_fee_turnover(&bob), expected_taker_fee as u128);
+
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Crossing a threshold discounts the *next* order, never the one that crossed.
+public(package) fun test_tier_discount_applies_from_the_next_order() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Two rungs: 2.2%/1.8% until 4 of fees paid, then 1.1%/0.9%.
+    let threshold = 4 * constants::float_scaling();
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0, threshold as u128],
+            vector[22_000_000, 11_000_000],
+            vector[18_000_000, 9_000_000],
+            2000,
+            &admin_cap,
+        );
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+
+    // Bob starts on the entry rung.
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+        let (taker, maker) = pool.trade_params_for_account(&bob);
+        assert_eq!(taker, 22_000_000);
+        assert_eq!(maker, 18_000_000);
+        assert_eq!(pool.account_fee_tier(&bob), 0);
+        return_shared(bob);
+        return_shared(pool);
+    };
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Bob takes 200 notional at 2.2% = 4.4, which clears the threshold. The
+    // fee on this order is charged at the entry rate he held before it.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // He was charged 4.4, not the discounted 2.2 — the crossing order paid
+        // the old rate.
+        assert_eq!(pool.account_fee_turnover(&bob), (44 * constants::float_scaling() / 10) as u128);
+        // And he is promoted for everything that follows.
+        assert_eq!(pool.account_fee_tier(&bob), 1);
+        let (taker, maker) = pool.trade_params_for_account(&bob);
+        assert_eq!(taker, 11_000_000);
+        assert_eq!(maker, 9_000_000);
+
+        return_shared(bob);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// A schedule set by the admin takes effect at the epoch boundary, not
+/// immediately — the same pre-announced posture as `set_next_epoch_fee`.
+public(package) fun test_fee_schedule_activates_next_epoch() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0, 1_000_000_000],
+            vector[10_000_000, 5_000_000],
+            vector[8_000_000, 4_000_000],
+            2000,
+            &admin_cap,
+        );
+
+        // Queued, not live: the current ladder is still the single default rung.
+        assert_eq!(pool.pool_fee_schedule().tier_count(), 1);
+        assert_eq!(pool.pool_fee_schedule_next().tier_count(), 2);
+        let (taker, maker) = pool.pool_trade_params();
+        assert_eq!(taker, 22_000_000);
+        assert_eq!(maker, 18_000_000);
+        // TradeParams tracks the incoming entry rung, so the two never diverge.
+        let (next_taker, next_maker) = pool.pool_trade_params_next();
+        assert_eq!(next_taker, 10_000_000);
+        assert_eq!(next_maker, 8_000_000);
+
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    test.next_epoch(OWNER);
+
+    // The promotion is lazy, so it lands on the first action of the new epoch.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        2 * constants::float_scaling(),
+        100 * constants::float_scaling(),
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert_eq!(pool.pool_fee_schedule().tier_count(), 2);
+        let (taker, maker) = pool.pool_trade_params();
+        assert_eq!(taker, 10_000_000);
+        assert_eq!(maker, 8_000_000);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// A flat fee is a one-rung ladder, so the legacy setter and the schedule
+/// setter cannot drift apart.
+public(package) fun test_flat_fee_setter_keeps_schedule_in_lockstep() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
+
+        let next = pool.pool_fee_schedule_next();
+        assert_eq!(next.tier_count(), 1);
+        assert_eq!(next.base_taker_fee(), 10_000_000);
+        assert_eq!(next.base_maker_fee(), 5_000_000);
+
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    end(test);
+}

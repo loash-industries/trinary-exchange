@@ -3192,3 +3192,149 @@ fun test_multicoin_expired_bid_maker_is_refunded() {
     unit_test::destroy(collection_cap);
     end(test);
 }
+
+/// Multicoin parity (TRIEX-137): the tier ladder resolves through the shared
+/// `state` path, so a multicoin fill accrues turnover and a schedule set on a
+/// multicoin pool activates identically to a coin pool.
+#[test]
+fun test_multicoin_fill_accrues_turnover_and_schedule_activates() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        &mut test,
+    );
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+    let bob_bm_id = create_balance_manager_with_funds(
+        BOB,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Bob sells the multicoin base, so he needs some minted and deposited.
+    test.next_tx(OWNER);
+    {
+        let mut collection = test.take_shared<Collection>();
+        let gold = multicoin::mint_and_keep(
+            &collection_cap,
+            &mut collection,
+            ASSET_GOLD,
+            1_000_000 * constants::float_scaling(),
+            test.ctx(),
+        );
+        return_shared(collection);
+        transfer::public_transfer(gold, BOB);
+    };
+    test.next_tx(BOB);
+    {
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let gold = test.take_from_sender<multicoin::Balance>();
+        bm.deposit_multicoin(gold, test.ctx());
+        return_shared(bm);
+    };
+
+    // Two rungs on the multicoin defaults (1.1% / 0.9%).
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            vector[0, 1],
+            vector[11_000_000, 5_000_000],
+            vector[9_000_000, 4_000_000],
+            2000,
+            &admin_cap,
+        );
+        assert!(pool.pool_fee_schedule().tier_count() == 1, 0);
+        assert!(pool.pool_fee_schedule_next().tier_count() == 2, 1);
+        return_shared(pool);
+        unit_test::destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let price = 2 * constants::float_scaling();
+    let alice_maker_fee;
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        alice_maker_fee = order.maker_fees();
+
+        // The schedule promoted on this first action of the new epoch.
+        assert!(pool.pool_fee_schedule().tier_count() == 2, 2);
+        // Escrowed but unearned, so it is not yet turnover.
+        assert!(pool.account_fee_turnover(&bm) == 0, 3);
+
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Bob crosses as an ask taker, earning Alice's escrow out.
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        // Bob paid a taker fee out of proceeds, so he has turnover now.
+        assert!(pool.account_fee_turnover(&bm) > 0, 4);
+
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+
+        // Alice's escrow became revenue at fill, and counts from then.
+        assert!(pool.account_fee_turnover(&bm) == (alice_maker_fee as u128), 5);
+
+        return_shared(bm);
+        return_shared(pool);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
