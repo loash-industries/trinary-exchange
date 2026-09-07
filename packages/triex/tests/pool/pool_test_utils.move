@@ -761,15 +761,125 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
     end(test);
 }
 
-/// Characterization of a KNOWN GAP, kept until TRIEX-138 lands: the fee
-/// reserve does not yet distinguish earned fees from a bid maker's
-/// still-locked fee escrow, so the admin can sweep fees backing an open,
-/// unfilled order. Today that money is forfeited on cancel anyway, so no
-/// user claim exists on it — but TRIEX-138 makes it refundable, adds a
-/// locked_maker_fees counter, and caps withdrawals at
-/// reserve − locked_maker_fees. When that lands, this test must be
-/// replaced by its inverse (admin CANNOT withdraw locked fees).
-public(package) fun test_admin_can_sweep_locked_maker_fees_until_triex138() {
+/// Acceptance: `quote_fee_reserve >= locked_maker_fees` holds across a
+/// place -> partial fill -> cancel sequence, and the escrow is released to
+/// revenue exactly as the order resolves: filled portions earn out at fill,
+/// the cancelled remainder is forfeited (today's semantics — TRIEX-138's
+/// refund replaces the forfeit with an 80/20 split on this same amount).
+public(package) fun test_locked_fee_escrow_tracks_open_orders() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 200 quote notional: Alice escrows 1.8% = 3.6 at placement
+    let locked_maker_fee = 36 * constants::float_scaling() / 10;
+    // Bob fills half: 100 quote, earning out 1.8 of escrow and paying 2.2
+    let half_maker_fee = 18 * constants::float_scaling() / 10;
+    let half_taker_fee = 22 * constants::float_scaling() / 10;
+
+    let alice_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        alice_order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.quote_fee_reserve_balance() == locked_maker_fee, 0);
+        assert!(pool.locked_maker_fees() == locked_maker_fee, 1);
+        assert!(pool.withdrawable_pool_fees() == 0, 2);
+        return_shared(pool);
+    };
+
+    // Bob's ask takes half the bid.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity / 2,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let reserve = pool.quote_fee_reserve_balance();
+        assert!(reserve == locked_maker_fee + half_taker_fee, 3);
+        // Half the escrow earned out with the filled half
+        assert!(pool.locked_maker_fees() == half_maker_fee, 4);
+        assert!(pool.withdrawable_pool_fees() == reserve - half_maker_fee, 5);
+        assert!(reserve >= pool.locked_maker_fees(), 6);
+        return_shared(pool);
+    };
+
+    // Alice cancels the unfilled remainder; the escrow on it is forfeited, so
+    // no funds leave the reserve but it stops being a claim.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, alice_order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let reserve = pool.quote_fee_reserve_balance();
+        assert!(reserve == locked_maker_fee + half_taker_fee, 7);
+        assert!(pool.locked_maker_fees() == 0, 8);
+        assert!(pool.withdrawable_pool_fees() == reserve, 9);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance: the reserve distinguishes earned fees from a bid maker's
+/// still-locked escrow, and an admin sweep cannot reach the escrow backing an
+/// open, unfilled order. (Replaces the TRIEX-135-era characterization test
+/// that pinned the opposite behavior as a known gap.)
+public(package) fun test_admin_cannot_sweep_locked_maker_fees() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
     let balance_manager_id_alice = create_acct_and_share_with_funds(
@@ -809,11 +919,97 @@ public(package) fun test_admin_can_sweep_locked_maker_fees_until_triex138() {
         // The entire reserve is Alice's locked fee — her order is open with
         // zero fills, so none of it is earned yet.
         assert!(reserve == 36 * constants::float_scaling() / 10, 0);
+        assert!(pool.locked_maker_fees() == reserve, 1);
+        assert!(pool.withdrawable_pool_fees() == 0, 2);
 
-        // The sweep succeeds anyway: nothing tracks the locked portion.
+        // Sweeping it aborts: escrow is not revenue.
         let fee_coin = pool.withdraw_pool_fees(&admin_cap, reserve, &clock, test.ctx());
-        assert!(fee_coin.value() == reserve, 1);
-        assert!(pool.quote_fee_reserve_balance() == 0, 2);
+
+        destroy(fee_coin);
+        return_shared(clock);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    end(test);
+}
+
+/// Acceptance: once the bid maker's order fills, its escrow becomes earned
+/// revenue and the admin can sweep it.
+public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let locked_maker_fee = 36 * constants::float_scaling() / 10;
+    let taker_fee = 44 * constants::float_scaling() / 10;
+
+    // Alice rests a bid: 3.6 of escrow, nothing withdrawable yet.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.locked_maker_fees() == locked_maker_fee, 0);
+        assert!(pool.withdrawable_pool_fees() == 0, 1);
+        return_shared(pool);
+    };
+
+    // Bob's ask fills it, which earns the escrow out and adds his taker fee.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+
+        assert!(pool.locked_maker_fees() == 0, 2);
+        let reserve = pool.quote_fee_reserve_balance();
+        assert!(reserve == locked_maker_fee + taker_fee, 3);
+        assert!(pool.withdrawable_pool_fees() == reserve, 4);
+
+        let fee_coin = pool.withdraw_pool_fees(&admin_cap, reserve, &clock, test.ctx());
+        assert!(fee_coin.value() == reserve, 5);
+        assert!(pool.quote_fee_reserve_balance() == 0, 6);
 
         destroy(fee_coin);
         return_shared(clock);

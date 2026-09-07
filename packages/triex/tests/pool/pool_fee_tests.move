@@ -17,8 +17,19 @@ fun test_admin_withdraws_quote_fee_reserve() {
 }
 
 #[test]
-fun test_admin_can_sweep_locked_maker_fees_until_triex138() {
-    pool_test_utils::test_admin_can_sweep_locked_maker_fees_until_triex138();
+fun test_locked_fee_escrow_tracks_open_orders() {
+    pool_test_utils::test_locked_fee_escrow_tracks_open_orders();
+}
+
+#[test]
+#[expected_failure(abort_code = triexbook::vault::EFeesLocked)]
+fun test_admin_cannot_sweep_locked_maker_fees() {
+    pool_test_utils::test_admin_cannot_sweep_locked_maker_fees();
+}
+
+#[test]
+fun test_admin_can_sweep_maker_fees_once_filled() {
+    pool_test_utils::test_admin_can_sweep_maker_fees_once_filled();
 }
 
 #[test]

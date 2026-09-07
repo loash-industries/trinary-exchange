@@ -6,7 +6,8 @@ order costs nothing but gas.
 
 - **Ticket:** TRIEX-138
 - **Package:** `packages/triex` (`triexbook`)
-- **Status:** plan — not yet implemented
+- **Status:** in progress — step 1 (escrow tracking + withdrawal cap) implemented on
+  `triex-138-pr1-locked-fee-escrow`; steps 2–6 (the refund itself) still open
 - **Depends on:** dual-sided fees (for the ask-side half only)
 - **Release branch:** `cycle-7` — single publish together with TRIEX-135 and
   TRIEX-137 (decided 2026-09-06)
@@ -35,12 +36,12 @@ Three more gaps compound this:
 1. **Expiry loses the fee too** — an expired bid maker gets back only quote
    principal via `fill::get_settled_maker_quantities`; the locked fee is stranded
    identically.
-2. **Epoch accounting is wrong in the *other* direction than the ticket fears** —
-   `history::Volumes.total_fees_collected` only ever receives taker fees
-   (`paid_fees_balances()`); maker fees are *never* recorded, at placement or at
-   fill (`state::process_fills` hardcodes a zero fee). So "never added until the
-   fill happens" is half-true today: it's never added at all. `OrderFilled.maker_fee`
-   is always 0 as well.
+2. ~~**Epoch accounting is wrong in the *other* direction than the ticket fears**~~ —
+   *resolved by TRIEX-135:* maker fees are now recorded into
+   `total_fees_collected` at fill time on both sides, and `OrderFilled.maker_fee`
+   is truthful. The ticket's "never added until the fill happens" is exactly the
+   behavior that shipped, so §4 below is already satisfied for fill-time
+   recognition; only the cancel/expiry retention side remains.
 3. **Reserve solvency / admin race** — nothing distinguishes *earned* fees from
    *still-locked* fees in `quote_fee_reserve`. Admin can withdraw fees backing open
    orders; once refunds exist, that makes refunds abortable
@@ -85,23 +86,34 @@ Also worth noting:
 
 ## Plan
 
-### 1. Vault: fee unlock primitive + locked-fee tracking
+### 1. Vault: fee unlock primitive + locked-fee tracking — **done (PR1)**
 
-- Add `locked_maker_fees: u64` alongside `quote_fee_reserve` (or in `State`):
-  incremented on `QuoteFeeDeposit` by the maker portion, decremented on refund and
-  on fill-retention.
-- Add `unlock_quote_fees(amount)`:
-  `quote_balance.join(quote_fee_reserve.split(amount))`, emitting a
-  `PoolFeesRefunded` event.
-- Cap `withdraw_quote_fees` at `reserve − locked_maker_fees`.
-- Note: `QuoteFeeDeposit` currently bundles taker + maker fees into one amount;
-  split the two so only the maker part counts as "locked."
+- ✅ `locked_maker_fees: u64` added to both vaults alongside `quote_fee_reserve`,
+  incremented by the maker portion of `QuoteFeeDeposit` at placement and
+  decremented as the escrow resolves: `recognize_locked_maker_fees` is called on
+  bid-maker fills (`state::process_fills` reports the amount via `FeeFlows`) and
+  on cancel/modify-down (`process_cancel` / `process_modify` return the released
+  amount). Cancellation still *forfeits* — PR2 turns that same amount into the
+  80/20 refund split, so no accounting changes shape.
+- ✅ `withdraw_quote_fees` capped at `reserve − locked_maker_fees` (`EFeesLocked`),
+  exposed as `pool::locked_maker_fees` / `pool::withdrawable_pool_fees`. The
+  TRIEX-135 characterization test is replaced by its inverse.
+- ⏭️ `unlock_quote_fees(amount)` (`quote_balance.join(quote_fee_reserve.split(amount))`
+  + `PoolFeesRefunded`) deferred to PR2, where the refund path first needs it —
+  adding it in PR1 would have been dead code.
+- ~~Note: `QuoteFeeDeposit` bundles taker + maker fees into one amount~~ — already
+  split by TRIEX-135, so only the maker part is counted as locked.
+- **Rounding note:** the lock floors once over the whole order while recognition
+  floors per fill/cancel, so a resolved order can leave a few units still counted
+  as locked. That errs toward under-withdrawing rather than spending escrow, which
+  is the safe direction; PR2's refund inherits the same bias.
 
 ### 2. Refund computation
 
-- Make `calculate_cancel_refund` use the fee rate: locked-fee basis =
-  `floor(qty_to_quote(cancel_quantity) × historic_bps)` for bids, using the exact
-  same `scaled_to_bps` + floor path as lock time; refund =
+- Make `calculate_cancel_refund` use the fee rate. The basis is already computed by
+  `order::locked_fee_released` (added in PR1, used there to report the forfeited
+  amount) via `quote_fee::fee_from_scaled_rate` — the same helper lock time uses,
+  since TRIEX-135's follow-up fix retired the `scaled_to_bps` truncation; refund =
   `floor(basis × (10000 − cancel_retention_bps) / 10000)`; retained =
   `basis − refund` stays in the reserve as earned revenue (partial fills and
   modify-down get pro-rata treatment automatically, since `cancel_quantity` is

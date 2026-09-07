@@ -17,6 +17,7 @@ const EInsufficientBaseBalance: u64 = 1;
 const EInsufficientQuoteBalance: u64 = 2;
 const EInsufficientCredBalance: u64 = 3;
 const EInsufficientFeeReserve: u64 = 5;
+const EFeesLocked: u64 = 6;
 const ENoBalanceToSettle: u64 = 7;
 const EHasOwedBalances: u64 = 8;
 
@@ -44,6 +45,16 @@ public struct MultiCoinVault<phantom QuoteAsset> has key, store {
     cred_balance: Balance<CRED>,
     /// Quote fee reserve (quote-denominated fees collected during settlement)
     quote_fee_reserve: Balance<QuoteAsset>,
+    /// The portion of `quote_fee_reserve` that is a bid maker's escrow rather
+    /// than earned revenue: locked when the order is placed, recognized as
+    /// earned as the order fills. Admin withdrawals are capped at the
+    /// unlocked remainder so a sweep can never spend an open order's escrow.
+    ///
+    /// Recognition floors per fill while the lock floors once over the whole
+    /// order, so a fully filled order can leave a few units still counted as
+    /// locked. That errs toward under-withdrawing, never toward spending
+    /// escrow, which is the safe direction for this counter.
+    locked_maker_fees: u64,
 }
 
 // === Public-Package Functions ===
@@ -61,6 +72,7 @@ public(package) fun empty<QuoteAsset>(
         quote_balance: balance::zero(),
         cred_balance: balance::zero(),
         quote_fee_reserve: balance::zero(),
+        locked_maker_fees: 0,
     };
 
     // Initialize with a zero MultiCoin balance
@@ -83,6 +95,25 @@ public(package) fun balances<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): (u6
 
 public(package) fun quote_fee_reserve_balance<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64 {
     self.quote_fee_reserve.value()
+}
+
+/// Bid-maker escrow currently held in the reserve, not yet earned.
+public(package) fun locked_maker_fees<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64 {
+    self.locked_maker_fees
+}
+
+/// Earned revenue in the reserve: what an admin sweep may take.
+public(package) fun withdrawable_quote_fees<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64 {
+    self.quote_fee_reserve.value() - self.locked_maker_fees
+}
+
+/// Recognize bid-maker escrow as earned revenue once the order fills. The
+/// funds are already in the reserve; only their classification changes.
+public(package) fun recognize_locked_maker_fees<QuoteAsset>(
+    self: &mut MultiCoinVault<QuoteAsset>,
+    amount: u64,
+) {
+    self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
 }
 
 /// Returns the collection_id this vault is associated with.
@@ -174,6 +205,9 @@ public(package) fun settle_balance_manager<QuoteAsset>(
             taker_fee_amount + maker_fee_amount,
             timestamp,
         );
+        // Only the maker portion is escrow; the taker fee is earned on
+        // execution and immediately sweepable.
+        self.locked_maker_fees = self.locked_maker_fees + maker_fee_amount;
     } else {
         option::destroy_none(quote_fee_deposit);
     };
@@ -314,6 +348,8 @@ public(package) fun withdraw_quote_fees<QuoteAsset>(
     ctx: &mut TxContext,
 ): Coin<QuoteAsset> {
     assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
+    // Escrow backing open bid orders is not revenue and cannot be swept.
+    assert!(amount <= self.withdrawable_quote_fees(), EFeesLocked);
     let fee_balance = self.quote_fee_reserve.split(amount);
     coin::from_balance(fee_balance, ctx)
 }
