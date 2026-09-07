@@ -104,8 +104,16 @@ public(package) fun emit_pool_fees_deposited<QuoteAsset>(
     });
 }
 
+#[test_only]
+/// Fields of a `PoolFeesRefunded` for tests asserting that a refund is
+/// attributable to the order and maker it belongs to.
+public fun refunded_event_parts(self: &PoolFeesRefunded): (u64, u64, ID) {
+    (self.order_id, self.amount, self.balance_manager_id)
+}
+
 public(package) fun emit_pool_fees_refunded<QuoteAsset>(
     pool_id: ID,
+    order_id: u64,
     amount: u64,
     balance_manager_id: ID,
     timestamp: u64,
@@ -113,6 +121,7 @@ public(package) fun emit_pool_fees_refunded<QuoteAsset>(
     event::emit(PoolFeesRefunded {
         pool_id,
         quote_type: type_name::with_defining_ids<QuoteAsset>(),
+        order_id,
         amount,
         balance_manager_id,
         timestamp,
@@ -140,9 +149,15 @@ public struct PoolFeesDeposited has copy, drop {
 /// Emitted when escrowed maker fees leave the reserve back to the maker on a
 /// cancel, modify-down or expiry. Carries the refunded amount only; the
 /// retained share stays in the reserve and is not re-emitted here.
+///
+/// `order_id` ties this to the `OrderCanceled`, `OrderModified` or
+/// `OrderExpired` emitted for the same release, which carry both halves of the
+/// split. One order can produce several of these across its life: a
+/// modify-down each time it is cut, then a final cancel or expiry.
 public struct PoolFeesRefunded has copy, drop {
     pool_id: ID,
     quote_type: TypeName,
+    order_id: u64,
     amount: u64,
     balance_manager_id: ID,
     timestamp: u64,
@@ -227,6 +242,7 @@ public(package) fun recognize_locked_maker_fees<BaseAsset, QuoteAsset>(
 public(package) fun unlock_quote_fees<BaseAsset, QuoteAsset>(
     self: &mut Vault<BaseAsset, QuoteAsset>,
     pool_id: ID,
+    order_id: u64,
     balance_manager_id: ID,
     amount: u64,
     timestamp: u64,
@@ -237,7 +253,13 @@ public(package) fun unlock_quote_fees<BaseAsset, QuoteAsset>(
     self.quote_balance.join(refund_balance);
     // The refund leaves the reserve entirely, so it stops being escrow too.
     self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
-    emit_pool_fees_refunded<QuoteAsset>(pool_id, amount, balance_manager_id, timestamp);
+    emit_pool_fees_refunded<QuoteAsset>(
+        pool_id,
+        order_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    );
 }
 
 public(package) fun empty<BaseAsset, QuoteAsset>(): Vault<BaseAsset, QuoteAsset> {

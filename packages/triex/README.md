@@ -96,7 +96,10 @@ snapshots the maker rate and the retention rate at placement and settles
 against them for its lifetime. Cancelling, modifying down or expiring a
 resting bid refunds `10000 - cancel_retention_bps` of the escrow on the
 released quantity (default 80%) and keeps the rest as revenue, so an
-unexecuted order costs only the retention plus gas. Fees are charged
+unexecuted order costs only the retention plus gas. `OrderCanceled`,
+`OrderModified` and `OrderExpired` carry both halves of that split, and the
+vault's `PoolFeesRefunded` carries the same `order_id`, so a refund is always
+attributable to the order and the maker it belongs to. Fees are charged
 on both sides of a trade, always denominated in quote: bid takers pay on top
 of the quote they owe and bid makers lock their fee at placement, while ask
 takers and ask makers have theirs deducted from the quote proceeds at fill

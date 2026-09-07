@@ -151,19 +151,27 @@ Also worth noting:
   fees do. Otherwise cancel churn buys fee-tier progress at 20¢ on the dollar.
 - Taker fees stay as-is.
 
-### 5. Events — **done (PR2), partially**
+### 5. Events — **done (PR2)**
 
-- Add the refund amount to cancel/modify events.
+- Add the refund amount to cancel/modify events. ✅
 - Caveat: Sui package upgrades can't change existing struct layouts, so this
   likely means `OrderCanceledV2`-style events (or relying on the new
   `PoolFeesRefunded` event alone to avoid V2 events for now — the indexer gets the
   data either way).
-- **Decided (PR2): `PoolFeesRefunded` only.** `OrderCanceled` / `OrderModified`
-  keep their current layouts, so no V2 events and no indexer migration. The
-  refund is emitted from the vault with the pool id, balance manager id and
-  amount, which is what an indexer needs to attribute it; the retained share is
-  derivable from the order's snapshotted rates. Revisit if the indexer turns out
-  to need refund and cancel in a single event.
+- **Decided (PR2): refund and cancellation events are explicitly associated.**
+  `OrderCanceled`, `OrderModified` and `OrderExpired` each gain `fee_refunded`
+  and `fee_retained`, so the whole outcome of a release reads off one event, and
+  `PoolFeesRefunded` gains `order_id` so the vault-side movement joins back to
+  it. Both halves are reported because only the refunded half moves funds — the
+  retained half stays in the reserve and the vault has nothing to emit for it.
+  Layout changes are fine on the cycle-7 fresh publish; an in-place upgrade
+  would have needed V2 events instead.
+- Restructuring `FeeFlows.refunded` into a per-maker `vector<RefundedFee>` was
+  required for this: a single match can expire several makers' orders, and the
+  aggregate unlock attributed every refund to the *taker's* balance manager.
+  The funds movement was correct (the vault nets at pool level), but the event
+  named the wrong account. Regression-tested by
+  `test_expiry_refund_event_attributes_the_maker`.
 
 ### 6. Mirror in multicoin — **done (PR2)**
 

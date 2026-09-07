@@ -37,6 +37,12 @@ public struct Order has drop, store {
 }
 
 /// Emitted when a maker order is canceled.
+///
+/// `fee_refunded` / `fee_retained` are the two halves of the maker fee escrow
+/// this cancellation released, so an indexer reads the whole outcome off one
+/// event. The refund also surfaces as a `PoolFeesRefunded` carrying this same
+/// `order_id`, which is where the vault-side movement is recorded. Both are
+/// zero for asks, which never escrow a fee.
 public struct OrderCanceled has copy, drop, store {
     balance_manager_id: ID,
     pool_id: ID,
@@ -46,10 +52,14 @@ public struct OrderCanceled has copy, drop, store {
     is_bid: bool,
     original_quantity: u64,
     base_asset_quantity_canceled: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 }
 
-/// Emitted when a maker order is modified.
+/// Emitted when a maker order is modified. A modify-down releases escrow on
+/// the quantity removed, split on the same terms as a cancel; see
+/// `OrderCanceled` for how the two halves relate to `PoolFeesRefunded`.
 public struct OrderModified has copy, drop, store {
     balance_manager_id: ID,
     pool_id: ID,
@@ -60,6 +70,8 @@ public struct OrderModified has copy, drop, store {
     previous_quantity: u64,
     filled_quantity: u64,
     new_quantity: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 }
 
@@ -294,10 +306,19 @@ public(package) fun locked_balance(self: &Order, maker_fee: u64, price_scaling: 
     }
 }
 
+#[test_only]
+/// Fields of an `OrderCanceled` for tests asserting the fee split reported on
+/// the cancellation matches the refund the vault emitted.
+public fun canceled_event_parts(self: &OrderCanceled): (u64, u64, u64) {
+    (self.order_id, self.fee_refunded, self.fee_retained)
+}
+
 public(package) fun emit_order_canceled(
     self: &Order,
     pool_id: ID,
     trader: address,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     let is_bid = self.is_bid();
@@ -311,6 +332,8 @@ public(package) fun emit_order_canceled(
         trader,
         original_quantity: self.quantity,
         base_asset_quantity_canceled: remaining_quantity,
+        fee_refunded,
+        fee_retained,
         timestamp,
         price,
     });
@@ -321,6 +344,8 @@ public(package) fun emit_order_modified(
     pool_id: ID,
     previous_quantity: u64,
     trader: address,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     let is_bid = self.is_bid();
@@ -335,6 +360,8 @@ public(package) fun emit_order_modified(
         previous_quantity,
         filled_quantity: self.filled_quantity,
         new_quantity: self.quantity,
+        fee_refunded,
+        fee_retained,
         timestamp,
     });
 }
@@ -348,6 +375,8 @@ public(package) fun emit_cancel_maker(
     is_bid: bool,
     original_quantity: u64,
     base_asset_quantity_canceled: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
 ) {
     event::emit(OrderCanceled {
@@ -359,6 +388,8 @@ public(package) fun emit_cancel_maker(
         is_bid,
         original_quantity,
         base_asset_quantity_canceled,
+        fee_refunded,
+        fee_retained,
         timestamp,
     });
 }

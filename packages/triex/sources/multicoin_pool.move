@@ -574,6 +574,7 @@ public fun modify_order<QuoteAsset>(
         .vault
         .unlock_quote_fees(
             pool_inner.pool_id,
+            order_id,
             balance_manager.id(),
             fee_release.release_refunded(),
             clock.timestamp_ms(),
@@ -589,6 +590,8 @@ public fun modify_order<QuoteAsset>(
         pool_inner.pool_id,
         previous_quantity,
         ctx.sender(),
+        fee_release.release_refunded(),
+        fee_release.release_retained(),
         clock.timestamp_ms(),
     );
 }
@@ -621,6 +624,7 @@ public fun cancel_order<QuoteAsset>(
         .vault
         .unlock_quote_fees(
             pool_inner.pool_id,
+            order_id,
             balance_manager.id(),
             fee_release.release_refunded(),
             clock.timestamp_ms(),
@@ -635,6 +639,8 @@ public fun cancel_order<QuoteAsset>(
     order.emit_order_canceled(
         pool_inner.pool_id,
         ctx.sender(),
+        fee_release.release_refunded(),
+        fee_release.release_retained(),
         clock.timestamp_ms(),
     );
 }
@@ -1111,14 +1117,21 @@ fun place_order_int<QuoteAsset>(
         // Makers whose orders expired during this match get the refundable
         // share of their escrow credited to settled balances, so it has to
         // leave the reserve for the pool balance that pays settlements out.
-        pool_inner
-            .vault
-            .unlock_quote_fees(
-                pool_inner.pool_id,
-                balance_manager.id(),
-                fee_flows.refunded(),
-                clock.timestamp_ms(),
-            );
+        let refunds = fee_flows.refunded();
+        let mut refund_idx = 0;
+        while (refund_idx < refunds.length()) {
+            let refund = &refunds[refund_idx];
+            pool_inner
+                .vault
+                .unlock_quote_fees(
+                    pool_inner.pool_id,
+                    refund.refund_order_id(),
+                    refund.refund_balance_manager_id(),
+                    refund.refund_amount(),
+                    clock.timestamp_ms(),
+                );
+            refund_idx = refund_idx + 1;
+        };
         // Bid fees ride in with the quote the user pays (fee deposit); ask
         // fees were carved out of quote proceeds and are moved to the
         // reserve after settlement below.

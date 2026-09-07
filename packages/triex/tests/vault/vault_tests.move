@@ -619,7 +619,7 @@ fun test_unlock_quote_fees_moves_funds_and_clears_escrow() {
     vault.lock_maker_fees_for_testing(4_000);
 
     // A cancel releasing 1_000 of escrow refunds 800 of it.
-    vault.unlock_quote_fees(id_from_address(@0x1), id_from_address(ALICE), 800, 0);
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 800, 0);
 
     // The refund left the reserve entirely — it is not revenue.
     assert!(vault.quote_fee_reserve_balance() == 9_200);
@@ -640,7 +640,7 @@ fun test_unlock_quote_fees_zero_is_noop() {
     vault.lock_maker_fees_for_testing(4_000);
 
     // Ask cancels release nothing, so this is the common case.
-    vault.unlock_quote_fees(id_from_address(@0x1), id_from_address(ALICE), 0, 0);
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 0, 0);
 
     assert!(vault.quote_fee_reserve_balance() == 10_000);
     assert!(vault.locked_maker_fees() == 4_000);
@@ -656,7 +656,7 @@ fun test_unlock_preserves_reserve_covers_locked() {
 
     // Refunding the whole escrow drains exactly as much as it unlocks, so a
     // fully-escrowed reserve stays solvent rather than going negative.
-    vault.unlock_quote_fees(id_from_address(@0x1), id_from_address(ALICE), 4_000, 0);
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 4_000, 0);
     assert!(vault.quote_fee_reserve_balance() == 1_000);
     assert!(vault.locked_maker_fees() == 1_000);
     assert!(vault.withdrawable_quote_fees() == 0);
@@ -671,7 +671,7 @@ fun test_unlock_more_than_reserve_e() {
     vault.deposit_quote_fees(balance::create_for_testing<USDC>(1_000));
     vault.lock_maker_fees_for_testing(1_000);
 
-    vault.unlock_quote_fees(id_from_address(@0x1), id_from_address(ALICE), 1_001, 0);
+    vault.unlock_quote_fees(id_from_address(@0x1), 1, id_from_address(ALICE), 1_001, 0);
 
     destroy(vault);
 }

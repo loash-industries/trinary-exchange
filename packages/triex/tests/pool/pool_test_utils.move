@@ -8,6 +8,7 @@ use std::unit_test::{assert_eq, destroy};
 use sui::{
     clock::{Self, Clock},
     coin::{Self, Coin, mint_for_testing},
+    event,
     sui::SUI,
     test_scenario::{Scenario, begin, end, return_shared}
 };
@@ -27,10 +28,11 @@ use triexbook::{
     constants,
     fill::Fill,
     math,
-    order::Order,
-    order_info::OrderInfo,
+    order::{Self, Order},
+    order_info::{Self, OrderInfo},
     pool::{Self, Pool},
-    registry::{Self, Registry}
+    registry::{Self, Registry},
+    vault
 };
 
 const OWNER: address = @0x1;
@@ -6481,6 +6483,182 @@ public(package) fun test_expired_bid_maker_is_refunded() {
     let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
     // Expiring cost Alice the same 0.72 a cancel would have.
     assert!(balance_before - balance_after == retained, 0);
+
+    end(test);
+}
+
+/// The refund and the cancellation are reported as one story: `OrderCanceled`
+/// carries both halves of the split, and the vault's `PoolFeesRefunded`
+/// carries the same order id and the same refunded amount, so an indexer can
+/// join them without inferring anything.
+public(package) fun test_cancel_and_refund_events_agree() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let escrow = 36 * constants::float_scaling() / 10;
+    let expected_refund = 288 * constants::float_scaling() / 100;
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 0);
+        let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            &refunds[0],
+        );
+        assert!(refund_order_id == order_id, 1);
+        assert!(refund_amount == expected_refund, 2);
+        assert!(refund_bm == balance_manager_id_alice, 3);
+
+        let cancels = event::events_by_type<order::OrderCanceled>();
+        assert!(cancels.length() == 1, 4);
+        let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
+            &cancels[0],
+        );
+        // Same order, same refund: the two events describe one release.
+        assert!(cancel_order_id == refund_order_id, 5);
+        assert!(fee_refunded == refund_amount, 6);
+        // The retained half is only on the cancel event — it never moves, so
+        // the vault has nothing to emit for it.
+        assert!(fee_refunded + fee_retained == escrow, 7);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// An expiry is triggered by someone else's order, so the refund must be
+/// attributed to the expired maker and their order — not to the taker whose
+/// transaction happened to surface it.
+public(package) fun test_expiry_refund_event_attributes_the_maker() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let escrow = 36 * constants::float_scaling() / 10;
+    let expected_refund = 288 * constants::float_scaling() / 100;
+    let expire_timestamp = get_time(&mut test) + 100;
+
+    let alice_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            expire_timestamp,
+            &mut test,
+        );
+        alice_order_id = order_info.order_id();
+    };
+
+    set_time(200, &mut test);
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 0);
+        let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            &refunds[0],
+        );
+        // Bob sent the transaction; Alice owns the refund.
+        assert!(refund_bm == balance_manager_id_alice, 1);
+        assert!(refund_bm != balance_manager_id_bob, 2);
+        assert!(refund_order_id == alice_order_id, 3);
+        assert!(refund_amount == expected_refund, 4);
+
+        let expiries = event::events_by_type<order_info::OrderExpired>();
+        assert!(expiries.length() == 1, 5);
+        let (expired_order_id, fee_refunded, fee_retained) = order_info::expired_event_parts(
+            &expiries[0],
+        );
+        assert!(expired_order_id == refund_order_id, 6);
+        assert!(fee_refunded == refund_amount, 7);
+        assert!(fee_refunded + fee_retained == escrow, 8);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
 
     end(test);
 }

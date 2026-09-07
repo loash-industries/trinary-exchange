@@ -1614,7 +1614,13 @@ fun process_fills_books_expiry_retention_as_collected() {
 
     let refund = escrow * 8000 / 10000;
     let retained = escrow - refund;
-    assert_eq!(flows.refunded(), refund);
+    // One refund entry, attributed to the expired maker and their order —
+    // not to Bob, whose order merely triggered the expiry.
+    let refunds = flows.refunded();
+    assert_eq!(refunds.length(), 1);
+    assert_eq!(refunds[0].refund_amount(), refund);
+    assert_eq!(refunds[0].refund_balance_manager_id(), id_from_address(ALICE));
+    assert_eq!(refunds[0].refund_order_id(), order.order_id());
     assert_eq!(flows.recognized(), retained);
 
     // Nothing traded, so the only fee collected this epoch is the retention

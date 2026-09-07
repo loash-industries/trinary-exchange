@@ -59,8 +59,30 @@ public struct FeeFlows has copy, drop, store {
     /// released by expiries in the same match.
     recognized: u64,
     /// Escrow refunded to expired bid makers, which the pool must move out of
-    /// the reserve so the maker's settled quote is payable.
-    refunded: u64,
+    /// the reserve so the maker's settled quote is payable. One entry per
+    /// expired maker, since a single match can expire several orders belonging
+    /// to different accounts.
+    refunded: vector<RefundedFee>,
+}
+
+/// A refund owed to one expired bid maker. Carries the order it came from so
+/// the vault event can be tied back to the `OrderExpired` for that order.
+public struct RefundedFee has copy, drop, store {
+    order_id: u64,
+    balance_manager_id: ID,
+    amount: u64,
+}
+
+public(package) fun refund_order_id(self: &RefundedFee): u64 {
+    self.order_id
+}
+
+public(package) fun refund_balance_manager_id(self: &RefundedFee): ID {
+    self.balance_manager_id
+}
+
+public(package) fun refund_amount(self: &RefundedFee): u64 {
+    self.amount
 }
 
 public(package) fun proceeds(self: &FeeFlows): &vector<ProceedsFee> {
@@ -71,8 +93,8 @@ public(package) fun recognized(self: &FeeFlows): u64 {
     self.recognized
 }
 
-public(package) fun refunded(self: &FeeFlows): u64 {
-    self.refunded
+public(package) fun refunded(self: &FeeFlows): &vector<RefundedFee> {
+    &self.refunded
 }
 
 /// The escrow a cancel or modify-down releases, split into the part paid back
@@ -533,7 +555,7 @@ public(package) fun history(self: &State): &History {
 fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): FeeFlows {
     let mut ask_maker_fees = vector[];
     let mut recognized = 0;
-    let mut refunded = 0;
+    let mut refunded = vector[];
     let mut expiry_retained = 0;
     let mut total_maker_fees = 0;
     let mut i = 0;
@@ -572,7 +594,14 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             // share becomes revenue. `get_settled_maker_quantities` already
             // credits the refund below, so all that is left here is telling
             // the pool how much to move out of the reserve to back it.
-            refunded = refunded + fill.maker_fee_refunded();
+            let refund = fill.maker_fee_refunded();
+            if (refund > 0) {
+                refunded.push_back(RefundedFee {
+                    order_id: fill.maker_order_id(),
+                    balance_manager_id: maker,
+                    amount: refund,
+                });
+            };
             expiry_retained = expiry_retained + fill.maker_fee_retained();
         };
 

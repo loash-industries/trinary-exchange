@@ -113,6 +113,11 @@ public struct OrderPlaced has copy, drop, store {
 }
 
 /// Emitted when a maker order is expired.
+/// `fee_refunded` / `fee_retained` split the maker fee escrow the expiry
+/// released, on the same terms a cancel would have — expiry must not be the
+/// cheaper exit. The refund also surfaces as a `PoolFeesRefunded` carrying
+/// this same `order_id`. Both are zero for an expired ask, which escrows
+/// nothing.
 public struct OrderExpired has copy, drop, store {
     balance_manager_id: ID,
     pool_id: ID,
@@ -122,7 +127,16 @@ public struct OrderExpired has copy, drop, store {
     is_bid: bool,
     original_quantity: u64,
     base_asset_quantity_canceled: u64,
+    fee_refunded: u64,
+    fee_retained: u64,
     timestamp: u64,
+}
+
+#[test_only]
+/// Fields of an `OrderExpired` for tests asserting the fee split reported on
+/// the expiry matches the refund the vault emitted.
+public fun expired_event_parts(self: &OrderExpired): (u64, u64, u64) {
+    (self.order_id, self.fee_refunded, self.fee_retained)
 }
 
 /// Emitted when an order is fully filled.
@@ -608,6 +622,8 @@ fun order_expired_from_fill(self: &OrderInfo, fill: &Fill, timestamp: u64): Orde
         is_bid: !self.is_bid(),
         original_quantity: fill.original_maker_quantity(),
         base_asset_quantity_canceled: fill.base_quantity(),
+        fee_refunded: fill.maker_fee_refunded(),
+        fee_retained: fill.maker_fee_retained(),
         timestamp,
     }
 }
@@ -622,6 +638,8 @@ fun emit_order_canceled_maker_from_fill(self: &OrderInfo, fill: &Fill, timestamp
         !self.is_bid(),
         fill.original_maker_quantity(),
         fill.base_quantity(),
+        fill.maker_fee_refunded(),
+        fill.maker_fee_retained(),
         timestamp,
     )
 }

@@ -102,3 +102,13 @@ fun test_cancel_uses_snapshotted_retention_rate() {
 fun test_expired_bid_maker_is_refunded() {
     pool_test_utils::test_expired_bid_maker_is_refunded();
 }
+
+#[test]
+fun test_cancel_and_refund_events_agree() {
+    pool_test_utils::test_cancel_and_refund_events_agree();
+}
+
+#[test]
+fun test_expiry_refund_event_attributes_the_maker() {
+    pool_test_utils::test_expiry_refund_event_attributes_the_maker();
+}

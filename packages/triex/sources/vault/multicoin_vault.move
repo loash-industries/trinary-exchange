@@ -347,6 +347,7 @@ public(package) fun deposit_quote_fees<QuoteAsset>(
 public(package) fun unlock_quote_fees<QuoteAsset>(
     self: &mut MultiCoinVault<QuoteAsset>,
     pool_id: ID,
+    order_id: u64,
     balance_manager_id: ID,
     amount: u64,
     timestamp: u64,
@@ -359,6 +360,7 @@ public(package) fun unlock_quote_fees<QuoteAsset>(
     self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
     vault::emit_pool_fees_refunded<QuoteAsset>(
         pool_id,
+        order_id,
         amount,
         balance_manager_id,
         timestamp,
