@@ -1443,12 +1443,19 @@ fun place_order_int<BaseAsset, QuoteAsset>(
     let order_info = {
         let pool_inner = self.load_inner_mut();
 
-        // Roll governance into the current epoch before snapshotting the
-        // maker rate, so an order placed on an epoch-boundary transaction
-        // records the freshly promoted rate rather than last epoch's.
-        let trade_params = pool_inner.state.governance_mut(ctx).trade_params();
-        let maker_fee_rate = trade_params.maker_fee();
-        let cancel_retention_bps = trade_params.cancel_retention_bps();
+        // Resolve this trader's tier rates before the order is built, so the
+        // maker rate snapshotted onto it is the one they actually pay. This
+        // rolls governance into the current epoch as a side effect, which is
+        // what makes an order placed on an epoch-boundary transaction use the
+        // freshly promoted schedule rather than last epoch's.
+        let (taker_fee_rate, maker_fee_rate) = pool_inner
+            .state
+            .resolve_trade_rates(balance_manager.id(), ctx);
+        let cancel_retention_bps = pool_inner
+            .state
+            .governance_mut(ctx)
+            .trade_params()
+            .cancel_retention_bps();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1472,6 +1479,8 @@ fun place_order_int<BaseAsset, QuoteAsset>(
             .process_create(
                 &mut order_info,
                 // &ewma_state, // #feat:ewma
+                taker_fee_rate,
+                maker_fee_rate,
                 pool_inner.pool_id,
                 ctx,
             );

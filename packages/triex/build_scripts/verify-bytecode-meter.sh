@@ -12,6 +12,8 @@ MODULES=(
   book
   constants
   ewma
+  fee_schedule
+  fee_turnover
   fill
   governance
   history

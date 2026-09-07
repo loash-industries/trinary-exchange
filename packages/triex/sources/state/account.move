@@ -5,7 +5,11 @@
 module triexbook::account;
 
 use sui::vec_set::{Self, VecSet};
-use triexbook::{balances::{Self, Balances}, fill::Fill};
+use triexbook::{
+    balances::{Self, Balances},
+    fee_turnover::{Self, FeeTurnover},
+    fill::Fill
+};
 
 // === Structs ===
 /// Account data that is updated every epoch.
@@ -22,6 +26,11 @@ public struct Account has copy, drop, store {
     // unclaimed_rebates: Balances, // #feat:rebate
     settled_balances: Balances,
     owed_balances: Balances,
+    /// Fees this account has paid over the trailing window, which resolves its
+    /// fee tier. Unlike `taker_volume` / `maker_volume` above, this one is live:
+    /// it is rolled on every touch by `state::update_account`, so it does not
+    /// depend on the disabled `#feat:rebate` epoch path below.
+    fee_turnover: FeeTurnover,
 }
 
 // === Public-View Functions ===
@@ -84,7 +93,27 @@ public(package) fun empty(ctx: &TxContext): Account {
         // unclaimed_rebates: balances::empty(), // #feat:rebate
         settled_balances: balances::empty(),
         owed_balances: balances::empty(),
+        fee_turnover: fee_turnover::empty(ctx.epoch()),
     }
+}
+
+/// Advance the account's fee turnover window to the current epoch.
+///
+/// Called on every account touch rather than from `update` below, which is
+/// rebate-shaped and currently disabled — tier progression must not depend on
+/// re-enabling that path.
+public(package) fun roll_fee_turnover(self: &mut Account, ctx: &TxContext) {
+    self.fee_turnover.roll(ctx.epoch());
+}
+
+/// Credit fees recognized as revenue at fill. See `fee_turnover` for what is
+/// deliberately excluded.
+public(package) fun record_fee_turnover(self: &mut Account, amount: u64) {
+    self.fee_turnover.record(amount);
+}
+
+public(package) fun fee_turnover_total(self: &Account): u128 {
+    self.fee_turnover.total()
 }
 
 /// Update the account data for the new epoch.

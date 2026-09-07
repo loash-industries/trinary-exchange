@@ -9,7 +9,10 @@
 module triexbook::governance;
 
 use sui::event;
-use triexbook::trade_params::{Self, TradeParams};
+use triexbook::{
+    fee_schedule::{Self, FeeSchedule},
+    trade_params::{Self, TradeParams}
+};
 
 // use triexbook::{constants, math}; // #feat:gov #feat:stake - DISABLED (used for voting power calculations)
 
@@ -65,10 +68,19 @@ public struct Governance has store {
     epoch: u64,
     // List of proposals for the current epoch. // #feat:gov - DISABLED
     // proposals: VecMap<ID, Proposal>,
-    /// Trade parameters for the current epoch.
+    /// Trade parameters for the current epoch. The rates here are the entry
+    /// rung of `fee_schedule` — what a trader with no turnover pays.
     trade_params: TradeParams,
     /// Trade parameters for the next epoch.
     next_trade_params: TradeParams,
+    /// Tier ladder for the current epoch. Kept beside `trade_params` rather
+    /// than inside it: `TradeParams` is copied into every archived `Volumes`,
+    /// and `history::update_historic_median` loads 28 of those per rollover, so
+    /// embedding a schedule there would quadruple that read for history no
+    /// on-chain path consumes — orders carry their own rate.
+    fee_schedule: FeeSchedule,
+    /// Tier ladder for the next epoch.
+    next_fee_schedule: FeeSchedule,
     // All voting power from the current stakes. // #feat:stake #feat:gov - DISABLED
     // voting_power: u64,
     // Quorum for the current epoch. // #feat:gov - DISABLED
@@ -79,6 +91,14 @@ public struct Governance has store {
 public struct TradeParamsUpdateEvent has copy, drop {
     taker_fee: u64,
     maker_fee: u64,
+}
+
+/// Event emitted when a tier ladder takes effect. Schedule history lives in
+/// these events rather than on-chain, which is why `Volumes` does not archive
+/// one.
+public struct FeeScheduleUpdated has copy, drop {
+    schedule: FeeSchedule,
+    effective_epoch: u64,
 }
 
 // === Public-Package Functions ===
@@ -111,6 +131,10 @@ fun new_governance(
         // proposals: vec_map::empty(), // #feat:gov - DISABLED
         trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
         next_trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
+        // A pool opens on a one-rung ladder, so it prices exactly as it did
+        // before tiers existed until an admin sets a real schedule.
+        fee_schedule: fee_schedule::flat(taker_fee, maker_fee),
+        next_fee_schedule: fee_schedule::flat(taker_fee, maker_fee),
         // voting_power: 0, // #feat:stake #feat:gov - DISABLED
         // quorum: 0, // #feat:gov - DISABLED
     }
@@ -122,6 +146,8 @@ public fun destroy_for_testing(self: Governance) {
         epoch: _,
         trade_params: _,
         next_trade_params: _,
+        fee_schedule: _,
+        next_fee_schedule: _,
     } = self;
 }
 
@@ -139,10 +165,15 @@ public(package) fun update(self: &mut Governance, ctx: &TxContext) {
     // self.quorum = math::mul(self.voting_power, constants::half()); // #feat:gov - DISABLED
     // self.proposals = vec_map::empty(); // #feat:gov - DISABLED
     self.trade_params = self.next_trade_params;
+    self.fee_schedule = self.next_fee_schedule;
 
     event::emit(TradeParamsUpdateEvent {
         taker_fee: self.trade_params.taker_fee(),
         maker_fee: self.trade_params.maker_fee(),
+    });
+    event::emit(FeeScheduleUpdated {
+        schedule: self.fee_schedule,
+        effective_epoch: epoch,
     });
 }
 
@@ -248,6 +279,14 @@ public(package) fun next_trade_params(self: &Governance): TradeParams {
     self.next_trade_params
 }
 
+public(package) fun fee_schedule(self: &Governance): &FeeSchedule {
+    &self.fee_schedule
+}
+
+public(package) fun next_fee_schedule(self: &Governance): &FeeSchedule {
+    &self.next_fee_schedule
+}
+
 /// Admin function to set trade parameters for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
 public(package) fun set_next_trade_params(
@@ -267,6 +306,34 @@ public(package) fun set_next_trade_params(
     assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
 
     self.next_trade_params = trade_params::new(taker_fee, maker_fee, cancel_retention_bps);
+    // A flat fee is a one-rung ladder. Keeping the two in lockstep means fill
+    // time has a single resolution path and no "is this pool tiered?" branch.
+    self.next_fee_schedule = fee_schedule::flat(taker_fee, maker_fee);
+}
+
+/// Admin function to set the tier ladder for the next epoch.
+///
+/// Activation matches `set_next_trade_params`: stored as `next_fee_schedule`
+/// and promoted by `update` at the epoch boundary, so a schedule change is
+/// pre-announced and never re-prices a trade mid-epoch.
+public(package) fun set_next_fee_schedule(
+    self: &mut Governance,
+    schedule: FeeSchedule,
+    cancel_retention_bps: u64,
+) {
+    schedule.validate(MIN_TAKER_FEE, MAX_TAKER_FEE, MAX_MAKER_FEE, FEE_MULTIPLE);
+    assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
+
+    self.next_fee_schedule = schedule;
+    // `TradeParams` carries the entry-rung rates, so existing views, the
+    // per-epoch archive and `TradeParamsUpdateEvent` keep reporting the rate a
+    // trader with no turnover actually pays.
+    self.next_trade_params =
+        trade_params::new(
+            schedule.base_taker_fee(),
+            schedule.base_maker_fee(),
+            cancel_retention_bps,
+        );
 }
 
 // === Private Functions ===

@@ -56,7 +56,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info1,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -84,7 +84,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info2,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -112,7 +112,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info3,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -128,7 +128,7 @@ fun process_create_ok() {
     // remaining quantity = 10 - 2.001001 = 7.998999
     // Bob is an ask taker: his 2.2% fee is deducted from quote proceeds,
     // per fill: 1_000_000 × 2.2% = 22_000; 1_002_002 × 2.2% = 22_044
-    let (settled, owed, fee_flows) = state.process_create(
+    let (settled, owed, fee_flows) = state.process_create_for_testing(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -213,7 +213,7 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info1,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -230,7 +230,7 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -254,7 +254,7 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order2,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -328,7 +328,7 @@ fun process_create_cred_price_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -346,7 +346,7 @@ fun process_create_cred_price_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -882,7 +882,7 @@ fun process_cancel_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed, _) = state.process_create(
+    let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -932,7 +932,7 @@ fun process_cancel_after_partial_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    state.process_create(
+    state.process_create_for_testing(
         &mut order_info,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -957,7 +957,7 @@ fun process_cancel_after_partial_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    state.process_create(
+    state.process_create_for_testing(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -1422,7 +1422,7 @@ fun rest_bid(state: &mut state::State, retention_bps: u64, ctx: &TxContext): Ord
         ctx.epoch(),
     );
     order_info.set_fee_snapshot_for_testing(18_000_000, retention_bps);
-    state.process_create(&mut order_info, object::id_from_address(@0x0), ctx);
+    state.process_create_for_testing(&mut order_info, object::id_from_address(@0x0), ctx);
 
     order_info.to_order()
 }
@@ -1500,7 +1500,7 @@ fun process_cancel_ask_collects_nothing() {
         test.ctx().epoch(),
     );
     order_info.set_fee_snapshot_for_testing(18_000_000, 2000);
-    state.process_create(&mut order_info, object::id_from_address(@0x0), test.ctx());
+    state.process_create_for_testing(&mut order_info, object::id_from_address(@0x0), test.ctx());
     let mut order = order_info.to_order();
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1587,7 +1587,7 @@ fun process_fills_books_expiry_retention_as_collected() {
         true,
     );
     maker_info.set_fee_snapshot_for_testing(18_000_000, 2000);
-    state.process_create(&mut maker_info, object::id_from_address(@0x0), test.ctx());
+    state.process_create_for_testing(&mut maker_info, object::id_from_address(@0x0), test.ctx());
     let escrow = maker_info.maker_fees();
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1601,7 +1601,7 @@ fun process_fills_books_expiry_retention_as_collected() {
         test.ctx().epoch(),
     );
     taker_order.match_maker(&mut order, 10);
-    let (_settled, _owed, flows) = state.process_create(
+    let (_settled, _owed, flows) = state.process_create_for_testing(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),

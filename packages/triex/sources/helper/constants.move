@@ -71,6 +71,17 @@ const MAX_FAN_OUT: u64 = 64;
 // History constants
 const PHASE_OUT_EPOCHS: u64 = 28;
 
+// Length of the trailing window, in epochs, over which an account's paid fees
+// are summed to resolve its fee tier. Fixed rather than governance-settable so
+// the tracker can maintain its rolling sum as an O(1) invariant instead of
+// re-summing the window on every rate resolution; a shorter effective window is
+// reachable by raising the schedule's thresholds.
+const TURNOVER_WINDOW_EPOCHS: u64 = 30;
+
+// Upper bound on tiers in a fee schedule. Resolution is a linear scan, so this
+// is what keeps it bounded on the hot fill path.
+const MAX_FEE_TIERS: u64 = 16;
+
 // Constants for testing
 #[test_only]
 const BASE_FEE: u64 = 100_000; // # 0.1%
@@ -205,6 +216,14 @@ public fun max_fills(): u64 {
 
 public fun max_open_orders(): u64 {
     MAX_OPEN_ORDERS
+}
+
+public fun turnover_window_epochs(): u64 {
+    TURNOVER_WINDOW_EPOCHS
+}
+
+public fun max_fee_tiers(): u64 {
+    MAX_FEE_TIERS
 }
 
 public fun max_slice_size(): u64 {

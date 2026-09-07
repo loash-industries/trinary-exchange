@@ -1075,12 +1075,19 @@ fun place_order_int<QuoteAsset>(
     let order_info = {
         let pool_inner = self.load_inner_mut();
 
-        // Roll governance into the current epoch before snapshotting the
-        // maker rate, so an order placed on an epoch-boundary transaction
-        // records the freshly promoted rate rather than last epoch's.
-        let trade_params = pool_inner.state.governance_mut(ctx).trade_params();
-        let maker_fee_rate = trade_params.maker_fee();
-        let cancel_retention_bps = trade_params.cancel_retention_bps();
+        // Resolve this trader's tier rates before the order is built, so the
+        // maker rate snapshotted onto it is the one they actually pay. This
+        // rolls governance into the current epoch as a side effect, which is
+        // what makes an order placed on an epoch-boundary transaction use the
+        // freshly promoted schedule rather than last epoch's.
+        let (taker_fee_rate, maker_fee_rate) = pool_inner
+            .state
+            .resolve_trade_rates(balance_manager.id(), ctx);
+        let cancel_retention_bps = pool_inner
+            .state
+            .governance_mut(ctx)
+            .trade_params()
+            .cancel_retention_bps();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1101,7 +1108,13 @@ fun place_order_int<QuoteAsset>(
         pool_inner.book.create_order(&mut order_info, clock.timestamp_ms());
         let (settled, owed, fee_flows) = pool_inner
             .state
-            .process_create(&mut order_info, pool_inner.pool_id, ctx);
+            .process_create(
+                &mut order_info,
+                taker_fee_rate,
+                maker_fee_rate,
+                pool_inner.pool_id,
+                ctx,
+            );
         // Makers whose orders expired during this match get the refundable
         // share of their escrow credited to settled balances, so it has to
         // leave the reserve for the pool balance that pays settlements out.
