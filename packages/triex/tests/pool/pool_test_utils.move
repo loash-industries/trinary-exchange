@@ -8480,3 +8480,276 @@ public(package) fun test_untouched_account_reports_entry_tier() {
 
     end(test);
 }
+
+// === Gas benchmarks ===
+//
+// These are not correctness tests. Each one performs a fixed amount of work so
+// that `build_scripts/gas-benchmark.sh` can binary-search the smallest
+// `--gas-limit` it survives, which is a deterministic measure of the Move VM
+// gas that work costs.
+//
+// Read them differentially: subtract a benchmark from the one that does
+// strictly more work, and what remains is the cost of the difference. Absolute
+// numbers here are Move VM gas, not Sui computation + storage fees, so they are
+// for comparing operations against each other and for detecting growth with
+// book depth — not for predicting a mainnet fee.
+//
+// Bids are placed at ascending prices, so each new order is the best bid and
+// lands at the end of the book vector. That keeps `vector::insert` at O(1) and
+// isolates the O(depth) rescan in `match_against_book`.
+
+/// Pool and two funded accounts, no orders. Subtract this from every other
+/// benchmark to remove fixture cost.
+public(package) fun bench_baseline() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    end(test);
+}
+
+/// Rest `count` bids at ascending prices from one account.
+fun bench_place_bids(count: u64) {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < count) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (i + 1) * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    end(test);
+}
+
+public(package) fun bench_depth_10() { bench_place_bids(10) }
+
+public(package) fun bench_depth_40() { bench_place_bids(40) }
+
+public(package) fun bench_depth_80() { bench_place_bids(80) }
+
+/// 80 resting bids, then cancel the *worst-priced* one. That order sits at
+/// index 0, so `find_order_index` scans the whole book to reach it and the
+/// removal shifts every element — the worst case for cancel at this depth.
+public(package) fun bench_cancel_at_depth_80() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    let quantity = 1 * constants::float_scaling();
+    let mut first_order_id = 0;
+    let mut i = 0;
+    while (i < 80) {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (i + 1) * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        if (i == 0) first_order_id = order_info.order_id();
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(
+            &mut balance_manager,
+            &trade_proof,
+            first_order_id,
+            &clock,
+            test.ctx(),
+        );
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// `makers` resting bids at one price, then a single ask that sweeps all of
+/// them. Isolates the per-fill cost, including each maker's account touch.
+fun bench_taker_sweeps(makers: u64) {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < makers) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity * makers,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    end(test);
+}
+
+public(package) fun bench_taker_sweeps_01() { bench_taker_sweeps(1) }
+
+public(package) fun bench_taker_sweeps_10() { bench_taker_sweeps(10) }
+
+/// Rest 10 bids under a ladder of `tiers` rungs. Comparing the one-rung and
+/// eight-rung variants prices the tier resolution TRIEX-137 added: both set a
+/// schedule and roll an epoch, so everything except the ladder length cancels.
+fun bench_place_bids_under_ladder(tiers: u64) {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    // Thresholds far above anything these orders accrue, so every placement
+    // walks the whole ladder without ever promoting — the worst case for
+    // resolution, and identical work per order across both variants.
+    let mut min_turnovers = vector[];
+    let mut taker_fees = vector[];
+    let mut maker_fees = vector[];
+    let mut t = 0;
+    while (t < tiers) {
+        min_turnovers.push_back((t as u128) * 1_000_000_000_000_000);
+        taker_fees.push_back(22_000_000 - (t * 1000));
+        maker_fees.push_back(18_000_000 - (t * 1000));
+        t = t + 1;
+    };
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(min_turnovers, taker_fees, maker_fees, 2000, &admin_cap);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < 10) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (i + 1) * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    end(test);
+}
+
+public(package) fun bench_ladder_1_tier() { bench_place_bids_under_ladder(1) }
+
+public(package) fun bench_ladder_8_tiers() { bench_place_bids_under_ladder(8) }
