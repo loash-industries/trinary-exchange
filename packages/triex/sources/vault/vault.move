@@ -31,36 +31,50 @@ public struct Vault<phantom BaseAsset, phantom QuoteAsset> has store {
     quote_fee_reserve: Balance<QuoteAsset>,
 }
 
-/// Metadata describing a quote fee deposit into the reserve bucket
+/// Metadata describing a quote fee deposit into the reserve bucket.
+/// The taker portion is earned revenue on execution; the maker portion is a
+/// bid maker's fee locked at placement, which stays refundable escrow until
+/// the order fills.
 public struct QuoteFeeDeposit has copy, drop {
     pool_id: ID,
     balance_manager_id: ID,
-    amount: u64,
+    taker_fee_amount: u64,
+    maker_fee_amount: u64,
     timestamp: u64,
 }
 
 public(package) fun new_quote_fee_deposit(
     pool_id: ID,
     balance_manager_id: ID,
-    amount: u64,
+    taker_fee_amount: u64,
+    maker_fee_amount: u64,
     timestamp: u64,
 ): QuoteFeeDeposit {
     QuoteFeeDeposit {
         pool_id,
         balance_manager_id,
-        amount,
+        taker_fee_amount,
+        maker_fee_amount,
         timestamp,
     }
 }
 
-public(package) fun quote_fee_deposit_into_parts(deposit: QuoteFeeDeposit): (ID, ID, u64, u64) {
-    let QuoteFeeDeposit { pool_id, balance_manager_id, amount, timestamp } = deposit;
-    (pool_id, balance_manager_id, amount, timestamp)
+public(package) fun quote_fee_deposit_into_parts(
+    deposit: QuoteFeeDeposit,
+): (ID, ID, u64, u64, u64) {
+    let QuoteFeeDeposit {
+        pool_id,
+        balance_manager_id,
+        taker_fee_amount,
+        maker_fee_amount,
+        timestamp,
+    } = deposit;
+    (pool_id, balance_manager_id, taker_fee_amount, maker_fee_amount, timestamp)
 }
 
 public(package) fun destroy_zero_quote_fee_deposit(deposit: QuoteFeeDeposit) {
-    let (_, _, amount, _) = quote_fee_deposit_into_parts(deposit);
-    assert!(amount == 0, EInvalidQuoteFeeAmount);
+    let (_, _, taker_fee_amount, maker_fee_amount, _) = quote_fee_deposit_into_parts(deposit);
+    assert!(taker_fee_amount == 0 && maker_fee_amount == 0, EInvalidQuoteFeeAmount);
 }
 
 public(package) fun emit_pool_fees_deposited<QuoteAsset>(
@@ -177,7 +191,14 @@ public(package) fun settle_balance_manager<BaseAsset, QuoteAsset>(
         );
         if (option::is_some(&quote_fee_deposit)) {
             let deposit = quote_fee_deposit.destroy_some();
-            let QuoteFeeDeposit { pool_id, balance_manager_id, amount, timestamp } = deposit;
+            let QuoteFeeDeposit {
+                pool_id,
+                balance_manager_id,
+                taker_fee_amount,
+                maker_fee_amount,
+                timestamp,
+            } = deposit;
+            let amount = taker_fee_amount + maker_fee_amount;
             assert!(amount <= balance.value(), EInvalidQuoteFeeAmount);
             if (amount > 0) {
                 let fee_balance = balance.split(amount);
@@ -318,6 +339,28 @@ public(package) fun withdraw_cred_to_burn<BaseAsset, QuoteAsset>(
 //         type_name: _,
 //     } = flash_loan;
 // }
+
+/// Move already-held quote from the pool balance into the fee reserve.
+/// Used for fees charged out of quote proceeds (ask-taker and ask-maker
+/// fees), which never pass through a user withdrawal.
+public(package) fun move_quote_to_fee_reserve<BaseAsset, QuoteAsset>(
+    self: &mut Vault<BaseAsset, QuoteAsset>,
+    pool_id: ID,
+    balance_manager_id: ID,
+    amount: u64,
+    timestamp: u64,
+) {
+    if (amount == 0) return;
+    let fee_balance = self.quote_balance.split(amount);
+    self.quote_fee_reserve.join(fee_balance);
+    event::emit(PoolFeesDeposited {
+        pool_id,
+        quote_type: type_name::with_defining_ids<QuoteAsset>(),
+        amount,
+        balance_manager_id,
+        timestamp,
+    });
+}
 
 /// Deposit quote fees into the fee reserve bucket
 public(package) fun deposit_quote_fees<BaseAsset, QuoteAsset>(

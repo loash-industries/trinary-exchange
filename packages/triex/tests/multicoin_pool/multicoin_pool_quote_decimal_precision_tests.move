@@ -50,6 +50,8 @@ const ASSET_GOLD: u64 = 1;
 // Pool governance default: 2% taker fee on bids
 const FEE_BPS: u64 = 110;
 const FEE_PRECISION: u64 = 10_000;
+// Ask makers pay the maker rate out of fill proceeds; it lands in the same reserve.
+const MAKER_FEE_BPS: u64 = 90;
 
 // Large enough to cover the maximum test quote (100 × FLOAT_SCALING per item)
 const LARGE_BALANCE: u64 = 100_000_000_000_000_000;
@@ -278,7 +280,8 @@ fun test_mq9_fee_correct_not_1e9_undercharged() {
     let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2 (truncated)
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
     // The fix captures at least FLOAT_SCALING× more fee than the bug would
     // have (the buggy fee also truncates, so the ratio can exceed it)
     assert!(expected_fee / buggy_fee >= constants::float_scaling(), 2);
@@ -333,7 +336,8 @@ fun test_mq6_fee_nonzero_not_truncated_to_zero() {
     assert!(buggy_quote == 0, 0); // confirm: old path gave zero
 
     assert!(paid_fees == expected_fee, 1);
-    assert!(vault_reserve == expected_fee, 2);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 2);
     assert!(vault_reserve > 0, 3); // fee was captured, not lost
 
     destroy(collection_cap);
@@ -378,7 +382,8 @@ fun test_mq6_multi_item_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 5_000_000
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
 
     destroy(collection_cap);
     end(test);
@@ -429,7 +434,8 @@ fun test_mq2_fee_nonzero_not_truncated_to_zero() {
     assert!(buggy_quote == 0, 0);
 
     assert!(paid_fees == expected_fee, 1);
-    assert!(vault_reserve == expected_fee, 2);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 2);
     assert!(vault_reserve > 0, 3);
 
     destroy(collection_cap);
@@ -481,7 +487,8 @@ fun test_mq1_fee_nonzero_not_truncated_to_zero() {
     assert!(buggy_quote == 0, 0);
 
     assert!(paid_fees == expected_fee, 1);
-    assert!(vault_reserve == expected_fee, 2);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 2);
     assert!(vault_reserve > 0, 3);
 
     destroy(collection_cap);

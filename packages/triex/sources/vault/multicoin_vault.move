@@ -157,9 +157,11 @@ public(package) fun settle_balance_manager<QuoteAsset>(
             let (
                 pool_id,
                 balance_manager_id,
-                fee_amount,
+                taker_fee_amount,
+                maker_fee_amount,
                 timestamp,
             ) = vault::quote_fee_deposit_into_parts(deposit);
+            let fee_amount = taker_fee_amount + maker_fee_amount;
             assert!(fee_amount <= withdrawn.value(), EInvalidQuoteFeeAmount);
             if (fee_amount > 0) {
                 let fee_balance = withdrawn.split(fee_amount);
@@ -276,6 +278,27 @@ public(package) fun deposit_quote<QuoteAsset>(
     to_deposit: Balance<QuoteAsset>,
 ) {
     self.quote_balance.join(to_deposit);
+}
+
+/// Move already-held quote from the pool balance into the fee reserve.
+/// Used for fees charged out of quote proceeds (ask-taker and ask-maker
+/// fees), which never pass through a user withdrawal.
+public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
+    self: &mut MultiCoinVault<QuoteAsset>,
+    pool_id: ID,
+    balance_manager_id: ID,
+    amount: u64,
+    timestamp: u64,
+) {
+    if (amount == 0) return;
+    let fee_balance = self.quote_balance.split(amount);
+    self.quote_fee_reserve.join(fee_balance);
+    vault::emit_pool_fees_deposited<QuoteAsset>(
+        pool_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    );
 }
 
 public(package) fun deposit_quote_fees<QuoteAsset>(

@@ -15,3 +15,13 @@ fun test_bid_with_quote_fees_updates_vault_reserve() {
 fun test_admin_withdraws_quote_fee_reserve() {
     pool_test_utils::test_admin_withdraws_quote_fee_reserve();
 }
+
+#[test]
+fun test_ask_taker_fee_conservation() {
+    pool_test_utils::test_ask_taker_fee_conservation();
+}
+
+#[test]
+fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
+    pool_test_utils::test_ask_maker_fill_fee_uses_snapshotted_rate();
+}

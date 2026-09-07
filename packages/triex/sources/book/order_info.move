@@ -278,7 +278,8 @@ public(package) fun fills_ref(self: &mut OrderInfo): &mut vector<Fill> {
 }
 
 public(package) fun paid_fees_balances(self: &OrderInfo): Balances {
-    // Fees are quote-denominated for bids; asks pay zero fees
+    // Taker fees are quote-denominated on both sides: bids pay on top of the
+    // quote they owe, asks out of the quote proceeds they receive.
     if (self.paid_fees == 0) {
         return balances::new(0, 0, 0)
     };
@@ -309,7 +310,7 @@ public(package) fun calculate_partial_fill_balances(
     while (i < num_fills) {
         let fill = &mut fills[i];
         if (!fill.expired()) {
-            let fee_amount = if (self.is_bid && taker_fee_bps > 0) {
+            let fee_amount = if (taker_fee_bps > 0) {
                 taker_fee_info.calculate_taker_fee(fill.quote_quantity())
             } else {
                 0
@@ -322,7 +323,9 @@ public(package) fun calculate_partial_fill_balances(
     };
 
     self.paid_fees = total_taker_fee;
-    if (total_taker_fee > 0) {
+    // Bid takers pay their fee on top of the quote they owe; ask takers have
+    // it deducted from the quote proceeds they receive (below).
+    if (self.is_bid && total_taker_fee > 0) {
         owed_balances.add_quote(total_taker_fee);
     };
 
@@ -347,7 +350,7 @@ public(package) fun calculate_partial_fill_balances(
             );
         };
     } else {
-        settled_balances.add_quote(self.cumulative_quote_quantity);
+        settled_balances.add_quote(self.cumulative_quote_quantity - total_taker_fee);
         owed_balances.add_base(self.executed_quantity);
         if (self.order_inserted()) {
             owed_balances.add_base(remaining_quantity);

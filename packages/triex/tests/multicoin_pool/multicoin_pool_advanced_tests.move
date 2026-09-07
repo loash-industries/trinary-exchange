@@ -960,8 +960,10 @@ fun multicoin_test_swap_exact_not_fully_filled(
     } else if (!partially_filled_maker) {
         if (is_bid) {
             assert!(base_out.value() == 2, constants::e_order_info_mismatch());
+            // Bob sells into the bids as an ask taker: 1.1% of the 6 quote
+            // proceeds is deducted (6 − 0.066)
             assert!(
-                quote_out.value() == 6 * constants::float_scaling(),
+                quote_out.value() == 5_934 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
@@ -982,8 +984,10 @@ fun multicoin_test_swap_exact_not_fully_filled(
         // partially_filled_maker case
         if (is_bid) {
             assert!(base_out.value() == 3, constants::e_order_info_mismatch());
+            // Bob sells into the remaining bid as an ask taker: 1.1% of the
+            // 3 quote proceeds is deducted (3 − 0.033)
             assert!(
-                quote_out.value() == 3 * constants::float_scaling(),
+                quote_out.value() == 2_967 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
@@ -1218,7 +1222,8 @@ fun test_multicoin_pool_fill_partial_maker_bid_ok() {
         3,
         2,
         4 * constants::float_scaling(),
-        3 * constants::maybe_apply_fee(false) * constants::cred_multiplier(),
+        // Bob takes as an ask: 1.1% of the 4-quote proceeds
+        4 * constants::float_scaling() * 110 / 10_000,
         constants::partially_filled(),
     );
 }

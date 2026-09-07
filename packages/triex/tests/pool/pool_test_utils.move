@@ -256,13 +256,214 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
             test.ctx(),
         );
         let reserve_after = pool.quote_fee_reserve_balance();
-        let expected_fee = order_info.paid_fees() + order_info.maker_fees();
+        // Alice's ask-maker fee (1.8% of the filled quote) is deducted from
+        // her proceeds and lands in the same reserve as Bob's taker fee.
+        let ask_maker_fee = order_info.cumulative_quote_quantity() * 180 / 10_000;
+        let expected_fee = order_info.paid_fees() + order_info.maker_fees() + ask_maker_fee;
         assert!(expected_fee > 0, 0);
         assert!(reserve_after >= reserve_before, 0);
         assert!(reserve_after - reserve_before == expected_fee, 0);
 
         return_shared(balance_manager);
         return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance: ask takers pay their fee out of quote proceeds, both sides'
+/// fees land in the reserve, and the vault conserves quote exactly — after
+/// the fill, every quote unit Alice paid in is either with Bob or in the
+/// fee reserve.
+public(package) fun test_ask_taker_fee_conservation() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // quote notional = 200; Alice locks 1.8% (3.6) at placement, Bob pays
+    // 2.2% (4.4) from proceeds at fill
+    let locked_maker_fee = 36 * constants::float_scaling() / 10;
+    let taker_fee = 44 * constants::float_scaling() / 10;
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+
+        // Alice's locked maker fee reached the reserve at placement
+        let reserve_before = pool.quote_fee_reserve_balance();
+        assert!(reserve_before == locked_maker_fee, 0);
+
+        let order_info = pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        // Bob's ask-taker fee was deducted from his quote proceeds and moved
+        // into the reserve
+        assert!(order_info.paid_fees() == taker_fee, 1);
+        let reserve_after = pool.quote_fee_reserve_balance();
+        assert!(reserve_after - reserve_before == taker_fee, 2);
+
+        // Conservation: Alice paid in 203.6 quote; 195.6 went to Bob, 8 sits
+        // in the reserve, so the vault's free quote balance is exactly zero,
+        // and it holds Bob's 100 base for Alice to withdraw.
+        let (base_balance, quote_balance, _) = pool.vault_balances();
+        assert!(quote_balance == 0, 3);
+        assert!(base_balance == quantity, 4);
+        assert!(reserve_after == locked_maker_fee + taker_fee, 5);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance: an ask maker resting across an admin rate change and epoch
+/// rollover is charged its snapshotted placement rate at fill time, while
+/// the taker pays the freshly promoted rate.
+public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // Alice rests an ask in epoch 0 at the 1.8% default maker rate
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Admin lowers both rates for the next epoch: taker 1%, maker 0.5%
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+
+        let reserve_before = pool.quote_fee_reserve_balance();
+        let order_info = pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        // Bob (taker) pays the promoted 1% rate: 200 × 1% = 2
+        let bob_taker_fee = 2 * constants::float_scaling();
+        assert!(order_info.paid_fees() == bob_taker_fee, 0);
+        // Alice (maker) is charged her snapshotted 1.8%: 200 × 1.8% = 3.6,
+        // not the promoted 0.5%
+        let alice_maker_fee = 36 * constants::float_scaling() / 10;
+        let reserve_after = pool.quote_fee_reserve_balance();
+        assert!(reserve_after - reserve_before == bob_taker_fee + alice_maker_fee, 1);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Alice's settled quote is net of her snapshotted maker fee: 200 − 3.6
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let account = pool.account(&balance_manager);
+        assert_eq!(
+            account.settled_balances(),
+            triexbook::balances::new(0, 1964 * constants::float_scaling() / 10, 0),
+        );
+        return_shared(balance_manager);
         return_shared(pool);
     };
 
@@ -1732,7 +1933,8 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, 900 * constants::float_scaling());
-        assert_eq!(quote, 200 * constants::float_scaling());
+        // Ask-side dry run nets the 2.2% taker fee from quote out: 200 − 4.4
+        assert_eq!(quote, 1956 * constants::float_scaling() / 10);
     } else {
         let (base, quote) = get_base_quantity_out<SUI, USDC>(
             pool_id,
@@ -1780,7 +1982,8 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, 990 * constants::float_scaling());
-        assert_eq!(quote, 20 * constants::float_scaling());
+        // Ask-side dry run nets the 2.2% taker fee from quote out: 20 − 0.44
+        assert_eq!(quote, 1956 * constants::float_scaling() / 100);
     } else {
         let (base, quote) = get_base_quantity_out<SUI, USDC>(
             pool_id,
@@ -2151,8 +2354,10 @@ fun test_swap_exact_not_fully_filled(
                 base_out.value() == 2 * constants::float_scaling(),
                 constants::e_order_info_mismatch(),
             );
+            // Bob sells into the bids as an ask taker: 2.2% of the 6 quote
+            // proceeds is deducted (6 − 0.132)
             assert!(
-                quote_out.value() == 6 * constants::float_scaling(),
+                quote_out.value() == 5_868 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
@@ -2173,14 +2378,13 @@ fun test_swap_exact_not_fully_filled(
                 base_out.value() == 3 * constants::float_scaling(),
                 constants::e_order_info_mismatch(),
             );
+            // Bob sells into the remaining bid as an ask taker: 2.2% of the
+            // 3 quote proceeds is deducted (3 − 0.066)
             assert!(
-                quote_out.value() == 3 * constants::float_scaling(),
+                quote_out.value() == 2_934 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
-            // In the partially_filled_maker case:
-            // - When is_bid=true: no fees are charged (expected_cred_fee = 0)
-            // - When is_bid=false: fees are charged normally based on the current fee rate
             assert!(base == base_2 && base == base_out.value(), constants::e_order_info_mismatch());
             assert!(
                 quote == quote_2 && quote == quote_out.value(),
