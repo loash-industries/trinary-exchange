@@ -558,7 +558,7 @@ public fun modify_order<QuoteAsset>(
         .book
         .modify_order(order_id, new_quantity, clock.timestamp_ms());
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed) = pool_inner
+    let (settled, owed, released_fee) = pool_inner
         .state
         .process_modify(
             balance_manager.id(),
@@ -571,6 +571,9 @@ public fun modify_order<QuoteAsset>(
     pool_inner
         .vault
         .settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none(), ctx);
+    // A modify-down forfeits the released escrow on the same terms as a
+    // cancel, so it becomes sweepable revenue.
+    pool_inner.vault.recognize_locked_maker_fees(released_fee);
 
     order.emit_order_modified(
         pool_inner.pool_id,
@@ -593,7 +596,7 @@ public fun cancel_order<QuoteAsset>(
     let pool_inner = self.load_inner_mut();
     let mut order = pool_inner.book.cancel_order(order_id);
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed) = pool_inner
+    let (settled, owed, released_fee) = pool_inner
         .state
         .process_cancel(
             &mut order,
@@ -605,6 +608,9 @@ public fun cancel_order<QuoteAsset>(
     pool_inner
         .vault
         .settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none(), ctx);
+    // Cancelling forfeits the escrow, so it stops being a user claim and
+    // becomes revenue the admin may sweep.
+    pool_inner.vault.recognize_locked_maker_fees(released_fee);
 
     order.emit_order_canceled(
         pool_inner.pool_id,
@@ -905,6 +911,17 @@ public fun quote_fee_reserve_balance<QuoteAsset>(self: &MultiCoinPool<QuoteAsset
     self.load_inner().vault.quote_fee_reserve_balance()
 }
 
+/// The part of the fee reserve that is bid-maker escrow rather than revenue:
+/// held against open orders and refundable, so not sweepable.
+public fun locked_maker_fees<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+    self.load_inner().vault.locked_maker_fees()
+}
+
+/// Earned fee revenue in the reserve: the ceiling on `withdraw_pool_fees`.
+public fun withdrawable_pool_fees<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+    self.load_inner().vault.withdrawable_quote_fees()
+}
+
 /// Get the Order struct.
 /// #ref:order_query
 public fun get_order<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>, order_id: u64): Order {
@@ -1064,7 +1081,7 @@ fun place_order_int<QuoteAsset>(
             pool_inner.book.price_scaling(),
         );
         pool_inner.book.create_order(&mut order_info, clock.timestamp_ms());
-        let (settled, owed, proceeds_fees) = pool_inner
+        let (settled, owed, fee_flows) = pool_inner
             .state
             .process_create(&mut order_info, pool_inner.pool_id, ctx);
         // Bid fees ride in with the quote the user pays (fee deposit); ask
@@ -1094,6 +1111,7 @@ fun place_order_int<QuoteAsset>(
         // One deposit per account charged, so each reaches the reserve
         // attributed to whoever paid it: the ask taker for their own fee,
         // each ask maker for the fee taken out of their fill proceeds.
+        let proceeds_fees = fee_flows.proceeds();
         let mut fee_idx = 0;
         while (fee_idx < proceeds_fees.length()) {
             let proceeds_fee = &proceeds_fees[fee_idx];
@@ -1107,6 +1125,8 @@ fun place_order_int<QuoteAsset>(
                 );
             fee_idx = fee_idx + 1;
         };
+        // Escrow these fills earned out is revenue now, and sweepable.
+        pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());
         order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());

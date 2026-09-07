@@ -128,7 +128,7 @@ fun process_create_ok() {
     // remaining quantity = 10 - 2.001001 = 7.998999
     // Bob is an ask taker: his 2.2% fee is deducted from quote proceeds,
     // per fill: 1_000_000 × 2.2% = 22_000; 1_002_002 × 2.2% = 22_044
-    let (settled, owed, proceeds_fees) = state.process_create(
+    let (settled, owed, fee_flows) = state.process_create(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -136,9 +136,13 @@ fun process_create_ok() {
     assert_eq!(settled, balances::new(0, 2_002_002 - 44_044, 0));
     assert_eq!(owed, balances::new(10 * constants::sui_unit(), 0, 0));
     // Reported as a single deposit attributed to Bob, the account charged.
+    let proceeds_fees = fee_flows.proceeds();
     assert!(proceeds_fees.length() == 1, 0);
     assert!(proceeds_fees[0].amount() == 44_044, 0);
     assert!(proceeds_fees[0].balance_manager_id() == id_from_address(BOB), 0);
+    // The fixture's makers were built with a zero snapshotted maker rate, so
+    // they locked nothing at placement and these fills earn nothing out.
+    assert!(fee_flows.recognized() == 0, 0);
 
     // Alice has 1 open order remaining. The first two orders have been filled.
     let alice = state.account(id_from_address(ALICE));
@@ -893,7 +897,7 @@ fun process_cancel_ok() {
     // Fee for 10 SUI at current maker_fee rate
     assert_eq!(owed, balances::new(0, 100 * constants::usdc_unit() + maker_fee, 0));
 
-    let (settled, owed) = state.process_cancel(
+    let (settled, owed, _released_fee) = state.process_cancel(
         &mut order_info.to_order(),
         id_from_address(ALICE),
         object::id_from_address(@0x0),
@@ -964,7 +968,7 @@ fun process_cancel_after_partial_ok() {
     );
 
     test.next_tx(ALICE);
-    let (settled, owed) = state.process_cancel(
+    let (settled, owed, _released_fee) = state.process_cancel(
         &mut order,
         id_from_address(ALICE),
         object::id_from_address(@0x0),

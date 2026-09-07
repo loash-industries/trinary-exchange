@@ -387,6 +387,83 @@ fun owed_equals_settled_e() {
 // === Quote Fee Reserve Tests ===
 
 #[test]
+fun test_withdrawable_excludes_locked_escrow() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    assert!(vault.quote_fee_reserve_balance() == 10_000);
+    assert!(vault.locked_maker_fees() == 4_000);
+    assert!(vault.withdrawable_quote_fees() == 6_000);
+
+    destroy(vault);
+}
+
+#[test]
+fun test_recognizing_escrow_moves_it_to_withdrawable() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    // Recognition reclassifies without moving funds.
+    vault.recognize_locked_maker_fees(1_500);
+    assert!(vault.quote_fee_reserve_balance() == 10_000);
+    assert!(vault.locked_maker_fees() == 2_500);
+    assert!(vault.withdrawable_quote_fees() == 7_500);
+
+    destroy(vault);
+}
+
+#[test]
+fun test_recognizing_more_than_locked_saturates_at_zero() {
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(1_000);
+
+    // Per-fill flooring can never exceed the once-floored lock, but the
+    // counter saturates rather than underflowing if it ever did.
+    vault.recognize_locked_maker_fees(4_000);
+    assert!(vault.locked_maker_fees() == 0);
+    assert!(vault.withdrawable_quote_fees() == 10_000);
+
+    destroy(vault);
+}
+
+#[test]
+fun test_withdraw_exactly_unlocked_ok() {
+    let mut test = begin(ALICE);
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    let fee_coin = vault.withdraw_quote_fees(6_000, test.ctx());
+    assert!(fee_coin.value() == 6_000);
+    // The escrow is untouched and still fully backed.
+    assert!(vault.quote_fee_reserve_balance() == 4_000);
+    assert!(vault.locked_maker_fees() == 4_000);
+    assert!(vault.withdrawable_quote_fees() == 0);
+
+    destroy(fee_coin);
+    destroy(vault);
+    test.end();
+}
+
+#[test]
+#[expected_failure(abort_code = vault::EFeesLocked)]
+fun test_withdraw_one_above_unlocked_e() {
+    let mut test = begin(ALICE);
+    let mut vault = vault::empty<SPAM, USDC>();
+    vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
+    vault.lock_maker_fees_for_testing(4_000);
+
+    let fee_coin = vault.withdraw_quote_fees(6_001, test.ctx());
+
+    destroy(fee_coin);
+    destroy(vault);
+    test.end();
+}
+
+#[test]
 fun test_deposit_quote_fees() {
     let mut vault = vault::empty<SPAM, USDC>();
     let fee_balance = balance::create_for_testing<USDC>(10_000);

@@ -48,6 +48,25 @@ public(package) fun amount(self: &ProceedsFee): u64 {
     self.amount
 }
 
+/// The quote-fee movements a placement produces, which the pool applies to
+/// the vault after settlement.
+public struct FeeFlows has copy, drop, store {
+    /// Fees charged out of trade proceeds, one entry per account charged.
+    proceeds: vector<ProceedsFee>,
+    /// Bid-maker escrow that fills in this transaction turned into earned
+    /// revenue. The funds are already in the reserve; this reclassifies them
+    /// so an admin sweep may take them.
+    recognized: u64,
+}
+
+public(package) fun proceeds(self: &FeeFlows): &vector<ProceedsFee> {
+    &self.proceeds
+}
+
+public(package) fun recognized(self: &FeeFlows): u64 {
+    self.recognized
+}
+
 // #feat:stake - DISABLED
 // public struct StakeEvent has copy, drop {
 //     pool_id: ID,
@@ -117,21 +136,21 @@ fun new_state(governance: Governance, ctx: &mut TxContext): State {
 /// volumes. Funds are settled for those makers. Then, the taker's trading fee
 /// is calculated and the taker's volumes are updated. Finally, the taker's
 /// balances are settled.
-/// Returns the settled and owed balances, plus the fees charged out of quote
-/// proceeds this transaction (ask-taker + ask-maker fees), one entry per
-/// account charged, which the pool must move from the vault's quote balance
-/// into the fee reserve.
+/// Returns the settled and owed balances, plus the quote-fee movements the
+/// pool must apply to the vault: fees charged out of proceeds (ask-taker +
+/// ask-maker), one entry per account charged, and the bid-maker escrow these
+/// fills turned into earned revenue.
 public(package) fun process_create(
     self: &mut State,
     order_info: &mut OrderInfo,
     // ewma_state: &EWMAState, // #feat:ewma
     pool_id: ID,
     ctx: &TxContext,
-): (Balances, Balances, vector<ProceedsFee>) {
+): (Balances, Balances, FeeFlows) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     let fills = order_info.fills_ref();
-    let ask_maker_fees = self.process_fills(fills, ctx);
+    let mut fee_flows = self.process_fills(fills, ctx);
 
     self.update_account(order_info.balance_manager_id(), ctx);
     let account = &mut self.accounts[order_info.balance_manager_id()];
@@ -177,15 +196,14 @@ public(package) fun process_create(
     // Ask-taker fees were deducted from settled proceeds rather than paid in;
     // together with the ask-maker fill deductions collected above they must be
     // moved into the vault's fee reserve by the caller.
-    let mut proceeds_fees = ask_maker_fees;
     if (!order_info.is_bid() && order_info.paid_fees() > 0) {
-        proceeds_fees.push_back(ProceedsFee {
+        fee_flows.proceeds.push_back(ProceedsFee {
             balance_manager_id: order_info.balance_manager_id(),
             amount: order_info.paid_fees(),
         });
     };
 
-    (settled, owed, proceeds_fees)
+    (settled, owed, fee_flows)
 }
 
 public(package) fun withdraw_settled_amounts(
@@ -203,6 +221,9 @@ public(package) fun withdraw_settled_amounts(
 
 /// Update account settled balances and volumes.
 /// Remove order from account orders.
+/// Also returns the bid-maker escrow this cancellation releases. Cancelling
+/// still forfeits the fee, so the pool recognizes it as earned revenue rather
+/// than paying it back — TRIEX-138's refund lands on this same amount.
 public(package) fun process_cancel(
     self: &mut State,
     order: &mut Order,
@@ -210,7 +231,7 @@ public(package) fun process_cancel(
     pool_id: ID,
     price_scaling: u64,
     ctx: &TxContext,
-): (Balances, Balances) {
+): (Balances, Balances, u64) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
@@ -221,15 +242,24 @@ public(package) fun process_cancel(
         option::none(),
         price_scaling,
     );
+    let released_fee = order.locked_fee_released(
+        order.maker_fee_rate(),
+        option::none(),
+        price_scaling,
+    );
 
     let account = &mut self.accounts[balance_manager_id];
     account.remove_order(order.order_id());
     account.add_settled_balances(balances);
 
-    account.settle()
+    let (settled, owed) = account.settle();
+
+    (settled, owed, released_fee)
 }
 
 /// Given the modified quantity, update account settled balances and volumes.
+/// Also returns the bid-maker escrow the reduction releases, on the same
+/// forfeit terms as `process_cancel`.
 public(package) fun process_modify(
     self: &mut State,
     balance_manager_id: ID,
@@ -238,7 +268,7 @@ public(package) fun process_modify(
     pool_id: ID,
     price_scaling: u64,
     ctx: &TxContext,
-): (Balances, Balances) {
+): (Balances, Balances, u64) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
@@ -248,10 +278,17 @@ public(package) fun process_modify(
         option::some(cancel_quantity),
         price_scaling,
     );
+    let released_fee = order.locked_fee_released(
+        order.maker_fee_rate(),
+        option::some(cancel_quantity),
+        price_scaling,
+    );
 
     self.accounts[balance_manager_id].add_settled_balances(balances);
 
-    self.accounts[balance_manager_id].settle()
+    let (settled, owed) = self.accounts[balance_manager_id].settle();
+
+    (settled, owed, released_fee)
 }
 
 // Process stake transaction. Add stake to account and update governance.
@@ -466,13 +503,10 @@ public(package) fun history(self: &State): &History {
 /// ask makers have theirs deducted from the quote proceeds of the fill.
 /// Returns the ask-maker fees deducted from proceeds, one entry per maker
 /// charged, which the pool must move from the vault's quote balance into the
-/// fee reserve.
-fun process_fills(
-    self: &mut State,
-    fills: &mut vector<Fill>,
-    ctx: &TxContext,
-): vector<ProceedsFee> {
+/// fee reserve, along with the bid-maker escrow these fills earned out.
+fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): FeeFlows {
     let mut ask_maker_fees = vector[];
+    let mut recognized = 0;
     let mut total_maker_fees = 0;
     let mut i = 0;
     let num_fills = fills.length();
@@ -488,16 +522,28 @@ fun process_fills(
             // fee left escrow for the reserve at placement).
             let maker_fee = fill.maker_fee_charged();
             fill.set_fill_maker_fee(&balances::new(0, maker_fee, 0));
-            if (fill.taker_is_bid() && maker_fee > 0) {
-                ask_maker_fees.push_back(ProceedsFee {
-                    balance_manager_id: maker,
-                    amount: maker_fee,
-                });
+            if (fill.taker_is_bid()) {
+                if (maker_fee > 0) {
+                    ask_maker_fees.push_back(ProceedsFee {
+                        balance_manager_id: maker,
+                        amount: maker_fee,
+                    });
+                };
+            } else {
+                // A bid maker paid this at placement; the fill is what turns
+                // that escrow into revenue.
+                recognized = recognized + maker_fee;
             };
             // Maker fees count as collected at fill time, on both sides.
             total_maker_fees = total_maker_fees + maker_fee;
             // #feat:stake - DISABLED: pass 0 for account stake
             self.history.add_volume(fill.base_quantity(), 0);
+        } else if (!fill.taker_is_bid()) {
+            // An expired bid maker gets their principal back but forfeits the
+            // escrow held against it, so it stops being a claim and becomes
+            // revenue. Leaving it locked would strand the funds: neither
+            // refundable nor sweepable. TRIEX-138 refunds 80% of this instead.
+            recognized = recognized + fill.maker_fee_escrowed();
         };
 
         let account = &mut self.accounts[maker];
@@ -509,7 +555,7 @@ fun process_fills(
         self.history.add_total_fees_collected(balances::new(0, total_maker_fees, 0));
     };
 
-    ask_maker_fees
+    FeeFlows { proceeds: ask_maker_fees, recognized }
 }
 
 /// If account doesn't exist, create it. Update account volumes and rebates.

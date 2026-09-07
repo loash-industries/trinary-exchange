@@ -122,15 +122,22 @@ public(package) fun new(
     }
 }
 
-/// Fee the maker owes on this fill, priced at the rate snapshotted on their
-/// order at placement. Derived from the fill's own fields so settlement can
-/// never depend on `set_fill_maker_fee` having run first. Expired fills are
-/// not charged.
+/// The bid-maker escrow this fill resolves: the fee priced on the quote it
+/// covers, at the rate snapshotted on the maker's order at placement. A live
+/// fill charges this; an expired one returns the principal untouched but
+/// still releases the escrow that was held against it.
+public(package) fun maker_fee_escrowed(self: &Fill): u64 {
+    quote_fee::fee_from_scaled_rate(self.maker_fee_rate, self.quote_quantity)
+}
+
+/// Fee the maker owes on this fill. Derived from the fill's own fields so
+/// settlement can never depend on `set_fill_maker_fee` having run first.
+/// Expired fills are not charged.
 public(package) fun maker_fee_charged(self: &Fill): u64 {
     if (self.expired) {
         0
     } else {
-        quote_fee::fee_from_scaled_rate(self.maker_fee_rate, self.quote_quantity)
+        self.maker_fee_escrowed()
     }
 }
 

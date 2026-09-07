@@ -206,6 +206,27 @@ public(package) fun calculate_cancel_refund(
     balances::new(base_out, quote_out, 0)
 }
 
+/// The maker fee escrowed against the portion of this order being released,
+/// priced at the rate snapshotted on the order at placement. Asks lock
+/// nothing, so they release nothing. `cancel_quantity` is the modify-down
+/// delta when given, the whole unfilled remainder otherwise — matching
+/// `calculate_cancel_refund`.
+public(package) fun locked_fee_released(
+    self: &Order,
+    maker_fee: u64,
+    cancel_quantity: Option<u64>,
+    price_scaling: u64,
+): u64 {
+    if (!self.is_bid()) return 0;
+
+    let cancel_quantity = cancel_quantity.get_with_default(
+        self.quantity - self.filled_quantity,
+    );
+    let quote_quantity = math::qty_to_quote(cancel_quantity, self.price(), price_scaling);
+
+    quote_fee::fee_from_scaled_rate(maker_fee, quote_quantity)
+}
+
 public(package) fun locked_balance(self: &Order, maker_fee: u64, price_scaling: u64): Balances {
     let is_bid = self.is_bid();
     let order_price = self.price();

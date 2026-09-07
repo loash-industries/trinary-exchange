@@ -1214,6 +1214,192 @@ fun multicoin_test_modify_order(
 
 // === Advanced Fill Scenarios ===
 
+/// Acceptance (multicoin mirror): cancelling a resting bid releases its
+/// escrow, which is forfeited into revenue rather than left locked forever.
+#[test]
+fun test_multicoin_cancel_releases_bid_escrow() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let alice_maker_fee;
+    let order_id;
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        alice_maker_fee = order.maker_fees();
+        order_id = order.order_id();
+        assert!(alice_maker_fee > 0, 0);
+        assert!(pool.locked_maker_fees() == alice_maker_fee, 1);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut bm, &proof, order_id, &clock, test.ctx());
+
+        // Forfeited: the funds stay in the reserve but stop being a claim.
+        assert!(pool.quote_fee_reserve_balance() == alice_maker_fee, 2);
+        assert!(pool.locked_maker_fees() == 0, 3);
+        assert!(pool.withdrawable_pool_fees() == alice_maker_fee, 4);
+
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
+/// Acceptance (multicoin mirror): a resting bid's maker fee is tracked as
+/// escrow rather than revenue, and stops being a claim once the order fills.
+#[test]
+fun test_multicoin_locked_fee_escrow_tracks_open_orders() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+    let bob_bm_id = create_balance_manager_with_funds(
+        BOB,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    let mut collection = test.take_shared<Collection>();
+    let gold = multicoin::mint_and_keep(
+        &collection_cap,
+        &mut collection,
+        ASSET_GOLD,
+        1_000_000 * constants::float_scaling(),
+        test.ctx(),
+    );
+    return_shared(collection);
+    transfer::public_transfer(gold, BOB);
+
+    test.next_tx(BOB);
+    let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+    let gold = test.take_from_sender<multicoin::Balance>();
+    bob_bm.deposit_multicoin(gold, test.ctx());
+    return_shared(bob_bm);
+
+    let price = 2 * constants::float_scaling();
+
+    // Alice rests a bid: its maker fee is escrow, not sweepable revenue.
+    let alice_maker_fee;
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        alice_maker_fee = order.maker_fees();
+        assert!(alice_maker_fee > 0, 0);
+        assert!(pool.locked_maker_fees() == alice_maker_fee, 1);
+        assert!(pool.withdrawable_pool_fees() == 0, 2);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Bob's ask fills it, earning the escrow out.
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        assert!(order.status() == constants::filled(), 3);
+        assert!(pool.locked_maker_fees() == 0, 4);
+        assert!(pool.withdrawable_pool_fees() == pool.quote_fee_reserve_balance(), 5);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
 /// Regression: a bid whose owed quote is fully covered by the placer's own
 /// pending settled quote used to abort here — nothing was withdrawn, so the
 /// fee deposit reached a destructor that asserts it is zero. The fee is now
