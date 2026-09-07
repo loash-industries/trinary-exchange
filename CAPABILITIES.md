@@ -45,10 +45,10 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | Function | What the operator can do |
 |---|---|
 | `create_pool_admin` | Create a pool with **zero creation fee**, bypassing the fee charged on the permissionless `create_pool` path. |
-| `set_next_epoch_fee` | Directly set the trading fee for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. |
+| `set_next_epoch_fee` | Directly set the taker and maker trading fees and the cancel-retention rate for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. Each order snapshots these at placement, so a change never re-prices orders already resting. |
 | `unregister_pool_admin` | Unregister a pool from the registry so the trading pair can be redeployed. The pool object itself keeps operating for existing state, but is marked unregistered. |
 | `update_allowed_versions` | Sync a pool's allowed-versions set from the registry. Note: a permissionless equivalent, `update_pool_allowed_versions`, exists, so this is not an exclusive power. |
-| `withdraw_pool_fees` | **Withdraw accumulated quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Emits a `PoolFeesWithdrawn` event. |
+| `withdraw_pool_fees` | **Withdraw earned quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Capped at `withdrawable_pool_fees()` — the reserve minus `locked_maker_fees()`, the escrow backing open bid orders — so a sweep can never spend a maker's refundable fee (`EFeesLocked`). Emits a `PoolFeesWithdrawn` event. |
 
 Disabled (commented-out) admin features that may return in future versions:
 EWMA volatility controls (`enable_ewma_state`, `set_ewma_params`) and
@@ -62,7 +62,7 @@ Mirrors the pool module, per collection asset:
 - `set_next_epoch_fee`
 - `unregister_pool_admin`
 - `update_allowed_versions` (permissionless equivalent also exists)
-- `withdraw_pool_fees` — sweep accrued quote fees to treasury
+- `withdraw_pool_fees` — sweep earned quote fees to treasury, capped at `withdrawable_pool_fees()`
 
 ### What the AdminCap can NOT do
 

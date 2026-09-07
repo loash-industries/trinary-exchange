@@ -6,8 +6,9 @@ order costs nothing but gas.
 
 - **Ticket:** TRIEX-138
 - **Package:** `packages/triex` (`triexbook`)
-- **Status:** in progress — step 1 (escrow tracking + withdrawal cap) implemented on
-  `triex-138-pr1-locked-fee-escrow`; steps 2–6 (the refund itself) still open
+- **Status:** in progress — step 1 (escrow tracking + withdrawal cap) landed as
+  PR #5; steps 2–6 (the refund itself) implemented on
+  `triex-138-pr2-fee-refunds`
 - **Depends on:** dual-sided fees (for the ask-side half only)
 - **Release branch:** `cycle-7` — single publish together with TRIEX-135 and
   TRIEX-137 (decided 2026-09-06)
@@ -98,17 +99,21 @@ Also worth noting:
 - ✅ `withdraw_quote_fees` capped at `reserve − locked_maker_fees` (`EFeesLocked`),
   exposed as `pool::locked_maker_fees` / `pool::withdrawable_pool_fees`. The
   TRIEX-135 characterization test is replaced by its inverse.
-- ⏭️ `unlock_quote_fees(amount)` (`quote_balance.join(quote_fee_reserve.split(amount))`
-  + `PoolFeesRefunded`) deferred to PR2, where the refund path first needs it —
+- ✅ `unlock_quote_fees(amount)` (`quote_balance.join(quote_fee_reserve.split(amount))`
+  + `PoolFeesRefunded`) added in PR2, where the refund path first needs it —
   adding it in PR1 would have been dead code.
 - ~~Note: `QuoteFeeDeposit` bundles taker + maker fees into one amount~~ — already
   split by TRIEX-135, so only the maker part is counted as locked.
 - **Rounding note:** the lock floors once over the whole order while recognition
   floors per fill/cancel, so a resolved order can leave a few units still counted
   as locked. That errs toward under-withdrawing rather than spending escrow, which
-  is the safe direction; PR2's refund inherits the same bias.
+  is the safe direction; PR2's refund inherits the same bias unchanged, since
+  `refund + retained == basis` exactly. The residues accumulate over the pool's
+  lifetime with no reconciliation path (at most one raw quote unit per release);
+  left uncorrected deliberately, and now documented as cumulative rather than
+  per-order in both vaults.
 
-### 2. Refund computation
+### 2. Refund computation — **done (PR2)**
 
 - Make `calculate_cancel_refund` use the fee rate. The basis is already computed by
   `order::locked_fee_released` (added in PR1, used there to report the forfeited
@@ -123,7 +128,7 @@ Also worth noting:
   *before* `settle_balance_manager`, and the refund rides in settled quote — this
   keeps `withdraw_settled_amounts` and the permissionless path working unchanged.
 
-### 3. Expiry path
+### 3. Expiry path — **done (PR2)**
 
 - When a fill is `expired` and the maker is a bid, include **80% of** the fee on
   the returned quantity in the maker's settled balances (in `state::process_fills`,
@@ -132,7 +137,7 @@ Also worth noting:
 - The ticket doesn't name expiry, but it's the same "cancelled without filling"
   economics — flag in the PR as an included fix.
 
-### 4. Epoch fee accounting (acceptance #3)
+### 4. Epoch fee accounting (acceptance #3) — **done (PR2)**
 
 - Adopt "never counted until fill" for the refundable portion: in
   `state::process_fills`, compute the maker's retained fee on
@@ -146,15 +151,21 @@ Also worth noting:
   fees do. Otherwise cancel churn buys fee-tier progress at 20¢ on the dollar.
 - Taker fees stay as-is.
 
-### 5. Events
+### 5. Events — **done (PR2), partially**
 
 - Add the refund amount to cancel/modify events.
 - Caveat: Sui package upgrades can't change existing struct layouts, so this
   likely means `OrderCanceledV2`-style events (or relying on the new
   `PoolFeesRefunded` event alone to avoid V2 events for now — the indexer gets the
   data either way).
+- **Decided (PR2): `PoolFeesRefunded` only.** `OrderCanceled` / `OrderModified`
+  keep their current layouts, so no V2 events and no indexer migration. The
+  refund is emitted from the vault with the pool id, balance manager id and
+  amount, which is what an indexer needs to attribute it; the retained share is
+  derivable from the order's snapshotted rates. Revisit if the indexer turns out
+  to need refund and cancel in a single event.
 
-### 6. Mirror in multicoin
+### 6. Mirror in multicoin — **done (PR2)**
 
 - Same changes in `sources/multicoin_pool.move` (cancel/modify at lines 561–687,
   placement fee deposit at 1068–1083) and `sources/vault/multicoin_vault.move`,
@@ -196,10 +207,33 @@ place/fill/cancel sequence.
 
 ## Acceptance criteria (from ticket)
 
-- [ ] Place → cancel with no fills returns the balance manager to its pre-order
+- [x] Place → cancel with no fills returns the balance manager to its pre-order
       state minus **20% of the locked maker fee** minus gas. *(Amended from "exact
       pre-order state" by the 80% retention decision, 2026-09-06.)*
-- [ ] Partial fill → cancel refunds 80% of the unfilled portion's fee only.
-- [ ] Modify-down and expiry apply the same 80/20 split (no avoidance path).
-- [ ] Epoch fee totals match fees on actually-filled volume **plus cancellation/
+      — `test_cancel_refunds_escrow_to_maker`, multicoin mirror
+      `test_multicoin_cancel_refunds_escrow_to_maker`.
+- [x] Partial fill → cancel refunds 80% of the unfilled portion's fee only.
+      — `test_cancel_after_partial_fill_refunds_unfilled_only`.
+- [x] Modify-down and expiry apply the same 80/20 split (no avoidance path).
+      — `test_modify_down_releases_escrow_proportionally`,
+      `test_expired_bid_maker_is_refunded`,
+      `released_fee_split_prorates_on_modify_down`.
+- [x] Epoch fee totals match fees on actually-filled volume **plus cancellation/
       expiry retentions**; retentions excluded from per-account bracket turnover.
+      — `process_cancel_recognizes_only_the_retention`,
+      `process_modify_recognizes_only_the_retention`,
+      `process_fills_books_expiry_retention_as_collected`. Retention goes through
+      `state::recognize_retention`, which touches `add_total_fees_collected` and
+      deliberately not `add_volume`.
+
+### Closed alongside the refund
+
+Two gaps found reviewing PR #5, both addressed here:
+
+1. **Forfeited escrow never reached `total_fees_collected`.** PR1 reclassified
+   cancel/modify/expiry escrow as sweepable revenue without booking it, so epoch
+   fee totals understated realized revenue. Step 4's `recognize_retention` closes
+   it for the retained share; the refunded share correctly stays out.
+2. **`locked_maker_fees` rounding drift.** Not fixed — see the rounding note in
+   step 1. Verified PR2 does not worsen it (`refund + retained == basis`), and the
+   vault comments now describe it as cumulative rather than per-order.
