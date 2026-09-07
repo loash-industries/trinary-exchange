@@ -10,42 +10,18 @@ use triexbook::pool_test_utils;
 fun test_place_then_fill_bid_ask() {
     pool_test_utils::test_place_then_fill_bid_ask();
 }
-
-#[test]
-fun test_place_then_fill_bid_ask_stable() {
-    pool_test_utils::test_place_then_fill_bid_ask_stable();
-}
-
 #[test]
 fun test_place_then_fill_ask_bid() {
     pool_test_utils::test_place_then_fill_ask_bid();
 }
-
-#[test]
-fun test_place_then_fill_ask_bid_stable() {
-    pool_test_utils::test_place_then_fill_ask_bid_stable();
-}
-
 #[test]
 fun test_place_then_ioc_bid_ask() {
     pool_test_utils::test_place_then_ioc_bid_ask();
 }
-
-#[test]
-fun test_place_then_ioc_bid_ask_stable() {
-    pool_test_utils::test_place_then_ioc_bid_ask_stable();
-}
-
 #[test]
 fun test_place_then_ioc_ask_bid() {
     pool_test_utils::test_place_then_ioc_ask_bid();
 }
-
-#[test]
-fun test_place_then_ioc_ask_bid_stable() {
-    pool_test_utils::test_place_then_ioc_ask_bid_stable();
-}
-
 #[test]
 fun test_fills_bid_ok() {
     pool_test_utils::test_fills_bid_ok();

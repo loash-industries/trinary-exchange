@@ -77,8 +77,6 @@ fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    whitelisted_pool: bool,
-    stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     mc_utils::setup_multicoin_pool(
@@ -86,8 +84,6 @@ fun setup_multicoin_pool(
         registry_id,
         collection_id,
         asset_id,
-        whitelisted_pool,
-        stable_pool,
         test,
     )
 }
@@ -134,8 +130,6 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -226,8 +220,6 @@ fun test_multicoin_pool_swap_exact_quote_for_base_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -323,8 +315,6 @@ fun test_multicoin_pool_swap_exact_quote_for_base_min_not_met_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -417,8 +407,6 @@ fun test_multicoin_pool_get_quantity_out_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 

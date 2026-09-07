@@ -37,8 +37,7 @@ fun process_create_ok() {
     );
     taker_order.set_order_id(4);
 
-    let whitelisted = false;
-    let mut state = state::empty(whitelisted, test.ctx());
+    let mut state = state::empty(test.ctx());
     let price = 1 * constants::usdc_unit();
     let quantity = 1 * constants::sui_unit();
     let mut order_info1 = create_order_info_base(
@@ -184,8 +183,7 @@ fun process_create_expired_ok() {
         test.ctx().epoch(),
     );
 
-    let whitelisted = false;
-    let mut state = state::empty(whitelisted, test.ctx());
+    let mut state = state::empty(test.ctx());
     let price = 1 * constants::usdc_unit();
     let quantity = 10 * constants::sui_unit();
     let balance_manager_id = id_from_address(ALICE);
@@ -312,8 +310,7 @@ fun process_create_cred_price_ok() {
         order_inserted,
     );
 
-    let whitelisted = false;
-    let mut state = state::empty(whitelisted, test.ctx());
+    let mut state = state::empty(test.ctx());
     let price = 13 * constants::usdc_unit();
     let quantity = 13 * constants::sui_unit();
     let mut order_info = create_order_info_base(
@@ -373,7 +370,7 @@ fun process_create_cred_price_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -467,7 +464,7 @@ fun process_create_cred_price_ok() {
 //     // default stake required is 100
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -657,7 +654,7 @@ fun process_create_cred_price_ok() {
 //     // default stake required is 100
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -877,8 +874,7 @@ fun process_cancel_ok() {
         test.ctx().epoch(),
     );
     let _ewma_state = test_init_ewma_state(test.ctx());
-    let whitelisted = false;
-    let mut state = state::empty(whitelisted, test.ctx());
+    let mut state = state::empty(test.ctx());
     // #feat:fee_gov
     // let (settled, owed) = state.process_create(
     //     &mut order_info,
@@ -928,8 +924,7 @@ fun process_cancel_after_partial_ok() {
         test.ctx().epoch(),
     );
     // let ewma_state = test_init_ewma_state(test.ctx());
-    let whitelisted = false;
-    let mut state = state::empty(whitelisted, test.ctx());
+    let mut state = state::empty(test.ctx());
     // #feat:fee_gov
     // state.process_create(
     //     &mut order_info,
@@ -1002,7 +997,7 @@ fun process_cancel_after_partial_ok() {
 //     // stake 100 CRED
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1095,7 +1090,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     let (settled, owed) = state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1143,7 +1138,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     // #feat:fee_gov
 //     // state.process_proposal(
 //     //     id_from_address(POOL_ID),
@@ -1171,7 +1166,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1205,7 +1200,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1256,7 +1251,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1300,7 +1295,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, test.ctx());
+//     let mut state = state::empty(test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1437,7 +1432,7 @@ fun process_cancel_recognizes_only_the_retention() {
     let mut test = begin(OWNER);
 
     test.next_tx(ALICE);
-    let mut state = state::empty(false, test.ctx());
+    let mut state = state::empty(test.ctx());
     let mut order = rest_bid(&mut state, 2000, test.ctx());
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1470,7 +1465,7 @@ fun process_cancel_zero_retention_collects_nothing() {
     let mut test = begin(OWNER);
 
     test.next_tx(ALICE);
-    let mut state = state::empty(false, test.ctx());
+    let mut state = state::empty(test.ctx());
     let mut order = rest_bid(&mut state, 0, test.ctx());
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1496,7 +1491,7 @@ fun process_cancel_ask_collects_nothing() {
     let mut test = begin(OWNER);
 
     test.next_tx(ALICE);
-    let mut state = state::empty(false, test.ctx());
+    let mut state = state::empty(test.ctx());
     let mut order_info = create_order_info_base(
         ALICE,
         2 * constants::float_scaling(),
@@ -1532,7 +1527,7 @@ fun process_modify_recognizes_only_the_retention() {
     let mut test = begin(OWNER);
 
     test.next_tx(ALICE);
-    let mut state = state::empty(false, test.ctx());
+    let mut state = state::empty(test.ctx());
     let order = order::new(
         1,
         id_from_address(ALICE),
@@ -1574,7 +1569,7 @@ fun process_fills_books_expiry_retention_as_collected() {
     let mut test = begin(OWNER);
 
     test.next_tx(ALICE);
-    let mut state = state::empty(false, test.ctx());
+    let mut state = state::empty(test.ctx());
 
     // Alice rests a bid for 10 SUI at $1 that has already expired, escrowing
     // 1.8% of the 10 USDC notional = 0.18.

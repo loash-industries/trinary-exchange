@@ -71,7 +71,6 @@ public struct MultiCoinPoolCreated<phantom QuoteAsset> has copy, drop, store {
     asset_id: u64,
     taker_fee: u64,
     maker_fee: u64,
-    whitelisted_pool: bool,
     treasury_address: address,
 }
 
@@ -93,13 +92,11 @@ public fun create_permissionless_pool<QuoteAsset>(
     ctx: &mut TxContext,
 ): ID {
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
-    let whitelisted_pool = false;
     create_pool<QuoteAsset>(
         registry,
         collection,
         asset_id,
         creation_fee,
-        whitelisted_pool,
         ctx,
     )
 }
@@ -112,7 +109,6 @@ public(package) fun create_pool<QuoteAsset>(
     collection: &Collection,
     asset_id: u64,
     creation_fee: Coin<CRED>,
-    whitelisted_pool: bool,
     ctx: &mut TxContext,
 ): ID {
     // Derive collection_id from the on-chain Collection object — any collection is valid.
@@ -130,7 +126,7 @@ public(package) fun create_pool<QuoteAsset>(
         asset_id,
         quote_type,
         book: book::empty_multicoin(ctx),
-        state: state::empty_multicoin(whitelisted_pool, ctx),
+        state: state::empty_multicoin(ctx),
         vault: multicoin_vault::empty(collection_id, asset_id, ctx),
         registered_pool: true,
     };
@@ -153,7 +149,6 @@ public(package) fun create_pool<QuoteAsset>(
         asset_id,
         taker_fee,
         maker_fee,
-        whitelisted_pool,
         treasury_address,
     });
 
@@ -169,7 +164,6 @@ public fun create_pool_admin<QuoteAsset>(
     registry: &mut Registry,
     collection: &Collection,
     asset_id: u64,
-    whitelisted_pool: bool,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
 ): ID {
@@ -179,7 +173,6 @@ public fun create_pool_admin<QuoteAsset>(
         collection,
         asset_id,
         creation_fee,
-        whitelisted_pool,
         ctx,
     )
 }
@@ -805,11 +798,6 @@ public fun burn_cred<QuoteAsset>(
 }
 
 // === Public-View Functions ===
-
-/// Accessor to check if the pool is whitelisted.
-public fun whitelisted<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): bool {
-    self.load_inner().state.governance().whitelisted()
-}
 
 public fun registered_pool<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): bool {
     self.load_inner().registered_pool

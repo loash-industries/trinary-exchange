@@ -74,8 +74,6 @@ fun test_trader_permission_and_modify_returned(error_code: u64) {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         utils::owner(),
         registry_id,
-        false,
-        false,
         &mut test,
     );
     let _pool1_reference_id = if (error_code == NoErrorCredAsBase) {

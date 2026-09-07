@@ -18,7 +18,8 @@ const EInvalidMakerFee: u64 = 1;
 const EInvalidTakerFee: u64 = 2;
 // const EProposalDoesNotExist: u64 = 3; // #feat:gov - DISABLED
 // const EMaxProposalsReachedNotEnoughVotes: u64 = 4; // #feat:gov - DISABLED
-const EWhitelistedPoolCannotChange: u64 = 5;
+// 5 was EWhitelistedPoolCannotChange, removed with the whitelisted flag; the
+// gap is deliberate so the surviving codes keep their values.
 const EInvalidCancelRetention: u64 = 7;
 // const EInvalidFeeRate: u64 = 6;
 
@@ -62,8 +63,6 @@ const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9000000; // 90 basis points (0.9%)
 public struct Governance has store {
     /// Tracks refreshes.
     epoch: u64,
-    /// If Pool is whitelisted.
-    whitelisted: bool,
     // List of proposals for the current epoch. // #feat:gov - DISABLED
     // proposals: VecMap<ID, Proposal>,
     /// Trade parameters for the current epoch.
@@ -83,9 +82,8 @@ public struct TradeParamsUpdateEvent has copy, drop {
 }
 
 // === Public-Package Functions ===
-public(package) fun empty(whitelisted: bool, ctx: &TxContext): Governance {
+public(package) fun empty(ctx: &TxContext): Governance {
     new_governance(
-        whitelisted,
         DEFAULT_TAKER_FEE,
         DEFAULT_MAKER_FEE,
         DEFAULT_CANCEL_RETENTION_BPS,
@@ -93,9 +91,8 @@ public(package) fun empty(whitelisted: bool, ctx: &TxContext): Governance {
     )
 }
 
-public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governance {
+public(package) fun empty_multicoin(ctx: &TxContext): Governance {
     new_governance(
-        whitelisted,
         DEFAULT_TAKER_FEE_MULTICOIN,
         DEFAULT_MAKER_FEE_MULTICOIN,
         DEFAULT_CANCEL_RETENTION_BPS,
@@ -104,7 +101,6 @@ public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governa
 }
 
 fun new_governance(
-    whitelisted: bool,
     taker_fee: u64,
     maker_fee: u64,
     cancel_retention_bps: u64,
@@ -112,7 +108,6 @@ fun new_governance(
 ): Governance {
     Governance {
         epoch: ctx.epoch(),
-        whitelisted,
         // proposals: vec_map::empty(), // #feat:gov - DISABLED
         trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
         next_trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
@@ -121,15 +116,10 @@ fun new_governance(
     }
 }
 
-public(package) fun whitelisted(self: &Governance): bool {
-    self.whitelisted
-}
-
 #[test_only]
 public fun destroy_for_testing(self: Governance) {
     let Governance {
         epoch: _,
-        whitelisted: _,
         trade_params: _,
         next_trade_params: _,
     } = self;
@@ -266,7 +256,6 @@ public(package) fun set_next_trade_params(
     maker_fee: u64,
     cancel_retention_bps: u64,
 ) {
-    assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
     assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
     assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
 

@@ -281,15 +281,11 @@ unreachable — all four callers already test `expired()` — and the `taker_is_
 half is reachable only through the event. Both are defence in depth, not dead
 code worth deleting.
 
-Not covered, deliberately: retention on a **whitelisted** pool. In this fork
-`whitelisted` does not mean fee-exempt — that is upstream DeepBook's meaning,
-and nothing here reads the flag when pricing. Its only live effect is that
-`set_next_trade_params` aborts with `EWhitelistedPoolCannotChange`, so such a
-pool launches at the normal defaults (now including a 2000 bps retention) and
-can never be re-rated. The precision test suites actually create whitelisted
-pools to measure fees, so current behaviour is load-bearing. Whether the flag
-should keep any meaning is a design decision, tracked as TRIEX-139; asserting
-either way here would prejudge it.
+Whitelisted pools needed no retention coverage: the `whitelisted` flag was
+removed outright in TRIEX-139. In this fork it never meant fee-exempt — that is
+upstream DeepBook's meaning — and its only live effect was to freeze the fee
+setter, which protects nothing once proposals and voting are disabled and CRED
+is a trade currency rather than a governance token.
 
 ### Closed alongside the refund
 

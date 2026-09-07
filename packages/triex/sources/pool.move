@@ -64,7 +64,6 @@ public struct PoolCreated<phantom BaseAsset, phantom QuoteAsset> has copy, drop,
     pool_id: ID,
     taker_fee: u64,
     maker_fee: u64,
-    whitelisted_pool: bool,
     treasury_address: address,
 }
 
@@ -122,12 +121,10 @@ public fun create_permissionless_pool<BaseAsset, QuoteAsset>(
     ctx: &mut TxContext,
 ): ID {
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
-    let whitelisted_pool = false;
 
     create_pool<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
-        whitelisted_pool,
         ctx,
     )
 }
@@ -910,7 +907,6 @@ public fun burn_cred<BaseAsset, QuoteAsset>(
 /// Returns the id of the pool created
 public fun create_pool_admin<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
-    whitelisted_pool: bool,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
 ): ID {
@@ -918,7 +914,6 @@ public fun create_pool_admin<BaseAsset, QuoteAsset>(
     create_pool<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
-        whitelisted_pool,
         ctx,
     )
 }
@@ -1023,11 +1018,6 @@ public fun withdraw_pool_fees<BaseAsset, QuoteAsset>(
 // }
 
 // === Public-View Functions ===
-/// Accessor to check if the pool is whitelisted.
-public fun whitelisted<BaseAsset, QuoteAsset>(self: &Pool<BaseAsset, QuoteAsset>): bool {
-    self.load_inner().state.governance().whitelisted()
-}
-
 // #feat:fee_gov
 // /// Accessor to check if the pool is a stablecoin pool.
 // public fun stable_pool<BaseAsset, QuoteAsset>(self: &Pool<BaseAsset, QuoteAsset>): bool {
@@ -1348,7 +1338,6 @@ public fun id<BaseAsset, QuoteAsset>(self: &Pool<BaseAsset, QuoteAsset>): ID {
 public(package) fun create_pool<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
     creation_fee: Coin<CRED>,
-    whitelisted_pool: bool,
     ctx: &mut TxContext,
 ): ID {
     assert!(
@@ -1365,7 +1354,7 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
         allowed_versions: registry.allowed_versions(),
         pool_id: pool_id.to_inner(),
         book: book::empty(ctx),
-        state: state::empty(whitelisted_pool, ctx),
+        state: state::empty(ctx),
         vault: vault::empty(),
         registered_pool: true,
     };
@@ -1383,7 +1372,6 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
         pool_id,
         taker_fee,
         maker_fee,
-        whitelisted_pool,
         treasury_address,
     });
 

@@ -53,8 +53,6 @@ fun test_full_bid_fill_produces_correct_paid_fees() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -183,8 +181,6 @@ fun test_modify_bid_order_refunds_correct_quote_amount() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -316,8 +312,6 @@ fun test_vault_fee_reserve_correct_after_fill() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -454,8 +448,6 @@ fun test_high_price_order_within_valid_range() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        true,
-        false,
         &mut test,
     );
 
@@ -558,7 +550,6 @@ fun test_trade_nft_for_100_billion_cred() {
             &mut reg,
             &collection,
             ASSET_GOLD,
-            true,
             &admin_cap,
             test.ctx(),
         );
@@ -712,7 +703,6 @@ fun test_fee_large_quote_no_u64_overflow() {
             &mut reg,
             &collection,
             ASSET_GOLD,
-            true,
             &admin_cap,
             test.ctx(),
         );
@@ -851,7 +841,6 @@ fun test_fee_truncation_floor_and_threshold() {
             &mut reg,
             &collection,
             ASSET_GOLD,
-            true,
             &admin_cap,
             test.ctx(),
         );
@@ -1006,14 +995,12 @@ fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
     let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
         &mut test,
     );
-    // Non-whitelisted pool, so the admin can change its fees.
+    // The admin can change the pool's fees.
     let pool_id = mc_utils::setup_multicoin_pool(
         OWNER,
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
-        false,
         &mut test,
     );
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(

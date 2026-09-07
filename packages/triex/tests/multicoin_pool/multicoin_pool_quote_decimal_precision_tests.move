@@ -102,7 +102,7 @@ fun setup_base(test: &mut sui::test_scenario::Scenario): (ID, ID, CollectionCap)
     (registry_id, collection_id, collection_cap)
 }
 
-/// Register a quote asset and create a whitelisted multicoin pool for ASSET_GOLD.
+/// Register a quote asset and create a multicoin pool for ASSET_GOLD.
 /// Call this ONCE per (registry, QuoteAsset) type.
 fun create_pool_with_quote<QuoteAsset>(
     registry_id: ID,
@@ -117,7 +117,6 @@ fun create_pool_with_quote<QuoteAsset>(
         &mut registry,
         &collection,
         ASSET_GOLD,
-        true, // whitelisted
         &admin_cap,
         test.ctx(),
     );
