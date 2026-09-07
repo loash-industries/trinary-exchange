@@ -26,6 +26,11 @@ fun test_locked_balance_ask_ok() {
     test_locked_balance(false)
 }
 
+/// Default maker rate for a volatile pool: 1.8%.
+fun maker_fee_on(quote_quantity: u64): u64 {
+    math::mul(quote_quantity, 18_000_000)
+}
+
 fun test_locked_balance(is_bid: bool) {
     let mut test = begin(utils::owner());
     let registry_id = pool_tests::setup_test(utils::owner(), &mut test);
@@ -69,8 +74,9 @@ fun test_locked_balance(is_bid: bool) {
     let price = 2 * constants::float_scaling();
     let quantity = 3 * constants::float_scaling();
     let expire_timestamp = constants::max_u64();
-    let maker_fee = constants::maybe_apply_fee(is_bid);
-    let cred_multiplier = constants::cred_multiplier();
+    // A bid locks its quote principal plus the maker fee charged on it; an
+    // ask locks only base, and is charged out of its quote proceeds on fill.
+    let quote = math::mul(price, quantity);
     let mut alice_locked_balance = utils::expected_balances_all(0);
 
     assert!(test.ctx().epoch() == 0, 0);
@@ -97,14 +103,7 @@ fun test_locked_balance(is_bid: bool) {
     );
 
     if (is_bid) {
-        utils::add_usdc(&mut alice_locked_balance, math::mul(price, quantity));
-        utils::add_cred(
-            &mut alice_locked_balance,
-            math::mul(
-                math::mul(quantity, maker_fee),
-                cred_multiplier,
-            ),
-        );
+        utils::add_usdc(&mut alice_locked_balance, quote + maker_fee_on(quote));
     } else {
         utils::add_sui(&mut alice_locked_balance, quantity);
     };
@@ -131,17 +130,13 @@ fun test_locked_balance(is_bid: bool) {
     );
 
     if (is_bid) {
-        utils::sub_usdc(&mut alice_locked_balance, math::mul(price, quantity) / 2);
+        // Half the bid filled: both its principal and its fee shrink with the
+        // remaining quantity.
+        utils::sub_usdc(&mut alice_locked_balance, quote / 2 + maker_fee_on(quote / 2));
         utils::add_sui(&mut alice_locked_balance, quantity / 2);
-        utils::sub_cred(
-            &mut alice_locked_balance,
-            math::mul(
-                math::mul(quantity / 2, maker_fee),
-                cred_multiplier,
-            ),
-        );
     } else {
-        utils::add_usdc(&mut alice_locked_balance, math::mul(price, quantity) / 2);
+        // Alice's ask proceeds settle net of the maker fee taken out of them.
+        utils::add_usdc(&mut alice_locked_balance, quote / 2 - maker_fee_on(quote / 2));
         utils::sub_sui(&mut alice_locked_balance, quantity / 2);
     };
 
@@ -167,18 +162,12 @@ fun test_locked_balance(is_bid: bool) {
     );
 
     if (is_bid) {
-        utils::add_usdc(&mut alice_locked_balance, math::mul(price, quantity));
+        utils::add_usdc(&mut alice_locked_balance, quote + maker_fee_on(quote));
         utils::sub_sui(&mut alice_locked_balance, quantity / 2);
-        utils::add_cred(
-            &mut alice_locked_balance,
-            math::mul(
-                math::mul(quantity, maker_fee),
-                cred_multiplier,
-            ),
-        );
     } else {
         utils::add_sui(&mut alice_locked_balance, quantity);
-        utils::sub_usdc(&mut alice_locked_balance, math::mul(price, quantity) / 2);
+        // Placing again settles her netted proceeds out to her balance manager
+        utils::sub_usdc(&mut alice_locked_balance, quote / 2 - maker_fee_on(quote / 2));
     };
 
     utils::check_locked_balance<SUI, USDC>(

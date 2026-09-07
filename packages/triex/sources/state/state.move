@@ -15,8 +15,7 @@ use triexbook::{
     governance::{Self, Governance},
     history::{Self, History},
     order::Order,
-    order_info::OrderInfo,
-    quote_fee
+    order_info::OrderInfo
 };
 
 // === Errors ===
@@ -29,6 +28,24 @@ public struct State has store {
     accounts: Table<ID, Account>,
     history: History,
     governance: Governance, // #feat:gov
+}
+
+/// A quote fee taken out of trade proceeds rather than paid in with the order,
+/// tagged with the balance manager that was charged. Ask takers and ask makers
+/// both pay this way, and one transaction can charge several makers, so the
+/// portions stay separate: each reaches the fee reserve attributed to the
+/// account that actually paid it.
+public struct ProceedsFee has copy, drop, store {
+    balance_manager_id: ID,
+    amount: u64,
+}
+
+public(package) fun balance_manager_id(self: &ProceedsFee): ID {
+    self.balance_manager_id
+}
+
+public(package) fun amount(self: &ProceedsFee): u64 {
+    self.amount
 }
 
 // #feat:stake - DISABLED
@@ -100,16 +117,17 @@ fun new_state(governance: Governance, ctx: &mut TxContext): State {
 /// volumes. Funds are settled for those makers. Then, the taker's trading fee
 /// is calculated and the taker's volumes are updated. Finally, the taker's
 /// balances are settled.
-/// Returns the settled and owed balances, plus the total fee amount charged
-/// out of quote proceeds this transaction (ask-taker + ask-maker fees) that
-/// the pool must move from the vault's quote balance into the fee reserve.
+/// Returns the settled and owed balances, plus the fees charged out of quote
+/// proceeds this transaction (ask-taker + ask-maker fees), one entry per
+/// account charged, which the pool must move from the vault's quote balance
+/// into the fee reserve.
 public(package) fun process_create(
     self: &mut State,
     order_info: &mut OrderInfo,
     // ewma_state: &EWMAState, // #feat:ewma
     pool_id: ID,
     ctx: &TxContext,
-): (Balances, Balances, u64) {
+): (Balances, Balances, vector<ProceedsFee>) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     let fills = order_info.fills_ref();
@@ -157,9 +175,15 @@ public(package) fun process_create(
     owed.add_balances(old_owed);
 
     // Ask-taker fees were deducted from settled proceeds rather than paid in;
-    // together with ask-maker fill deductions they must be moved into the
-    // vault's fee reserve by the caller.
-    let proceeds_fees = ask_maker_fees + if (order_info.is_bid()) 0 else order_info.paid_fees();
+    // together with the ask-maker fill deductions collected above they must be
+    // moved into the vault's fee reserve by the caller.
+    let mut proceeds_fees = ask_maker_fees;
+    if (!order_info.is_bid() && order_info.paid_fees() > 0) {
+        proceeds_fees.push_back(ProceedsFee {
+            balance_manager_id: order_info.balance_manager_id(),
+            amount: order_info.paid_fees(),
+        });
+    };
 
     (settled, owed, proceeds_fees)
 }
@@ -440,10 +464,16 @@ public(package) fun history(self: &State): &History {
 /// Maker fees are charged at the rate snapshotted on the maker's order:
 /// bid makers locked theirs in quote at placement (the fill recognizes it),
 /// ask makers have theirs deducted from the quote proceeds of the fill.
-/// Returns the total ask-maker fee deducted from proceeds, which the pool
-/// must move from the vault's quote balance into the fee reserve.
-fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): u64 {
-    let mut ask_maker_fees = 0;
+/// Returns the ask-maker fees deducted from proceeds, one entry per maker
+/// charged, which the pool must move from the vault's quote balance into the
+/// fee reserve.
+fun process_fills(
+    self: &mut State,
+    fills: &mut vector<Fill>,
+    ctx: &TxContext,
+): vector<ProceedsFee> {
+    let mut ask_maker_fees = vector[];
+    let mut total_maker_fees = 0;
     let mut i = 0;
     let num_fills = fills.length();
     while (i < num_fills) {
@@ -452,18 +482,20 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
         self.update_account(maker, ctx);
 
         if (!fill.expired()) {
-            let maker_fee_bps = quote_fee::scaled_to_bps(fill.maker_fee_rate());
-            let mut fee_info = quote_fee::new(maker_fee_bps);
-            let maker_fee = fee_info.calculate_maker_fee(fill.quote_quantity());
-            // Recorded on the fill before settlement: ask makers settle
-            // quote net of this fee, bid makers settle base untouched
-            // (their fee left escrow for the reserve at placement).
+            // Settlement derives this same amount from the fill, so recording
+            // it here is for the fill event and fee accounting: ask makers
+            // settle quote net of it, bid makers settle base untouched (their
+            // fee left escrow for the reserve at placement).
+            let maker_fee = fill.maker_fee_charged();
             fill.set_fill_maker_fee(&balances::new(0, maker_fee, 0));
-            if (fill.taker_is_bid()) {
-                ask_maker_fees = ask_maker_fees + maker_fee;
+            if (fill.taker_is_bid() && maker_fee > 0) {
+                ask_maker_fees.push_back(ProceedsFee {
+                    balance_manager_id: maker,
+                    amount: maker_fee,
+                });
             };
             // Maker fees count as collected at fill time, on both sides.
-            self.history.add_total_fees_collected(balances::new(0, maker_fee, 0));
+            total_maker_fees = total_maker_fees + maker_fee;
             // #feat:stake - DISABLED: pass 0 for account stake
             self.history.add_volume(fill.base_quantity(), 0);
         };
@@ -472,6 +504,9 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
         account.process_maker_fill(fill);
 
         i = i + 1;
+    };
+    if (total_maker_fees > 0) {
+        self.history.add_total_fees_collected(balances::new(0, total_maker_fees, 0));
     };
 
     ask_maker_fees

@@ -12,7 +12,6 @@ use triexbook::{balance_manager::{TradeProof, BalanceManager}, balances::Balance
 
 // === Errors ===
 const EInsufficientFeeReserve: u64 = 0;
-const EInvalidQuoteFeeAmount: u64 = 1;
 const ENoBalanceToSettle: u64 = 7;
 const EHasOwedBalances: u64 = 8;
 // #feat:flashloan - DISABLED
@@ -70,11 +69,6 @@ public(package) fun quote_fee_deposit_into_parts(
         timestamp,
     } = deposit;
     (pool_id, balance_manager_id, taker_fee_amount, maker_fee_amount, timestamp)
-}
-
-public(package) fun destroy_zero_quote_fee_deposit(deposit: QuoteFeeDeposit) {
-    let (_, _, taker_fee_amount, maker_fee_amount, _) = quote_fee_deposit_into_parts(deposit);
-    assert!(taker_fee_amount == 0 && maker_fee_amount == 0, EInvalidQuoteFeeAmount);
 }
 
 public(package) fun emit_pool_fees_deposited<QuoteAsset>(
@@ -184,37 +178,36 @@ public(package) fun settle_balance_manager<BaseAsset, QuoteAsset>(
         self.base_balance.join(balance);
     };
     if (balances_in.quote() > balances_out.quote()) {
-        let mut balance = balance_manager.withdraw_with_proof(
+        let balance = balance_manager.withdraw_with_proof(
             trade_proof,
             balances_in.quote() - balances_out.quote(),
             false,
         );
-        if (option::is_some(&quote_fee_deposit)) {
-            let deposit = quote_fee_deposit.destroy_some();
-            let QuoteFeeDeposit {
-                pool_id,
-                balance_manager_id,
-                taker_fee_amount,
-                maker_fee_amount,
-                timestamp,
-            } = deposit;
-            let amount = taker_fee_amount + maker_fee_amount;
-            assert!(amount <= balance.value(), EInvalidQuoteFeeAmount);
-            if (amount > 0) {
-                let fee_balance = balance.split(amount);
-                self.quote_fee_reserve.join(fee_balance);
-                event::emit(PoolFeesDeposited {
-                    pool_id,
-                    quote_type: type_name::with_defining_ids<QuoteAsset>(),
-                    amount,
-                    balance_manager_id,
-                    timestamp,
-                });
-            };
-        } else {
-            option::destroy_none(quote_fee_deposit);
-        };
         self.quote_balance.join(balance);
+    };
+    // Fee escrow is carved out of the pool's quote balance rather than out of
+    // the marginal withdrawal above. The quote a user owes (fees included) is
+    // retained by the pool either way — withdrawn from their balance manager,
+    // or netted against settled balances the pool therefore never paid out —
+    // so the fee is covered even when prior settled balances cover the order
+    // outright and nothing is withdrawn at all.
+    if (option::is_some(&quote_fee_deposit)) {
+        let deposit = quote_fee_deposit.destroy_some();
+        let (
+            pool_id,
+            balance_manager_id,
+            taker_fee_amount,
+            maker_fee_amount,
+            timestamp,
+        ) = quote_fee_deposit_into_parts(deposit);
+        self.move_quote_to_fee_reserve(
+            pool_id,
+            balance_manager_id,
+            taker_fee_amount + maker_fee_amount,
+            timestamp,
+        );
+    } else {
+        option::destroy_none(quote_fee_deposit);
     };
     if (balances_in.cred() > balances_out.cred()) {
         let balance = balance_manager.withdraw_with_proof(
@@ -353,13 +346,7 @@ public(package) fun move_quote_to_fee_reserve<BaseAsset, QuoteAsset>(
     if (amount == 0) return;
     let fee_balance = self.quote_balance.split(amount);
     self.quote_fee_reserve.join(fee_balance);
-    event::emit(PoolFeesDeposited {
-        pool_id,
-        quote_type: type_name::with_defining_ids<QuoteAsset>(),
-        amount,
-        balance_manager_id,
-        timestamp,
-    });
+    emit_pool_fees_deposited<QuoteAsset>(pool_id, amount, balance_manager_id, timestamp);
 }
 
 /// Deposit quote fees into the fee reserve bucket

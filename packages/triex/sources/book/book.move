@@ -5,7 +5,7 @@
 /// All order book operations are defined in this module.
 module triexbook::book;
 
-use triexbook::{constants, math, order::Order, order_info::OrderInfo};
+use triexbook::{constants, math, order::Order, order_info::OrderInfo, quote_fee};
 
 /// === Errors ===
 const EInvalidAmountIn: u64 = 1;
@@ -185,9 +185,10 @@ public(package) fun get_quantity_out(
                 };
             } else {
                 // Ask takers have the fee deducted from the quote proceeds,
-                // so the full base input matches and the output is netted at
-                // the settlement rate (mirroring
-                // order_info::calculate_partial_fill_balances).
+                // so the full base input matches and the output is netted
+                // through the same helper settlement uses, per level, so the
+                // quote agrees with what calculate_partial_fill_balances
+                // settles.
                 matched_base_quantity = quantity_in_left.min(cur_quantity);
                 let matched_quote_quantity = math::qty_to_quote(
                     matched_base_quantity,
@@ -197,7 +198,10 @@ public(package) fun get_quantity_out(
                 let fee = if (fee_waived) {
                     0
                 } else {
-                    math::mul(matched_quote_quantity, trade_specific_taker_fee)
+                    quote_fee::fee_from_scaled_rate(
+                        trade_specific_taker_fee,
+                        matched_quote_quantity,
+                    )
                 };
                 quantity_out = quantity_out + matched_quote_quantity - fee;
                 quantity_in_left = quantity_in_left - matched_base_quantity;

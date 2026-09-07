@@ -225,9 +225,7 @@ public(package) fun locked_balance(self: &Order, maker_fee: u64, price_scaling: 
     };
 
     if (is_bid) {
-        let maker_fee_bps = quote_fee::scaled_to_bps(maker_fee);
-        let mut fee_info = quote_fee::new(maker_fee_bps);
-        let maker_fee_amount = fee_info.calculate_maker_fee(quote_quantity);
+        let maker_fee_amount = quote_fee::fee_from_scaled_rate(maker_fee, quote_quantity);
 
         let mut balances = balances::new(0, quote_quantity, 0);
         if (maker_fee_amount > 0) {

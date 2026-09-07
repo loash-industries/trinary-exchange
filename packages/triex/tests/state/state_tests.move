@@ -135,7 +135,10 @@ fun process_create_ok() {
     );
     assert_eq!(settled, balances::new(0, 2_002_002 - 44_044, 0));
     assert_eq!(owed, balances::new(10 * constants::sui_unit(), 0, 0));
-    assert!(proceeds_fees == 44_044, 0);
+    // Reported as a single deposit attributed to Bob, the account charged.
+    assert!(proceeds_fees.length() == 1, 0);
+    assert!(proceeds_fees[0].amount() == 44_044, 0);
+    assert!(proceeds_fees[0].balance_manager_id() == id_from_address(BOB), 0);
 
     // Alice has 1 open order remaining. The first two orders have been filled.
     let alice = state.account(id_from_address(ALICE));

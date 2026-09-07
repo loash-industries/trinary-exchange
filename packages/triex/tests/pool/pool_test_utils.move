@@ -470,6 +470,297 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     end(test);
 }
 
+/// Regression: a bid's fee escrow must reach the reserve even when the
+/// placer's own pending settled quote covers the whole order, so the vault
+/// withdraws nothing from their balance manager. The fee is carved out of the
+/// quote the pool retains by netting, not out of a withdrawal that never
+/// happens — previously the deposit was silently dropped and the fee stayed
+/// in the vault's free quote balance, unsweepable.
+public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+
+    // Alice rests an ask; Bob's bid fills it. Alice is left holding 196.4
+    // quote of settled proceeds (200 less her 1.8% maker fee) that she never
+    // withdraws, and the reserve holds her 3.6 plus Bob's 4.4 taker fee.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    let settled_quote = 1964 * constants::float_scaling() / 10;
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        assert_eq!(
+            pool.account(&balance_manager).settled_balances(),
+            triexbook::balances::new(0, settled_quote, 0),
+        );
+        assert!(pool.quote_fee_reserve_balance() == 8 * constants::float_scaling(), 0);
+        return_shared(balance_manager);
+        return_shared(pool);
+    };
+
+    // Alice now rests a bid for 50 @ 2: 100 quote of principal plus a 1.8
+    // maker fee. Owed (101.8) is below her settled 196.4, so the vault nets
+    // the two and hands her the difference without touching her balance
+    // manager — the fee still has to land in the reserve.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        50 * constants::float_scaling(),
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        // 8 from the fill plus Alice's newly locked 1.8
+        assert!(pool.quote_fee_reserve_balance() == 98 * constants::float_scaling() / 10, 1);
+        // Her settled proceeds were paid out net of what she owed
+        assert_eq!(
+            pool.account(&balance_manager).settled_balances(),
+            triexbook::balances::new(0, 0, 0),
+        );
+        return_shared(balance_manager);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Regression: the same netting, but where the placer's settled quote covers
+/// the principal and only part of the fee, so the vault withdraws less than
+/// the fee amount. Splitting the fee out of that marginal withdrawal aborted
+/// a fully funded order; it comes out of the pool's quote balance instead.
+public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_owed() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Alice rests a bid for 97 @ 2: 194 principal plus a 3.492 maker fee, so
+    // she owes 197.492 against 196.4 settled. The vault withdraws only the
+    // 1.092 shortfall — less than the fee itself.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        97 * constants::float_scaling(),
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // 8 from the fill plus Alice's newly locked 3.492
+        assert!(pool.quote_fee_reserve_balance() == 11492 * constants::float_scaling() / 1000, 0);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Regression: governance accepts fee rates at 0.01 bp granularity, and both
+/// settlement and the dry-run quote honor them at that precision. Rates used
+/// to be truncated to whole basis points on the way in, so a sub-basis-point
+/// maker rate collected nothing at all, and a fractional taker rate made
+/// `get_quantity_out` disagree with what actually settled.
+public(package) fun test_fractional_basis_point_fees_are_charged_as_configured() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Taker 1.5 bp, maker 0.5 bp: both legal (multiples of the 0.01 bp fee
+    // step, taker above its 1 bp floor), neither a whole basis point.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee(150_000, 50_000, &admin_cap);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let notional = 200 * constants::float_scaling();
+    // On 200 quote: maker 0.5 bp = 0.01, taker 1.5 bp = 0.03
+    let maker_fee = constants::float_scaling() / 100;
+    let taker_fee = 3 * constants::float_scaling() / 100;
+
+    // Alice rests a bid: her escrow is the configured 0.5 bp, not zero.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.quote_fee_reserve_balance() == maker_fee, 0);
+        return_shared(pool);
+    };
+
+    // The quote an ask taker is shown for the whole resting bid...
+    let (_base_out, quote_out) = get_quantity_out<SUI, USDC>(pool_id, quantity, 0, &mut test);
+    assert!(quote_out == notional - taker_fee, 1);
+
+    // ...is exactly what Bob's ask settles for.
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+
+        let order_info = pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        assert!(order_info.paid_fees() == taker_fee, 2);
+        assert!(order_info.cumulative_quote_quantity() - order_info.paid_fees() == quote_out, 3);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
 /// Characterization of a KNOWN GAP, kept until TRIEX-138 lands: the fee
 /// reserve does not yet distinguish earned fees from a bid maker's
 /// still-locked fee escrow, so the admin can sweep fees backing an open,

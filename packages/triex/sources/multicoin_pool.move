@@ -1091,14 +1091,22 @@ fun place_order_int<QuoteAsset>(
         pool_inner
             .vault
             .settle_balance_manager(settled, owed, balance_manager, trade_proof, fee_deposit, ctx);
-        pool_inner
-            .vault
-            .move_quote_to_fee_reserve(
-                pool_inner.pool_id,
-                balance_manager.id(),
-                proceeds_fees,
-                clock.timestamp_ms(),
-            );
+        // One deposit per account charged, so each reaches the reserve
+        // attributed to whoever paid it: the ask taker for their own fee,
+        // each ask maker for the fee taken out of their fill proceeds.
+        let mut fee_idx = 0;
+        while (fee_idx < proceeds_fees.length()) {
+            let proceeds_fee = &proceeds_fees[fee_idx];
+            pool_inner
+                .vault
+                .move_quote_to_fee_reserve(
+                    pool_inner.pool_id,
+                    proceeds_fee.balance_manager_id(),
+                    proceeds_fee.amount(),
+                    clock.timestamp_ms(),
+                );
+            fee_idx = fee_idx + 1;
+        };
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());
         order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());
