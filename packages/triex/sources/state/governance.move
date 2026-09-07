@@ -14,7 +14,7 @@ use triexbook::trade_params::{Self, TradeParams};
 // use triexbook::{constants, math}; // #feat:gov #feat:stake - DISABLED (used for voting power calculations)
 
 // === Errors ===
-// const EInvalidMakerFee: u64 = 1;
+const EInvalidMakerFee: u64 = 1;
 const EInvalidTakerFee: u64 = 2;
 // const EProposalDoesNotExist: u64 = 3; // #feat:gov - DISABLED
 // const EMaxProposalsReachedNotEnoughVotes: u64 = 4; // #feat:gov - DISABLED
@@ -23,17 +23,17 @@ const EWhitelistedPoolCannotChange: u64 = 5;
 
 // === Constants ===
 const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
-// const MIN_TAKER_STABLE: u64 = 10000; // 0.1 basis points
-// const MAX_TAKER_STABLE: u64 = 100000; // 1 basis points
-// const MIN_MAKER_STABLE: u64 = 0;
-// const MAX_MAKER_STABLE: u64 = 50000; // 0.5 basis points
-const MIN_TAKER_VOLATILE: u64 = 100000; // 1 basis points
-const MAX_TAKER_VOLATILE: u64 = 20000000; // 200 basis points (2%)
-// const MIN_MAKER_VOLATILE: u64 = 0;
-// const MAX_MAKER_VOLATILE: u64 = 500000; // 5 basis points
+const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
+// Maker rates may be zero; only takers keep a floor. The caps bound what the
+// admin can ever set, independent of the launch defaults below.
+const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 
-const MIN_FEE_RATE_STABLE: u64 = 10000; // 0.1 basis points
-const MAX_FEE_RATE_STABLE: u64 = 100000; // 1 basis
+const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
+const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
+
+const DEFAULT_TAKER_FEE_MULTICOIN: u64 = 11000000; // 110 basis points (1.1%)
+const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9000000; // 90 basis points (0.9%)
 
 // const MAX_PROPOSALS: u64 = 100; // #feat:gov - DISABLED
 // const VOTING_POWER_THRESHOLD: u64 = 100_000_000_000; // 100k cred // #feat:stake #feat:gov - DISABLED
@@ -58,8 +58,6 @@ public struct Governance has store {
     epoch: u64,
     /// If Pool is whitelisted.
     whitelisted: bool,
-    /// If Pool is stable or volatile.
-    stable: bool,
     // List of proposals for the current epoch. // #feat:gov - DISABLED
     // proposals: VecMap<ID, Proposal>,
     /// Trade parameters for the current epoch.
@@ -74,50 +72,36 @@ public struct Governance has store {
 
 /// Event emitted when trade parameters are updated.
 public struct TradeParamsUpdateEvent has copy, drop {
-    // taker_fee: u64,
-    // maker_fee: u64,
-    // stake_required: u64, // #feat:fee_gov
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
 }
 
 // === Public-Package Functions ===
-// #feat:fees
-// public(package) fun empty(whitelisted: bool, stable_pool: bool, ctx: &TxContext): Governance {
+public(package) fun empty(whitelisted: bool, ctx: &TxContext): Governance {
+    new_governance(whitelisted, DEFAULT_TAKER_FEE, DEFAULT_MAKER_FEE, ctx)
+}
 
-// let default_taker = if (whitelisted) {
-//     0
-// } else if (stable_pool) {
-//     MAX_TAKER_STABLE
-// } else {
-//     MAX_TAKER_VOLATILE
-// };
-// let default_maker = if (whitelisted) {
-//     0
-// } else if (stable_pool) {
-//     MAX_MAKER_STABLE
-// } else {
-//     MAX_MAKER_VOLATILE
-// };
-public(package) fun empty(whitelisted: bool, stable_pool: bool, ctx: &TxContext): Governance {
-    // Unified fee model: all pool types use the same fee rate (2%)
-    let default_fee = MAX_TAKER_VOLATILE; // 20,000,000 = 2%
+public(package) fun empty_multicoin(whitelisted: bool, ctx: &TxContext): Governance {
+    new_governance(
+        whitelisted,
+        DEFAULT_TAKER_FEE_MULTICOIN,
+        DEFAULT_MAKER_FEE_MULTICOIN,
+        ctx,
+    )
+}
+
+fun new_governance(
+    whitelisted: bool,
+    taker_fee: u64,
+    maker_fee: u64,
+    ctx: &TxContext,
+): Governance {
     Governance {
         epoch: ctx.epoch(),
         whitelisted,
-        stable: stable_pool,
         // proposals: vec_map::empty(), // #feat:gov - DISABLED
-        trade_params: trade_params::new(
-            // default_taker,
-            // default_maker,
-            // constants::default_stake_required(), // #feat:fee_gov
-            default_fee,
-        ),
-        next_trade_params: trade_params::new(
-            // default_taker,
-            // default_maker,
-            // constants::default_stake_required(), // #feat:fee_gov
-            default_fee,
-        ),
+        trade_params: trade_params::new(taker_fee, maker_fee),
+        next_trade_params: trade_params::new(taker_fee, maker_fee),
         // voting_power: 0, // #feat:stake #feat:gov - DISABLED
         // quorum: 0, // #feat:gov - DISABLED
     }
@@ -127,16 +111,11 @@ public(package) fun whitelisted(self: &Governance): bool {
     self.whitelisted
 }
 
-public(package) fun stable(self: &Governance): bool {
-    self.stable
-}
-
 #[test_only]
 public fun destroy_for_testing(self: Governance) {
     let Governance {
         epoch: _,
         whitelisted: _,
-        stable: _,
         trade_params: _,
         next_trade_params: _,
     } = self;
@@ -158,10 +137,8 @@ public(package) fun update(self: &mut Governance, ctx: &TxContext) {
     self.trade_params = self.next_trade_params;
 
     event::emit(TradeParamsUpdateEvent {
-        // taker_fee: self.trade_params.taker_fee(),
-        // maker_fee: self.trade_params.maker_fee(),
-        // stake_required: self.trade_params.stake_required(), // #feat:fee_gov
-        fee: self.trade_params.fee(),
+        taker_fee: self.trade_params.taker_fee(),
+        maker_fee: self.trade_params.maker_fee(),
     });
 }
 
@@ -269,20 +246,17 @@ public(package) fun next_trade_params(self: &Governance): TradeParams {
 
 /// Admin function to set trade parameters for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
-public(package) fun set_next_trade_params(self: &mut Governance, fee: u64) {
+public(package) fun set_next_trade_params(self: &mut Governance, taker_fee: u64, maker_fee: u64) {
     assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
-    assert!(fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
+    assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
+    assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
 
-    // Validate fee ranges based on stable vs volatile pool
-    if (self.stable) {
-        assert!(fee >= MIN_FEE_RATE_STABLE, EInvalidTakerFee);
-        assert!(fee <= MAX_FEE_RATE_STABLE, EInvalidTakerFee);
-    } else {
-        assert!(fee >= MIN_TAKER_VOLATILE, EInvalidTakerFee);
-        assert!(fee <= MAX_TAKER_VOLATILE, EInvalidTakerFee);
-    };
+    // Maker rates have no floor (zero is allowed); takers keep theirs.
+    assert!(taker_fee >= MIN_TAKER_FEE, EInvalidTakerFee);
+    assert!(taker_fee <= MAX_TAKER_FEE, EInvalidTakerFee);
+    assert!(maker_fee <= MAX_MAKER_FEE, EInvalidMakerFee);
 
-    self.next_trade_params = trade_params::new(fee);
+    self.next_trade_params = trade_params::new(taker_fee, maker_fee);
 }
 
 // === Private Functions ===

@@ -28,7 +28,7 @@ const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
 // Matches quote_fee: FEE_PRECISION = 10_000, default pool fee = 200 bps (2%).
-const FEE_BPS: u64 = 200;
+const FEE_BPS: u64 = 110;
 const FEE_PRECISION: u64 = 10_000;
 
 /// A full bid fill at 100 "USDC"/item must produce the correct cumulative_quote
@@ -411,8 +411,10 @@ fun test_vault_fee_reserve_correct_after_fill() {
 
         // Vault must hold the correct fee, not the undercharged amount.
         assert!(pool.quote_fee_reserve_balance() == expected_fees, 0);
-        // Confirm the ratio: fix collects FLOAT_SCALING× more than the bug.
-        assert!(expected_fees / buggy_fees == constants::float_scaling(), 1);
+        // Confirm the ratio: the fix collects at least FLOAT_SCALING× more
+        // than the bug (the buggy fee also truncates, so the ratio can
+        // exceed it).
+        assert!(expected_fees / buggy_fees >= constants::float_scaling(), 1);
 
         return_shared(pool);
         return_shared(clock);
@@ -547,7 +549,6 @@ fun test_trade_nft_for_100_billion_cred() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
@@ -676,11 +677,11 @@ fun test_trade_nft_for_100_billion_cred() {
 ///
 ///   overflow threshold: quote > MAX_U64 / 200 = 92_233_720_368_547_758
 ///
-/// This test uses price_internal = 92_233_720_368_547_759 (one above the threshold)
-/// so that quote × 200 = 18_446_744_073_709_551_800 exceeds MAX_U64, which would
+/// This test uses price_internal = 170_000_000_000_000_000 (above the threshold)
+/// so that quote × 110 = 18_700_000_000_000_000_000 exceeds MAX_U64, which would
 /// wrap or abort under naive u64 arithmetic. The u128 path produces the correct fee.
 ///
-///   correct fee = 18_446_744_073_709_551_800 / 10_000 = 1_844_674_407_370_955
+///   correct fee = 18_700_000_000_000_000_000 / 10_000 = 1_870_000_000_000_000
 #[test]
 fun test_fee_large_quote_no_u64_overflow() {
     let mut test = begin(OWNER);
@@ -699,7 +700,6 @@ fun test_fee_large_quote_no_u64_overflow() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
@@ -709,11 +709,11 @@ fun test_fee_large_quote_no_u64_overflow() {
         id
     };
 
-    // price_internal one above overflow threshold: quote × 200 > MAX_U64
-    let price: u64 = 92_233_720_368_547_759;
+    // price_internal above overflow threshold: quote × 110 > MAX_U64
+    let price: u64 = 170_000_000_000_000_000;
     let qty = 1u64;
 
-    // Bob needs quote + fee raw CRED: 92_233_720_368_547_759 + 1_844_674_407_370_955 = 94_078_394_775_918_714
+    // Bob needs quote + fee raw CRED: 170_000_000_000_000_000 + 1_870_000_000_000_000 = 171_870_000_000_000_000
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(ALICE, 0, 0, &mut test);
     let bob_bm_id = mc_utils::create_balance_manager_with_funds(
         BOB,
@@ -786,14 +786,14 @@ fun test_fee_large_quote_no_u64_overflow() {
             test.ctx(),
         );
 
-        let quote = qty * price; // = 92_233_720_368_547_759
+        let quote = qty * price; // = 170_000_000_000_000_000
 
         // Prove that naive u64 multiplication would overflow.
-        let u128_product = (quote as u128) * (FEE_BPS as u128); // = 18_446_744_073_709_551_800
+        let u128_product = (quote as u128) * (FEE_BPS as u128); // = 18_700_000_000_000_000_000
         assert!(u128_product > (constants::max_u64() as u128), 0);
 
         // The u128 path gives the correct truncated fee.
-        let expected_fee = (u128_product / (FEE_PRECISION as u128)) as u64; // = 1_844_674_407_370_955
+        let expected_fee = (u128_product / (FEE_PRECISION as u128)) as u64; // = 1_870_000_000_000_000
 
         assert!(order_info.status() == constants::filled(), 1);
         assert!(order_info.paid_fees() == expected_fee, 2);
@@ -837,7 +837,6 @@ fun test_fee_truncation_floor_and_threshold() {
             &collection,
             ASSET_GOLD,
             true,
-            false,
             &admin_cap,
             test.ctx(),
         );
@@ -849,10 +848,10 @@ fun test_fee_truncation_floor_and_threshold() {
 
     // price = 1 raw CRED/NFT so that quote = qty exactly; easy to reason about.
     let price = 1u64;
-    let qty_below: u64 = 49; // quote = 49 → fee = 0 (truncated)
-    let qty_threshold: u64 = 50; // quote = 50 → fee = 1 (minimum non-zero)
+    let qty_below: u64 = 90; // quote = 90 → fee = 90 × 110 / 10_000 = 0 (truncated)
+    let qty_threshold: u64 = 91; // quote = 91 → fee = 1 (minimum non-zero)
 
-    // Alice needs 49 + 50 = 99 NFTs; Bob needs 49 + 51 = 100 raw CRED.
+    // Alice needs 90 + 91 = 181 NFTs; Bob needs 90 + 92 = 182 raw CRED.
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(ALICE, 0, 0, &mut test);
     let bob_bm_id = mc_utils::create_balance_manager_with_funds(BOB, 0, 200, &mut test);
 
@@ -919,7 +918,7 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 0, 0); // 49 × 200 / 10_000 = 0
+        assert!(info.paid_fees() == 0, 0); // 90 × 110 / 10_000 = 0
         assert!(pool.quote_fee_reserve_balance() == 0, 1);
 
         return_shared(pool);
@@ -969,12 +968,123 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 1, 2); // 50 × 200 / 10_000 = 1
+        assert!(info.paid_fees() == 1, 2); // 91 × 110 / 10_000 = 1
         assert!(pool.quote_fee_reserve_balance() == 1, 3); // cumulative: 0 + 1
 
         return_shared(pool);
         return_shared(clock);
         return_shared(bob_bm);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
+/// Multicoin mirror of the coin-pool rate-snapshot test: a resting bid keeps
+/// the maker rate it was placed under (the 0.9% multicoin default) across an
+/// admin rate change and epoch rollover, while a new bid locks at the
+/// promoted rate.
+#[test]
+fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
+        &mut test,
+    );
+    // Non-whitelisted pool, so the admin can change its fees.
+    let pool_id = mc_utils::setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = mc_utils::create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // price_scaling = 1 → quote = qty × price
+    let price = 1_000_000u64;
+    let qty = 1u64;
+    let quote = qty * price;
+    // Multicoin default maker rate at placement: 0.9% = 90 bps
+    let fee_at_default_rate = quote * 90 / 10_000;
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = alice_bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut alice_bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            qty,
+            true, // bid
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == quote + fee_at_default_rate, 0);
+
+        return_shared(pool);
+        return_shared(clock);
+        return_shared(alice_bm);
+    };
+
+    // Admin lowers the rates for the next epoch: taker 1%, maker 0.5%.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        return_shared(pool);
+        unit_test::destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    // The resting order still reports its snapshotted 0.9% rate; a new bid
+    // placed in the new epoch locks at the promoted 0.5%.
+    let fee_at_new_rate = quote * 50 / 10_000;
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == quote + fee_at_default_rate, 1);
+
+        let proof = alice_bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut alice_bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            qty,
+            true, // bid
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == 2 * quote + fee_at_default_rate + fee_at_new_rate, 2);
+
+        return_shared(pool);
+        return_shared(clock);
+        return_shared(alice_bm);
     };
 
     unit_test::destroy(collection_cap);

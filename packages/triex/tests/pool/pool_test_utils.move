@@ -848,6 +848,8 @@ public(package) fun test_get_order() {
     assert!(order.quantity() == 1 * constants::float_scaling(), 0);
     assert!(order.filled_quantity() == 0, 0);
     assert!(order.epoch() == 0, 0);
+    // Snapshotted at placement from the pool's default maker rate (1.8%)
+    assert!(order.maker_fee_rate() == 18_000_000, 0);
     assert!(order.status() == constants::live(), 0);
     assert!(order.expire_timestamp() == constants::max_u64(), 0);
 
@@ -1738,8 +1740,9 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, constants::cred_multiplier());
-        // Quote-only fees reduce returned quote slightly
-        assert_eq!(quote, 1795 * constants::float_scaling());
+        // Quote-only fees reduce returned quote slightly:
+        // 2000 in, 200 spent on base, fee = 200 × 2.2% × 1.25 = 5.5
+        assert_eq!(quote, 17945 * constants::float_scaling() / 10);
     };
 
     let order_info = place_limit_order<SUI, USDC>(
@@ -1785,7 +1788,8 @@ fun test_order_limit(is_bid: bool) {
             &mut test,
         );
         assert_eq!(base, 10 * constants::float_scaling());
-        assert_eq!(quote, 1_979_500_000_000);
+        // 2000 in, 20 spent on base, fee = 20 × 2.2% × 1.25 = 0.55
+        assert_eq!(quote, 1_979_450_000_000);
     };
 
     // Place second order, should match with the 10 remaining orders.
@@ -4836,7 +4840,7 @@ fun setup_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
     whitelisted_pool: bool,
-    stable_pool: bool,
+    _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     test.next_tx(sender);
@@ -4848,7 +4852,6 @@ fun setup_pool<BaseAsset, QuoteAsset>(
             pool::create_pool_admin<BaseAsset, QuoteAsset>(
                 &mut registry,
                 whitelisted_pool,
-                stable_pool,
                 &admin_cap,
                 test.ctx(),
             );

@@ -37,8 +37,7 @@ fun process_create_ok() {
     taker_order.set_order_id(4);
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+    let mut state = state::empty(whitelisted, test.ctx());
     let price = 1 * constants::usdc_unit();
     let quantity = 1 * constants::sui_unit();
     let mut order_info1 = create_order_info_base(
@@ -186,8 +185,7 @@ fun process_create_expired_ok() {
     );
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+    let mut state = state::empty(whitelisted, test.ctx());
     let price = 1 * constants::usdc_unit();
     let quantity = 10 * constants::sui_unit();
     let balance_manager_id = id_from_address(ALICE);
@@ -314,8 +312,7 @@ fun process_create_cred_price_ok() {
     );
 
     let whitelisted = false;
-    let stable_pool = false;
-    let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+    let mut state = state::empty(whitelisted, test.ctx());
     let price = 13 * constants::usdc_unit();
     let quantity = 13 * constants::sui_unit();
     let mut order_info = create_order_info_base(
@@ -375,7 +372,7 @@ fun process_create_cred_price_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -469,7 +466,7 @@ fun process_create_cred_price_ok() {
 //     // default stake required is 100
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -659,7 +656,7 @@ fun process_create_cred_price_ok() {
 //     // default stake required is 100
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -880,8 +877,7 @@ fun process_cancel_ok() {
     );
     let _ewma_state = test_init_ewma_state(test.ctx());
     let whitelisted = false;
-    let stable_pool = false;
-    let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+    let mut state = state::empty(whitelisted, test.ctx());
     // #feat:fee_gov
     // let (settled, owed) = state.process_create(
     //     &mut order_info,
@@ -932,8 +928,7 @@ fun process_cancel_after_partial_ok() {
     );
     // let ewma_state = test_init_ewma_state(test.ctx());
     let whitelisted = false;
-    let stable_pool = false;
-    let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+    let mut state = state::empty(whitelisted, test.ctx());
     // #feat:fee_gov
     // state.process_create(
     //     &mut order_info,
@@ -1006,7 +1001,7 @@ fun process_cancel_after_partial_ok() {
 //     // stake 100 CRED
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1099,7 +1094,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     let (settled, owed) = state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1147,7 +1142,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     // #feat:fee_gov
 //     // state.process_proposal(
 //     //     id_from_address(POOL_ID),
@@ -1175,7 +1170,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1209,7 +1204,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1260,7 +1255,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),
@@ -1304,7 +1299,7 @@ fun process_cancel_after_partial_ok() {
 //     test.next_tx(ALICE);
 //     let whitelisted = false;
 //     let stable_pool = false;
-//     let mut state = state::empty(whitelisted, stable_pool, test.ctx());
+//     let mut state = state::empty(whitelisted, test.ctx());
 //     state.process_stake(
 //         id_from_address(POOL_ID),
 //         id_from_address(ALICE),

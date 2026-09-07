@@ -62,6 +62,9 @@ public struct OrderInfo has copy, drop, store {
     maker_fees: u64,
     // Epoch this order was placed
     epoch: u64,
+    // Maker fee rate snapshotted at placement (post epoch-rollover), recorded
+    // on the resting Order so it settles at its placement rate
+    maker_fee_rate: u64,
     // Status of the order
     status: u8,
     // Is a market_order
@@ -194,6 +197,10 @@ public fun epoch(self: &OrderInfo): u64 {
     self.epoch
 }
 
+public fun maker_fee_rate(self: &OrderInfo): u64 {
+    self.maker_fee_rate
+}
+
 public fun status(self: &OrderInfo): u8 {
     self.status
 }
@@ -217,6 +224,7 @@ public(package) fun new(
     quantity: u64,
     is_bid: bool,
     epoch: u64,
+    maker_fee_rate: u64,
     expire_timestamp: u64,
     market_order: bool,
     timestamp: u64,
@@ -237,6 +245,7 @@ public(package) fun new(
         cumulative_quote_quantity: 0,
         fills: vector[],
         epoch,
+        maker_fee_rate,
         paid_fees: 0,
         maker_fees: 0,
         status: constants::live(),
@@ -360,6 +369,7 @@ public(package) fun to_order(self: &OrderInfo): Order {
         self.original_quantity,
         self.executed_quantity,
         self.epoch,
+        self.maker_fee_rate,
         self.status,
         self.expire_timestamp,
     )

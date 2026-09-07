@@ -727,6 +727,7 @@ public fun create_order_info(
         quantity,
         is_bid,
         epoch,
+        0,
         expire_timestamp,
         market_order,
         0,

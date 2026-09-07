@@ -30,6 +30,8 @@ public struct Fill has copy, drop, store {
     taker_is_bid: bool,
     // Maker epoch
     maker_epoch: u64,
+    // Maker fee rate snapshotted on the maker order at placement
+    maker_fee_rate: u64,
     // Taker fee paid for fill
     taker_fee: u64,
     // Maker fee paid for fill
@@ -77,6 +79,10 @@ public fun maker_epoch(self: &Fill): u64 {
     self.maker_epoch
 }
 
+public fun maker_fee_rate(self: &Fill): u64 {
+    self.maker_fee_rate
+}
+
 public fun taker_fee(self: &Fill): u64 {
     self.taker_fee
 }
@@ -97,6 +103,7 @@ public(package) fun new(
     quote_quantity: u64,
     taker_is_bid: bool,
     maker_epoch: u64,
+    maker_fee_rate: u64,
 ): Fill {
     Fill {
         maker_order_id,
@@ -109,6 +116,7 @@ public(package) fun new(
         quote_quantity,
         taker_is_bid,
         maker_epoch,
+        maker_fee_rate,
         taker_fee: 0,
         maker_fee: 0,
     }

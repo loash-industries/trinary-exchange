@@ -22,8 +22,6 @@ const EPackageVersionNotEnabled: u64 = 3;
 const EVersionNotEnabled: u64 = 4;
 const EVersionAlreadyEnabled: u64 = 5;
 const ECannotDisableCurrentVersion: u64 = 6;
-const ECoinAlreadyWhitelisted: u64 = 7;
-const ECoinNotWhitelisted: u64 = 8;
 const EMaxBalanceManagersReached: u64 = 9;
 const EQuoteNotApproved: u64 = 10;
 const EQuoteAlreadyApproved: u64 = 11;
@@ -55,7 +53,6 @@ public struct PoolKey has copy, drop, store {
     quote: TypeName,
 }
 
-public struct StableCoinKey has copy, drop, store {}
 public struct BalanceManagerKey has copy, drop, store {}
 public struct ApprovedQuoteKey has copy, drop, store {}
 public struct MultiCoinPoolsKey has copy, drop, store {}
@@ -117,52 +114,6 @@ public fun disable_version(self: &mut Registry, version: u64, _cap: &TriexbookAd
     assert!(version != constants::current_version(), ECannotDisableCurrentVersion);
     assert!(self.allowed_versions.contains(&version), EVersionNotEnabled);
     self.allowed_versions.remove(&version);
-}
-
-/// Adds a stablecoin to the whitelist
-/// Only Admin can add stablecoin
-public fun add_stablecoin<StableCoin>(self: &mut Registry, _cap: &TriexbookAdminCap) {
-    let _: &mut RegistryInner = self.load_inner_mut();
-    let stable_type = type_name::with_defining_ids<StableCoin>();
-    if (
-        !dynamic_field::exists_(
-            &self.id,
-            StableCoinKey {},
-        )
-    ) {
-        dynamic_field::add(
-            &mut self.id,
-            StableCoinKey {},
-            vec_set::singleton(stable_type),
-        );
-    } else {
-        let stable_coins: &mut VecSet<TypeName> = dynamic_field::borrow_mut(
-            &mut self.id,
-            StableCoinKey {},
-        );
-        assert!(!stable_coins.contains(&stable_type), ECoinAlreadyWhitelisted);
-        stable_coins.insert(stable_type);
-    };
-}
-
-/// Removes a stablecoin from the whitelist
-/// Only Admin can remove stablecoin
-public fun remove_stablecoin<StableCoin>(self: &mut Registry, _cap: &TriexbookAdminCap) {
-    let _: &mut RegistryInner = self.load_inner_mut();
-    let stable_type = type_name::with_defining_ids<StableCoin>();
-    assert!(
-        dynamic_field::exists_(
-            &self.id,
-            StableCoinKey {},
-        ),
-        ECoinNotWhitelisted,
-    );
-    let stable_coins: &mut VecSet<TypeName> = dynamic_field::borrow_mut(
-        &mut self.id,
-        StableCoinKey {},
-    );
-    assert!(stable_coins.contains(&stable_type), ECoinNotWhitelisted);
-    stable_coins.remove(&stable_type);
 }
 
 /// Adds a quote currency to the approved list.
@@ -261,26 +212,6 @@ public fun get_balance_manager_ids(self: &Registry, owner: address): VecSet<ID> 
         *balance_manager_map.borrow<address, VecSet<ID>>(owner)
     } else {
         vec_set::empty()
-    }
-}
-
-/// Returns whether the given coin is whitelisted
-public fun is_stablecoin(self: &Registry, stable_type: TypeName): bool {
-    let _: &RegistryInner = self.load_inner();
-    if (
-        !dynamic_field::exists_(
-            &self.id,
-            StableCoinKey {},
-        )
-    ) {
-        false
-    } else {
-        let stable_coins: &VecSet<TypeName> = dynamic_field::borrow(
-            &self.id,
-            StableCoinKey {},
-        );
-
-        stable_coins.contains(&stable_type)
     }
 }
 

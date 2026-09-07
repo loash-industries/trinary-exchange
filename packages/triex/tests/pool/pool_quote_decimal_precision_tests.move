@@ -46,7 +46,7 @@ const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 
 // Pool governance default: 2% taker fee on bids
-const FEE_BPS: u64 = 200;
+const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 
 // Enough to cover the largest test (100 × FLOAT_SCALING × FLOAT_SCALING quote)
@@ -103,7 +103,6 @@ fun create_pool<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scen
     let pool_id = pool::create_pool_admin<SUI, QuoteAsset>(
         &mut registry,
         true, // whitelisted
-        false, // not stable
         &admin_cap,
         test.ctx(),
     );

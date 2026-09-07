@@ -39,7 +39,6 @@ const EPackageVersionDisabled: u64 = 11;
 const EMinimumQuantityOutNotMet: u64 = 12;
 // const EInvalidStake: u64 = 13; // #feat:stake - DISABLED
 const EPoolNotRegistered: u64 = 14;
-const EPoolCannotBeBothWhitelistedAndStable: u64 = 15;
 // const EInvalidReferralMultiplier: u64 = 16;
 // const EInvalidEWMAAlpha: u64 = 17;
 // const EInvalidZScoreThreshold: u64 = 18;
@@ -63,10 +62,8 @@ public struct PoolInner<phantom BaseAsset, phantom QuoteAsset> has store {
 
 public struct PoolCreated<phantom BaseAsset, phantom QuoteAsset> has copy, drop, store {
     pool_id: ID,
-    // #feat:fees
-    // taker_fee: u64,
-    // maker_fee: u64,
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
     whitelisted_pool: bool,
     treasury_address: address,
 }
@@ -125,16 +122,12 @@ public fun create_permissionless_pool<BaseAsset, QuoteAsset>(
     ctx: &mut TxContext,
 ): ID {
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
-    let base_type = type_name::with_defining_ids<BaseAsset>();
-    let quote_type = type_name::with_defining_ids<QuoteAsset>();
     let whitelisted_pool = false;
-    let stable_pool = registry.is_stablecoin(base_type) && registry.is_stablecoin(quote_type);
 
     create_pool<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }
@@ -718,16 +711,17 @@ public fun withdraw_settled_amounts_permissionless<BaseAsset, QuoteAsset>(
 //     self.vault.settle_balance_manager(settled, owed, balance_manager, trade_proof);
 // }
 
-/// Admin function to set the fee for the next epoch.
+/// Admin function to set the fees for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
 /// #ref:functions
 public fun set_next_epoch_fee<BaseAsset, QuoteAsset>(
     self: &mut Pool<BaseAsset, QuoteAsset>,
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
     _cap: &TriexbookAdminCap,
 ) {
     let self = self.load_inner_mut();
-    self.state.set_next_epoch_fee(fee);
+    self.state.set_next_epoch_fee(taker_fee, maker_fee);
 }
 
 // #feat:flashloan - DISABLED
@@ -887,7 +881,6 @@ public fun burn_cred<BaseAsset, QuoteAsset>(
 public fun create_pool_admin<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
     whitelisted_pool: bool,
-    stable_pool: bool,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
 ): ID {
@@ -896,7 +889,6 @@ public fun create_pool_admin<BaseAsset, QuoteAsset>(
         registry,
         creation_fee,
         whitelisted_pool,
-        stable_pool,
         ctx,
     )
 }
@@ -1076,12 +1068,12 @@ public fun get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
 ): (u64, u64) {
     let self = self.load_inner();
     let params = self.state.governance().trade_params();
-    // #feat:fees
-    // let taker_fee = params.taker_fee();
-    let trade_specific_taker_fee = if (quote_quantity   > 0) {
-        params.taker_fee_for_user(true)
+    // Asks quote fee-free until ask-side charging lands (TRIEX-135 Phase 2),
+    // keeping dry-runs aligned with settlement.
+    let trade_specific_taker_fee = if (quote_quantity > 0) {
+        params.taker_fee()
     } else {
-        params.taker_fee_for_user(false)
+        0
     };
     self
         .book
@@ -1244,13 +1236,10 @@ public fun locked_balance<BaseAsset, QuoteAsset>(
     let mut cred_quantity = 0;
 
     account_orders.do_ref!(|order| {
-        let fee_rate = self.state.history().historic_fee_rate(order.epoch());
-        let fee_rate_applied = if (order.is_bid()) {
-            fee_rate
-        } else {
-            0
-        };
-        let locked_balance = order.locked_balance(fee_rate_applied, self.book.price_scaling());
+        let locked_balance = order.locked_balance(
+            order.maker_fee_rate(),
+            self.book.price_scaling(),
+        );
         base_quantity = base_quantity + locked_balance.base();
         quote_quantity = quote_quantity + locked_balance.quote();
         cred_quantity = cred_quantity + locked_balance.cred();
@@ -1263,42 +1252,24 @@ public fun locked_balance<BaseAsset, QuoteAsset>(
 
     (base_quantity, quote_quantity, cred_quantity)
 }
-// // #feat:fees
-// /// Returns the trade params for the pool.
-// public fun pool_trade_params<BaseAsset, QuoteAsset>(
-//     self: &Pool<BaseAsset, QuoteAsset>,
-// ): (u64, u64, u64) {
-//     let self = self.load_inner();
-//     let trade_params = self.state.governance().trade_params();
-//     let taker_fee = trade_params.taker_fee();
-//     let maker_fee = trade_params.maker_fee();
-//     let stake_required = trade_params.stake_required();
-
-//     (taker_fee, maker_fee, stake_required)
-// }
-// /// Returns the currently leading trade params for the next epoch for the pool
-// public fun pool_trade_params_next<BaseAsset, QuoteAsset>(
-//     self: &Pool<BaseAsset, QuoteAsset>,
-// ): (u64, u64, u64) {
-//     let self = self.load_inner();
-//     let trade_params = self.state.governance().next_trade_params();
-//     let taker_fee = trade_params.taker_fee();
-//     let maker_fee = trade_params.maker_fee();
-//     let stake_required = trade_params.stake_required();
-
-//     (taker_fee, maker_fee, stake_required)
-// }
-
-public fun pool_trade_params<BaseAsset, QuoteAsset>(self: &Pool<BaseAsset, QuoteAsset>): u64 {
+/// Returns the (taker_fee, maker_fee) trade params for the pool.
+public fun pool_trade_params<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+): (u64, u64) {
     let self = self.load_inner();
     let trade_params = self.state.governance().trade_params();
-    trade_params.fee()
+
+    (trade_params.taker_fee(), trade_params.maker_fee())
 }
 
-public fun pool_trade_params_next<BaseAsset, QuoteAsset>(self: &Pool<BaseAsset, QuoteAsset>): u64 {
+/// Returns the (taker_fee, maker_fee) trade params for the next epoch.
+public fun pool_trade_params_next<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+): (u64, u64) {
     let self = self.load_inner();
     let trade_params = self.state.governance().next_trade_params();
-    trade_params.fee()
+
+    (trade_params.taker_fee(), trade_params.maker_fee())
 }
 
 public fun account<BaseAsset, QuoteAsset>(
@@ -1339,10 +1310,8 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
     registry: &mut Registry,
     creation_fee: Coin<CRED>,
     whitelisted_pool: bool,
-    stable_pool: bool,
     ctx: &mut TxContext,
 ): ID {
-    assert!(!(whitelisted_pool && stable_pool), EPoolCannotBeBothWhitelistedAndStable);
     assert!(
         type_name::with_defining_ids<BaseAsset>() != type_name::with_defining_ids<QuoteAsset>(),
         ESameBaseAndQuote,
@@ -1357,15 +1326,13 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
         allowed_versions: registry.allowed_versions(),
         pool_id: pool_id.to_inner(),
         book: book::empty(ctx),
-        state: state::empty(whitelisted_pool, stable_pool, ctx),
+        state: state::empty(whitelisted_pool, ctx),
         vault: vault::empty(),
         registered_pool: true,
     };
     let params = pool_inner.state.governance().trade_params();
-    // #feat:fees
-    // let taker_fee = params.taker_fee();
-    // let maker_fee = params.maker_fee();
-    let fee = params.fee();
+    let taker_fee = params.taker_fee();
+    let maker_fee = params.maker_fee();
     let treasury_address = registry.treasury_address();
     let pool = Pool<BaseAsset, QuoteAsset> {
         id: pool_id,
@@ -1375,10 +1342,8 @@ public(package) fun create_pool<BaseAsset, QuoteAsset>(
     registry.register_pool<BaseAsset, QuoteAsset>(pool_id);
     event::emit(PoolCreated<BaseAsset, QuoteAsset> {
         pool_id,
-        // #feat:fees
-        // taker_fee,
-        // maker_fee,
-        fee,
+        taker_fee,
+        maker_fee,
         whitelisted_pool,
         treasury_address,
     });
@@ -1451,6 +1416,10 @@ fun place_order_int<BaseAsset, QuoteAsset>(
     let order_info = {
         let pool_inner = self.load_inner_mut();
 
+        // Roll governance into the current epoch before snapshotting the
+        // maker rate, so an order placed on an epoch-boundary transaction
+        // records the freshly promoted rate rather than last epoch's.
+        let maker_fee_rate = pool_inner.state.governance_mut(ctx).trade_params().maker_fee();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1461,6 +1430,7 @@ fun place_order_int<BaseAsset, QuoteAsset>(
             quantity,
             is_bid,
             ctx.epoch(),
+            maker_fee_rate,
             expire_timestamp,
             market_order,
             clock.timestamp_ms(),

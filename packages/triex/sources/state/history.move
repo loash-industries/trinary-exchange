@@ -12,6 +12,8 @@ use sui::{event, table::{Self, Table}};
 use triexbook::{balances::{Self, Balances}, constants, math, trade_params::TradeParams};
 
 // === Errors ===
+// Referenced by the disabled #feat:rebate code path.
+#[allow(unused_const)]
 const EHistoricVolumesNotFound: u64 = 0;
 
 // === Structs ===
@@ -45,10 +47,8 @@ public struct EpochData has copy, drop, store {
     base_fees_collected: u64,
     quote_fees_collected: u64,
     historic_median: u128,
-    // taker_fee: u64,
-    // maker_fee: u64,
-    // stake_required: u64, // #feat:fees
-    fee: u64,
+    taker_fee: u64,
+    maker_fee: u64,
 }
 
 // === Public-Package Functions ===
@@ -103,10 +103,8 @@ public(package) fun update(
         base_fees_collected: self.volumes.total_fees_collected.base(),
         quote_fees_collected: self.volumes.total_fees_collected.quote(),
         historic_median: self.volumes.historic_median,
-        // taker_fee: trade_params.taker_fee(),
-        // maker_fee: trade_params.maker_fee(),
-        // stake_required: trade_params.stake_required(), // #feat:fees
-        fee: trade_params.fee(),
+        taker_fee: trade_params.taker_fee(),
+        maker_fee: trade_params.maker_fee(),
     });
 
     self.epoch = epoch;
@@ -221,13 +219,6 @@ public(package) fun reset_balance_to_burn(self: &mut History): u64 {
     self.balance_to_burn = 0;
 
     balance_to_burn
-}
-
-// #feat:fees
-public(package) fun historic_fee_rate(self: &History, epoch: u64): u64 {
-    assert!(self.historic_volumes.contains(epoch), EHistoricVolumesNotFound);
-
-    self.historic_volumes[epoch].trade_params.fee()
 }
 
 public(package) fun add_total_fees_collected(self: &mut History, fees: Balances) {

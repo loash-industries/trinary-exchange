@@ -467,9 +467,54 @@ public fun create_order(
         quantity,
         0,
         epoch,
+        0,
         constants::live(),
         expire_timestamp,
     )
+}
+
+#[test]
+// The maker rate snapshotted on the order rides into every Fill it generates,
+// for both partial and expiring fills — PR 2 charges ask-maker fill fees from
+// this value.
+fun generate_fill_propagates_maker_fee_rate_ok() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let maker_fee_rate = 18_000_000; // 1.8%
+    let mut order = order::new(
+        1,
+        id_from_address(ALICE),
+        15 * constants::usdc_unit(),
+        false,
+        10 * constants::sui_unit(),
+        0,
+        1,
+        maker_fee_rate,
+        constants::live(),
+        constants::max_u64(),
+    );
+
+    let fill = order.generate_fill(
+        0,
+        5 * constants::sui_unit(),
+        true,
+        false,
+        constants::float_scaling(),
+    );
+    assert_eq!(fill.maker_fee_rate(), maker_fee_rate);
+
+    // An expiring fill carries the rate too
+    let expired_fill = order.generate_fill(
+        0,
+        5 * constants::sui_unit(),
+        true,
+        true,
+        constants::float_scaling(),
+    );
+    assert_eq!(expired_fill.maker_fee_rate(), maker_fee_rate);
+
+    end(test);
 }
 
 // @todo: add a test for inserting order at same price to make sure same-prices are ordered for FIFO.

@@ -48,7 +48,7 @@ const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
 // Pool governance default: 2% taker fee on bids
-const FEE_BPS: u64 = 200;
+const FEE_BPS: u64 = 110;
 const FEE_PRECISION: u64 = 10_000;
 
 // Large enough to cover the maximum test quote (100 × FLOAT_SCALING per item)
@@ -116,7 +116,6 @@ fun create_pool_with_quote<QuoteAsset>(
         &collection,
         ASSET_GOLD,
         true, // whitelisted
-        false, // not stable
         &admin_cap,
         test.ctx(),
     );
@@ -272,16 +271,17 @@ fun test_mq9_fee_correct_not_1e9_undercharged() {
 
     // price_scaling = 1 → quote = qty × price (direct product)
     let expected_quote = qty * price; // = 100_000_000_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_000_000_000
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_200_000_000
 
     // buggy path: math::mul would divide by FLOAT_SCALING
     let buggy_quote = math::mul(qty, price); // = 100
-    let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2
+    let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2 (truncated)
 
     assert!(paid_fees == expected_fee, 0);
     assert!(vault_reserve == expected_fee, 1);
-    // The fix captures FLOAT_SCALING× more fee than the bug would have
-    assert!(expected_fee / buggy_fee == constants::float_scaling(), 2);
+    // The fix captures at least FLOAT_SCALING× more fee than the bug would
+    // have (the buggy fee also truncates, so the ratio can exceed it)
+    assert!(expected_fee / buggy_fee >= constants::float_scaling(), 2);
 
     destroy(collection_cap);
     end(test);
@@ -512,7 +512,7 @@ fun test_mq1_precision_floor_and_threshold() {
     // Mint enough NFTs for both fills (1 each)
     mint_and_deposit_nfts(alice_bm_id, 5, &collection_cap, &mut test);
 
-    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 200/10_000 = 0
+    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 110/10_000 = 0
     let price_low = 4 * 10u64;
     let (fees_low, reserve_low) = fill_and_get_fees<MQ1>(
         pool_id,
@@ -525,9 +525,9 @@ fun test_mq1_precision_floor_and_threshold() {
     assert!(fees_low == 0, 0);
     assert!(reserve_low == 0, 1);
 
-    // 5 raw Q1 per NFT: quote = 50, fee = 50 × 200/10_000 = 1 (first non-zero)
+    // 10 raw Q1 per NFT: quote = 100, fee = 100 × 110/10_000 = 1 (non-zero)
     // Same pool and BMs — reserve accumulates from both fills (0 + 1 = 1)
-    let price_threshold = 5 * 10u64;
+    let price_threshold = 10 * 10u64;
     let (fees_threshold, reserve_threshold) = fill_and_get_fees<MQ1>(
         pool_id,
         alice_bm_id,

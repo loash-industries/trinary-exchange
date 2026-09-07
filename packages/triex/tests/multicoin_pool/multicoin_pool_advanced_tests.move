@@ -1829,7 +1829,6 @@ fun test_multicoin_create_pool_unapproved_quote_e() {
         &collection,
         ASSET_GOLD,
         true,
-        false,
         &admin_cap,
         test.ctx(),
     );
@@ -2021,14 +2020,6 @@ fun test_multicoin_permissionless_pools() {
 
     let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Add USDC as stablecoin
-    test.next_tx(OWNER);
-    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    registry.add_stablecoin<USDC>(&admin_cap);
-    return_shared(registry);
-    unit_test::destroy(admin_cap);
-
     // Create permissionless pool for ASSET_GOLD with USDC quote
     test.next_tx(OWNER);
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
@@ -2076,60 +2067,6 @@ fun test_multicoin_permissionless_pools() {
     assert!(!pool_2.whitelisted(), 2);
     assert!(pool_2.registered_pool(), 3);
     return_shared(pool_2);
-
-    unit_test::destroy(collection_cap);
-    end(test);
-}
-
-// === Stable Coin Governance Tests ===
-
-#[test, expected_failure(abort_code = ::triexbook::registry::ECoinAlreadyWhitelisted)]
-fun test_multicoin_adding_duplicate_stablecoin_e() {
-    let mut test = begin(OWNER);
-
-    let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
-
-    // Add USDC as stablecoin
-    test.next_tx(OWNER);
-    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    registry.add_stablecoin<USDC>(&admin_cap);
-    return_shared(registry);
-    unit_test::destroy(admin_cap);
-
-    // Try to add USDC again - should fail
-    test.next_tx(OWNER);
-    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    registry.add_stablecoin<USDC>(&admin_cap);
-    return_shared(registry);
-    unit_test::destroy(admin_cap);
-
-    unit_test::destroy(collection_cap);
-    end(test);
-}
-
-#[test, expected_failure(abort_code = ::triexbook::registry::ECoinNotWhitelisted)]
-fun test_multicoin_removing_not_whitelisted_stablecoin_e() {
-    let mut test = begin(OWNER);
-
-    let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
-
-    // Add USDC as stablecoin
-    test.next_tx(OWNER);
-    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    registry.add_stablecoin<USDC>(&admin_cap);
-    return_shared(registry);
-    unit_test::destroy(admin_cap);
-
-    // Try to remove CRED (which was never added) - should fail
-    test.next_tx(OWNER);
-    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-    let mut registry = test.take_shared_by_id<Registry>(registry_id);
-    registry.remove_stablecoin<CRED>(&admin_cap);
-    return_shared(registry);
-    unit_test::destroy(admin_cap);
 
     unit_test::destroy(collection_cap);
     end(test);
