@@ -65,21 +65,18 @@ fun test_master(error_code: u64) {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
     if (error_code == EDuplicatePool) {
         pool_tests::setup_pool_with_default_fees<USDC, SUI>(
             utils::owner(),
             registry_id,
-            false,
             &mut test,
         );
     };
     let pool2_id = pool_tests::setup_pool_with_default_fees<SPAM, USDC>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
 

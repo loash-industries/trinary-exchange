@@ -44,7 +44,6 @@ fun test_master_cred_price(error_code: u64) {
     let pool2_id = pool_tests::setup_pool_with_default_fees<SPAM, SUI>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
 

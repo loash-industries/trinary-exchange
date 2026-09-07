@@ -53,7 +53,6 @@ fun test_full_bid_fill_produces_correct_paid_fees() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -182,7 +181,6 @@ fun test_modify_bid_order_refunds_correct_quote_amount() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -314,7 +312,6 @@ fun test_vault_fee_reserve_correct_after_fill() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -451,7 +448,6 @@ fun test_high_price_order_within_valid_range() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1005,7 +1001,6 @@ fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(

@@ -99,7 +99,6 @@ public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, Reference
 
 public(package) fun test_place_then_fill_bid_ask() {
     place_then_fill(
-        false,
         true,
         constants::no_restriction(),
         3 * constants::float_scaling(),
@@ -109,24 +108,9 @@ public(package) fun test_place_then_fill_bid_ask() {
         constants::filled(),
     );
 }
-
-public(package) fun test_place_then_fill_bid_ask_stable() {
-    place_then_fill(
-        true,
-        true,
-        constants::no_restriction(),
-        3 * constants::float_scaling(),
-        3 * constants::float_scaling(),
-        6 * constants::float_scaling(),
-        3 * constants::maybe_apply_fee(false) * constants::cred_multiplier(),
-        constants::filled(),
-    );
-}
-
 public(package) fun test_place_then_fill_ask_bid() {
     place_then_fill(
         false,
-        false,
         constants::no_restriction(),
         3 * constants::float_scaling(),
         3 * constants::float_scaling(),
@@ -135,23 +119,8 @@ public(package) fun test_place_then_fill_ask_bid() {
         constants::filled(),
     );
 }
-
-public(package) fun test_place_then_fill_ask_bid_stable() {
-    place_then_fill(
-        true,
-        false,
-        constants::no_restriction(),
-        3 * constants::float_scaling(),
-        3 * constants::float_scaling(),
-        6 * constants::float_scaling(),
-        3 * math::mul(constants::maybe_apply_fee(true), constants::cred_multiplier()),
-        constants::filled(),
-    );
-}
-
 public(package) fun test_place_then_ioc_bid_ask() {
     place_then_fill(
-        false,
         true,
         constants::immediate_or_cancel(),
         3 * constants::float_scaling(),
@@ -161,25 +130,9 @@ public(package) fun test_place_then_ioc_bid_ask() {
         constants::filled(),
     );
 }
-
-public(package) fun test_place_then_ioc_bid_ask_stable() {
-    place_then_fill(
-        true,
-        true,
-        constants::immediate_or_cancel(),
-        3 * constants::float_scaling(),
-        3 * constants::float_scaling(),
-        6 * constants::float_scaling(),
-        3 *
-        constants::maybe_apply_fee(false) * constants::cred_multiplier(),
-        constants::filled(),
-    );
-}
-
 public(package) fun test_place_then_ioc_ask_bid() {
     place_then_fill(
         false,
-        false,
         constants::immediate_or_cancel(),
         3 * constants::float_scaling(),
         3 * constants::float_scaling(),
@@ -188,20 +141,6 @@ public(package) fun test_place_then_ioc_ask_bid() {
         constants::filled(),
     );
 }
-
-public(package) fun test_place_then_ioc_ask_bid_stable() {
-    place_then_fill(
-        true,
-        false,
-        constants::immediate_or_cancel(),
-        3 * constants::float_scaling(),
-        3 * constants::float_scaling(),
-        6 * constants::float_scaling(),
-        3 * math::mul(constants::maybe_apply_fee(true), constants::cred_multiplier()),
-        constants::filled(),
-    );
-}
-
 public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
@@ -2105,7 +2044,6 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     let reference_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        false,
         test,
     );
 
@@ -2153,7 +2091,6 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     let reference_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        false,
         test,
     );
 
@@ -2190,43 +2127,23 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     setup_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        stable_pool,
         test,
     )
 }
-
-#[test_only]
-public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
-    sender: address,
-    registry_id: ID,
-    test: &mut Scenario,
-): ID {
-    let stable_pool = true;
-    setup_pool<BaseAsset, QuoteAsset>(
-        sender,
-        registry_id,
-        stable_pool,
-        test,
-    )
-}
-
 #[test_only]
 public(package) fun setup_pool_with_default_fees_return_fee<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
     test: &mut Scenario,
 ): ID {
-    let stable_pool = false;
     let pool_id = setup_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        stable_pool,
         test,
     );
 
@@ -2976,7 +2893,6 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
     let target_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         OWNER,
         registry_id,
-        false,
         test,
     );
     let _reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
@@ -2990,71 +2906,6 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
 
     target_pool_id
 }
-
-//
-// fun setup_pool_with_default_fees_and_reference_pool_unregistered<
-//     BaseAsset,
-//     QuoteAsset,
-//     ReferenceBaseAsset,
-//     ReferenceQuoteAsset,
-// >(
-//     sender: address,
-//     registry_id: ID,
-//     balance_manager_id: ID,
-//     test: &mut Scenario,
-// ): ID {
-//     let target_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
-//         OWNER,
-//         registry_id,
-//         false,
-//         false,
-//         test,
-//     );
-//     let reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
-//         sender,
-//         registry_id,
-//         balance_manager_id,
-//         constants::cred_multiplier(),
-//         test,
-//     );
-//     set_time(0, test);
-//     unregister_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
-//         reference_pool_id,
-//         registry_id,
-//         test,
-//     );
-
-//     target_pool_id
-// }
-
-fun setup_pool_with_stable_fees_and_reference_pool<
-    BaseAsset,
-    QuoteAsset,
-    ReferenceBaseAsset,
-    ReferenceQuoteAsset,
->(
-    sender: address,
-    registry_id: ID,
-    balance_manager_id: ID,
-    test: &mut Scenario,
-): ID {
-    let target_pool_id = setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
-        OWNER,
-        registry_id,
-        test,
-    );
-    let _reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
-        sender,
-        registry_id,
-        balance_manager_id,
-        constants::cred_multiplier(),
-        test,
-    );
-    set_time(0, test);
-
-    target_pool_id
-}
-
 /// Alice places a bid order, Bob places a swap_exact_amount order
 /// Make sure the assets returned to Bob are correct
 /// When swap is not fully filled, assets are returned correctly
@@ -4398,7 +4249,6 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees<SUI, USDC>(
         ALICE,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -5139,7 +4989,6 @@ fun partial_fill_maker_order(
 /// Place normal ask order, then try to fill full order.
 /// Alice places first order, Bob places second order.
 fun place_then_fill(
-    is_stable: bool,
     is_bid: bool,
     order_type: u8,
     alice_quantity: u64,
@@ -5155,14 +5004,7 @@ fun place_then_fill(
         1000000 * constants::float_scaling(),
         &mut test,
     );
-    let pool_id = if (is_stable) {
-        setup_pool_with_stable_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
-            ALICE,
-            registry_id,
-            balance_manager_id_alice,
-            &mut test,
-        )
-    } else {
+    let pool_id = {
         setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
@@ -5950,7 +5792,6 @@ fun share_registry_for_testing(test: &mut Scenario): ID {
 fun setup_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     test.next_tx(sender);

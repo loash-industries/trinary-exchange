@@ -77,7 +77,6 @@ fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     mc_utils::setup_multicoin_pool(
@@ -85,7 +84,6 @@ fun setup_multicoin_pool(
         registry_id,
         collection_id,
         asset_id,
-        stable_pool,
         test,
     )
 }

@@ -69,30 +69,14 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
 public(package) fun setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        stable_pool,
         test,
     )
 }
-
-#[test_only]
-public(package) fun setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
-    sender: address,
-    registry_id: ID,
-    test: &mut Scenario,
-): ID {
-    pool_test_utils::setup_pool_with_stable_fees<BaseAsset, QuoteAsset>(
-        sender,
-        registry_id,
-        test,
-    )
-}
-
 #[test_only]
 public(package) fun setup_pool_with_default_fees_return_fee<BaseAsset, QuoteAsset>(
     sender: address,

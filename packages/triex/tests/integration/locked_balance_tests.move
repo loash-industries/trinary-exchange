@@ -54,7 +54,6 @@ fun test_locked_balance(is_bid: bool) {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
 
@@ -206,7 +205,6 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
     let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(

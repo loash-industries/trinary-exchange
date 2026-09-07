@@ -112,7 +112,6 @@ public fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    _stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     test.next_tx(sender);
@@ -231,7 +230,6 @@ public fun setup_multicoin_pool_with_cred_pricing(
         registry_id,
         collection_id,
         asset_id,
-        false,
         test,
     );
 

@@ -69,7 +69,6 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
     let pool1_id = pool_tests::setup_pool_with_default_fees<SUI, SPAM>(
         utils::owner(),
         registry_id,
-        false,
         &mut test,
     );
 

@@ -36,7 +36,6 @@ Every admin entry point takes it as a read-only reference (`_cap:
 |---|---|
 | `set_treasury_address` | Redirect where pool-creation fees are sent. Defaults to the publisher. |
 | `enable_version` / `disable_version` | Control which package versions may interact with the protocol. The current version cannot be disabled. These two functions are themselves exempt from version checks, so an admin can always recover from a bad version state. |
-| `add_stablecoin` / `remove_stablecoin` | Manage the stablecoin whitelist, which determines which pools qualify as "stable pools". |
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
 | `init_balance_manager_map` | One-time creation of the owner → balance-manager-IDs table on the registry. Idempotent. |
 
@@ -171,8 +170,8 @@ With the `TriexbookAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
 
 1. **Collect revenue** — sweep trading fees from every pool and redirect
    pool-creation fees.
-2. **Set prices of participation** — trading fee per epoch per pool, which
-   coins count as stablecoins, which quote currencies are allowed.
+2. **Set prices of participation** — taker, maker and cancel-retention rates
+   per epoch per pool, and which quote currencies are allowed.
 3. **Control the pool set** — create fee-free pools, unregister pools for
    redeployment.
 4. **Gate protocol versions** — enable/disable package versions, the de facto

@@ -77,7 +77,6 @@ fun setup_multicoin_pool(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    stable_pool: bool,
     test: &mut Scenario,
 ): ID {
     mc_utils::setup_multicoin_pool(
@@ -85,7 +84,6 @@ fun setup_multicoin_pool(
         registry_id,
         collection_id,
         asset_id,
-        stable_pool,
         test,
     )
 }
@@ -132,7 +130,6 @@ fun test_multicoin_pool_modify_order_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -200,7 +197,6 @@ fun test_multicoin_pool_modify_order_ask_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -295,7 +291,6 @@ fun test_multicoin_pool_modify_order_increase_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -354,7 +349,6 @@ fun test_multicoin_pool_cancel_all_orders_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -476,7 +470,6 @@ fun test_multicoin_pool_price_priority_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -626,7 +619,6 @@ fun test_multicoin_pool_price_priority_ask_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -806,7 +798,6 @@ fun test_multicoin_pool_get_level2_range_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -964,7 +955,6 @@ fun test_multicoin_pool_account_open_orders_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1036,7 +1026,6 @@ fun test_multicoin_pool_withdraw_settled_amounts_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1163,7 +1152,6 @@ fun test_multicoin_pool_expired_order_removed_bid_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1285,7 +1273,6 @@ fun test_multicoin_pool_expired_order_removed_ask_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1408,7 +1395,6 @@ fun test_multicoin_pool_fifo_priority_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1561,7 +1547,6 @@ fun test_multicoin_pool_fifo_priority_ask_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1744,7 +1729,6 @@ fun test_multicoin_pool_crossing_multiple_orders_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -1886,7 +1870,6 @@ fun test_multicoin_pool_crossing_multiple_orders_ask_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2049,7 +2032,6 @@ fun test_multicoin_pool_price_above_max_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2095,7 +2077,6 @@ fun test_multicoin_pool_price_below_min_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2141,7 +2122,6 @@ fun test_multicoin_pool_price_at_max_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2222,7 +2202,6 @@ fun test_multicoin_pool_price_at_min_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2305,7 +2284,6 @@ fun test_multicoin_pool_get_order_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2366,7 +2344,6 @@ fun test_multicoin_admin_withdraws_quote_fee_reserve() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2500,7 +2477,6 @@ fun test_multicoin_pool_get_orders_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2593,7 +2569,6 @@ fun test_multicoin_pool_get_order_not_found_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2619,7 +2594,6 @@ fun test_multicoin_pool_modify_order_after_partial_fill_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2763,7 +2737,6 @@ fun test_multicoin_pool_modify_order_after_partial_fill_below_filled_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -2894,7 +2867,6 @@ fun test_multicoin_pool_multiple_orders_same_price_bid_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3001,7 +2973,6 @@ fun test_multicoin_pool_multiple_orders_same_price_ask_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3090,7 +3061,6 @@ fun test_multicoin_pool_cancel_already_canceled_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3143,7 +3113,6 @@ fun test_multicoin_pool_cancel_nonexistent_order_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3178,7 +3147,6 @@ fun test_multicoin_pool_invalid_order_type_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3224,7 +3192,6 @@ fun test_multicoin_pool_modify_nonexistent_order_e() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 
@@ -3268,7 +3235,6 @@ fun test_multicoin_pool_cancel_orders_ok() {
         registry_id,
         collection_id,
         ASSET_GOLD,
-        false,
         &mut test,
     );
 

@@ -181,7 +181,6 @@ fun update_pool_book_params_case() {
     let pool_id = pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -242,7 +241,6 @@ fun place_cancel_pool_case() {
     let pool_id = pool_test_utils::setup_pool_with_default_fees<SUI, CRED>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
     let balance_manager_id_alice = create_acct_and_share_with_funds(
@@ -345,7 +343,6 @@ fun create_pool_case() {
     pool_test_utils::setup_pool_with_default_fees<SUI, CRED>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
     end(test);
@@ -361,7 +358,6 @@ fun create_pool_unapproved_quote_case() {
     pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -375,7 +371,6 @@ fun unregister_pool_case(unregister: bool) {
     let pool_id = pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -386,7 +381,6 @@ fun unregister_pool_case(unregister: bool) {
     pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -400,13 +394,11 @@ fun get_pool_id_by_asset_case() {
     let pool_id_1 = pool_test_utils::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
     let pool_id_2 = pool_test_utils::setup_pool_with_default_fees<SPAM, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 

@@ -39,7 +39,6 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     let pool_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
@@ -130,7 +129,6 @@ fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
     let pool_id = pool_tests::setup_pool_with_default_fees<SUI, USDC>(
         OWNER,
         registry_id,
-        false,
         &mut test,
     );
 
