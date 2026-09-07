@@ -94,6 +94,21 @@ public(package) fun fee_from_scaled_rate(rate_scaled: u64, quote_quantity: u64):
     ((quote_quantity as u128) * rate / scaling) as u64
 }
 
+/// Split escrow released by a cancel, modify-down or expiry into the part
+/// refunded to the maker and the part retained as protocol revenue.
+///
+/// `retention_bps` is the order's snapshotted retention rate. The refund
+/// floors, so rounding dust lands in the retained half and the two parts
+/// always sum to exactly `basis` — the caller relies on that to decrement
+/// `locked_maker_fees` by the full released amount.
+public(package) fun split_released_fee(basis: u64, retention_bps: u64): (u64, u64) {
+    let retention = if (retention_bps > FEE_PRECISION) FEE_PRECISION else retention_bps;
+    let refund =
+        ((basis as u128) * ((FEE_PRECISION - retention) as u128) / (FEE_PRECISION as u128)) as u64;
+
+    (refund, basis - refund)
+}
+
 /// Convert FLOAT_SCALING based fee rates to basis points (rounded down)
 public(package) fun scaled_to_bps(rate_scaled: u64): u64 {
     let numerator = (rate_scaled as u128) * (FEE_PRECISION as u128);

@@ -65,6 +65,9 @@ public struct OrderInfo has copy, drop, store {
     // Maker fee rate snapshotted at placement (post epoch-rollover), recorded
     // on the resting Order so it settles at its placement rate
     maker_fee_rate: u64,
+    // Cancel-retention rate snapshotted at placement, carried onto the resting
+    // Order so a policy change never re-prices an order already on the book
+    cancel_retention_bps: u64,
     // Status of the order
     status: u8,
     // Is a market_order
@@ -201,6 +204,10 @@ public fun maker_fee_rate(self: &OrderInfo): u64 {
     self.maker_fee_rate
 }
 
+public fun cancel_retention_bps(self: &OrderInfo): u64 {
+    self.cancel_retention_bps
+}
+
 public fun status(self: &OrderInfo): u8 {
     self.status
 }
@@ -225,6 +232,7 @@ public(package) fun new(
     is_bid: bool,
     epoch: u64,
     maker_fee_rate: u64,
+    cancel_retention_bps: u64,
     expire_timestamp: u64,
     market_order: bool,
     timestamp: u64,
@@ -246,6 +254,7 @@ public(package) fun new(
         fills: vector[],
         epoch,
         maker_fee_rate,
+        cancel_retention_bps,
         paid_fees: 0,
         maker_fees: 0,
         status: constants::live(),
@@ -263,6 +272,19 @@ public(package) fun market_order(self: &OrderInfo): bool {
 
 public(package) fun set_order_id(self: &mut OrderInfo, order_id: u64) {
     self.order_id = order_id;
+}
+
+#[test_only]
+/// Snapshot the rates a real placement takes from governance. Test helpers
+/// build order info with zero rates, which skips the fee paths entirely; this
+/// lets a test opt into exercising them.
+public fun set_fee_snapshot_for_testing(
+    self: &mut OrderInfo,
+    maker_fee_rate: u64,
+    cancel_retention_bps: u64,
+) {
+    self.maker_fee_rate = maker_fee_rate;
+    self.cancel_retention_bps = cancel_retention_bps;
 }
 
 public(package) fun set_paid_fees(self: &mut OrderInfo, paid_fees: u64) {
@@ -368,6 +390,7 @@ public(package) fun to_order(self: &OrderInfo): Order {
         self.executed_quantity,
         self.epoch,
         self.maker_fee_rate,
+        self.cancel_retention_bps,
         self.status,
         self.expire_timestamp,
     )

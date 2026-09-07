@@ -82,3 +82,23 @@ fun test_ask_taker_fee_conservation() {
 fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     pool_test_utils::test_ask_maker_fill_fee_uses_snapshotted_rate();
 }
+
+#[test]
+fun test_cancel_refunds_escrow_to_maker() {
+    pool_test_utils::test_cancel_refunds_escrow_to_maker();
+}
+
+#[test]
+fun test_cancel_after_partial_fill_refunds_unfilled_only() {
+    pool_test_utils::test_cancel_after_partial_fill_refunds_unfilled_only();
+}
+
+#[test]
+fun test_cancel_uses_snapshotted_retention_rate() {
+    pool_test_utils::test_cancel_uses_snapshotted_retention_rate();
+}
+
+#[test]
+fun test_expired_bid_maker_is_refunded() {
+    pool_test_utils::test_expired_bid_maker_is_refunded();
+}

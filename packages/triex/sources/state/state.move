@@ -55,8 +55,12 @@ public struct FeeFlows has copy, drop, store {
     proceeds: vector<ProceedsFee>,
     /// Bid-maker escrow that fills in this transaction turned into earned
     /// revenue. The funds are already in the reserve; this reclassifies them
-    /// so an admin sweep may take them.
+    /// so an admin sweep may take them. Includes the retained share of escrow
+    /// released by expiries in the same match.
     recognized: u64,
+    /// Escrow refunded to expired bid makers, which the pool must move out of
+    /// the reserve so the maker's settled quote is payable.
+    refunded: u64,
 }
 
 public(package) fun proceeds(self: &FeeFlows): &vector<ProceedsFee> {
@@ -65,6 +69,26 @@ public(package) fun proceeds(self: &FeeFlows): &vector<ProceedsFee> {
 
 public(package) fun recognized(self: &FeeFlows): u64 {
     self.recognized
+}
+
+public(package) fun refunded(self: &FeeFlows): u64 {
+    self.refunded
+}
+
+/// The escrow a cancel or modify-down releases, split into the part paid back
+/// to the maker and the part kept as protocol revenue. The two sum to the
+/// released amount, which is what must leave `locked_maker_fees`.
+public struct FeeRelease has copy, drop, store {
+    refunded: u64,
+    retained: u64,
+}
+
+public(package) fun release_refunded(self: &FeeRelease): u64 {
+    self.refunded
+}
+
+public(package) fun release_retained(self: &FeeRelease): u64 {
+    self.retained
 }
 
 // #feat:stake - DISABLED
@@ -221,9 +245,9 @@ public(package) fun withdraw_settled_amounts(
 
 /// Update account settled balances and volumes.
 /// Remove order from account orders.
-/// Also returns the bid-maker escrow this cancellation releases. Cancelling
-/// still forfeits the fee, so the pool recognizes it as earned revenue rather
-/// than paying it back — TRIEX-138's refund lands on this same amount.
+/// The settled balances already include the refundable share of the escrow
+/// this cancellation releases; the returned `FeeRelease` tells the pool how
+/// much to unlock from the reserve to back it, and how much to keep.
 public(package) fun process_cancel(
     self: &mut State,
     order: &mut Order,
@@ -231,7 +255,7 @@ public(package) fun process_cancel(
     pool_id: ID,
     price_scaling: u64,
     ctx: &TxContext,
-): (Balances, Balances, u64) {
+): (Balances, Balances, FeeRelease) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
@@ -242,7 +266,7 @@ public(package) fun process_cancel(
         option::none(),
         price_scaling,
     );
-    let released_fee = order.locked_fee_released(
+    let (refunded, retained) = order.released_fee_split(
         order.maker_fee_rate(),
         option::none(),
         price_scaling,
@@ -253,13 +277,14 @@ public(package) fun process_cancel(
     account.add_settled_balances(balances);
 
     let (settled, owed) = account.settle();
+    self.recognize_retention(retained);
 
-    (settled, owed, released_fee)
+    (settled, owed, FeeRelease { refunded, retained })
 }
 
 /// Given the modified quantity, update account settled balances and volumes.
-/// Also returns the bid-maker escrow the reduction releases, on the same
-/// forfeit terms as `process_cancel`.
+/// The reduction releases escrow on the same terms as `process_cancel`, so a
+/// modify-to-minimum-then-cancel cannot dodge the retention.
 public(package) fun process_modify(
     self: &mut State,
     balance_manager_id: ID,
@@ -268,7 +293,7 @@ public(package) fun process_modify(
     pool_id: ID,
     price_scaling: u64,
     ctx: &TxContext,
-): (Balances, Balances, u64) {
+): (Balances, Balances, FeeRelease) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
@@ -278,7 +303,7 @@ public(package) fun process_modify(
         option::some(cancel_quantity),
         price_scaling,
     );
-    let released_fee = order.locked_fee_released(
+    let (refunded, retained) = order.released_fee_split(
         order.maker_fee_rate(),
         option::some(cancel_quantity),
         price_scaling,
@@ -287,8 +312,9 @@ public(package) fun process_modify(
     self.accounts[balance_manager_id].add_settled_balances(balances);
 
     let (settled, owed) = self.accounts[balance_manager_id].settle();
+    self.recognize_retention(retained);
 
-    (settled, owed, released_fee)
+    (settled, owed, FeeRelease { refunded, retained })
 }
 
 // Process stake transaction. Add stake to account and update governance.
@@ -507,6 +533,8 @@ public(package) fun history(self: &State): &History {
 fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): FeeFlows {
     let mut ask_maker_fees = vector[];
     let mut recognized = 0;
+    let mut refunded = 0;
+    let mut expiry_retained = 0;
     let mut total_maker_fees = 0;
     let mut i = 0;
     let num_fills = fills.length();
@@ -539,11 +567,13 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             // #feat:stake - DISABLED: pass 0 for account stake
             self.history.add_volume(fill.base_quantity(), 0);
         } else if (!fill.taker_is_bid()) {
-            // An expired bid maker gets their principal back but forfeits the
-            // escrow held against it, so it stops being a claim and becomes
-            // revenue. Leaving it locked would strand the funds: neither
-            // refundable nor sweepable. TRIEX-138 refunds 80% of this instead.
-            recognized = recognized + fill.maker_fee_escrowed();
+            // An expired bid maker gets their principal back plus the
+            // refundable share of the escrow held against it; the retained
+            // share becomes revenue. `get_settled_maker_quantities` already
+            // credits the refund below, so all that is left here is telling
+            // the pool how much to move out of the reserve to back it.
+            refunded = refunded + fill.maker_fee_refunded();
+            expiry_retained = expiry_retained + fill.maker_fee_retained();
         };
 
         let account = &mut self.accounts[maker];
@@ -554,8 +584,21 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
     if (total_maker_fees > 0) {
         self.history.add_total_fees_collected(balances::new(0, total_maker_fees, 0));
     };
+    // Expiry retention is realized revenue like any other fee, but it is not
+    // trading volume, so it stays out of `add_volume` above.
+    self.recognize_retention(expiry_retained);
 
-    FeeFlows { proceeds: ask_maker_fees, recognized }
+    FeeFlows { proceeds: ask_maker_fees, recognized: recognized + expiry_retained, refunded }
+}
+
+/// Record escrow the protocol kept on a cancel, modify-down or expiry as
+/// collected fees. It is realized revenue the moment the order resolves, so
+/// leaving it out would make the epoch fee totals understate what the pool
+/// actually earned. Deliberately does not touch volume: retention must not
+/// buy fee-tier progress, or cancel churn becomes a cheap way to climb.
+fun recognize_retention(self: &mut State, amount: u64) {
+    if (amount == 0) return;
+    self.history.add_total_fees_collected(balances::new(0, amount, 0));
 }
 
 /// If account doesn't exist, create it. Update account volumes and rebates.
@@ -574,8 +617,20 @@ fun update_account(self: &mut State, balance_manager_id: ID, ctx: &TxContext) {
     // }
 }
 
+#[test_only]
+/// Fees the pool has recognized as collected this epoch: fill-time taker and
+/// maker fees, plus retention kept from cancels, modify-downs and expiries.
+public fun total_fees_collected_for_testing(self: &State): Balances {
+    self.history.total_fees_collected_for_testing()
+}
+
 /// Admin function to set the fees for the next epoch.
 /// Replaces the proposal/voting system with direct admin control.
-public(package) fun set_next_epoch_fee(self: &mut State, taker_fee: u64, maker_fee: u64) {
-    self.governance.set_next_trade_params(taker_fee, maker_fee);
+public(package) fun set_next_epoch_fee(
+    self: &mut State,
+    taker_fee: u64,
+    maker_fee: u64,
+    cancel_retention_bps: u64,
+) {
+    self.governance.set_next_trade_params(taker_fee, maker_fee, cancel_retention_bps);
 }

@@ -1215,7 +1215,7 @@ fun multicoin_test_modify_order(
 // === Advanced Fill Scenarios ===
 
 /// Acceptance (multicoin mirror): cancelling a resting bid releases its
-/// escrow, which is forfeited into revenue rather than left locked forever.
+/// escrow, 80% refunded to the maker and 20% kept as revenue.
 #[test]
 fun test_multicoin_cancel_releases_bid_escrow() {
     let mut test = begin(OWNER);
@@ -1276,15 +1276,106 @@ fun test_multicoin_cancel_releases_bid_escrow() {
         let proof = bm.generate_proof_as_owner(test.ctx());
         pool.cancel_order(&mut bm, &proof, order_id, &clock, test.ctx());
 
-        // Forfeited: the funds stay in the reserve but stop being a claim.
-        assert!(pool.quote_fee_reserve_balance() == alice_maker_fee, 2);
+        // 80% leaves the reserve back to Alice; the 20% retention stays and
+        // is the only sweepable balance left.
+        let refund = alice_maker_fee * 8000 / 10000;
+        let retained = alice_maker_fee - refund;
+        assert!(pool.quote_fee_reserve_balance() == retained, 2);
         assert!(pool.locked_maker_fees() == 0, 3);
-        assert!(pool.withdrawable_pool_fees() == alice_maker_fee, 4);
+        assert!(pool.withdrawable_pool_fees() == retained, 4);
 
         return_shared(bm);
         return_shared(clock);
         return_shared(pool);
     };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
+/// Acceptance #1 (multicoin mirror): the refund actually reaches the maker's
+/// balance manager, so a place -> cancel round trip costs only the retention.
+#[test]
+fun test_multicoin_cancel_refunds_escrow_to_maker() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let alice_maker_fee;
+    let order_id;
+
+    test.next_tx(ALICE);
+    let balance_before = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        alice_maker_fee = order.maker_fees();
+        order_id = order.order_id();
+        assert!(alice_maker_fee > 0, 0);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut bm, &proof, order_id, &clock, test.ctx());
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    let balance_after = {
+        let bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let bal = bm.balance<USDC>();
+        return_shared(bm);
+        bal
+    };
+
+    let retained = alice_maker_fee - alice_maker_fee * 8000 / 10000;
+    assert!(balance_before - balance_after == retained, 1);
 
     unit_test::destroy(collection_cap);
     end(test);

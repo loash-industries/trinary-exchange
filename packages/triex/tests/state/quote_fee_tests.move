@@ -160,3 +160,66 @@ fun test_large_quantities() {
 
     assert!(maker_fee == 20_000_000_000); // 2% of 1T = 20B
 }
+
+// === split_released_fee ===
+// The 80/20 cancel split. Rounding dust must land in the retained half so the
+// two parts sum to exactly the basis — `locked_maker_fees` is decremented by
+// that sum, and a short decrement would leave escrow stranded forever.
+
+#[test]
+fun test_split_released_fee_default_retention() {
+    let (refund, retained) = quote_fee::split_released_fee(1_000, 2000);
+    assert!(refund == 800);
+    assert!(retained == 200);
+}
+
+#[test]
+fun test_split_released_fee_rounds_dust_to_retained() {
+    // 7 * 8000 / 10000 = 5.6 -> refund floors to 5, so retention takes the
+    // extra unit rather than the refund over-paying.
+    let (refund, retained) = quote_fee::split_released_fee(7, 2000);
+    assert!(refund == 5);
+    assert!(retained == 2);
+    assert!(refund + retained == 7);
+}
+
+#[test]
+fun test_split_released_fee_sums_to_basis_across_range() {
+    let mut basis = 0;
+    while (basis < 200) {
+        let (refund, retained) = quote_fee::split_released_fee(basis, 2000);
+        assert!(refund + retained == basis);
+        assert!(refund <= basis);
+        basis = basis + 1;
+    };
+}
+
+#[test]
+fun test_split_released_fee_zero_retention_refunds_all() {
+    let (refund, retained) = quote_fee::split_released_fee(1_000, 0);
+    assert!(refund == 1_000);
+    assert!(retained == 0);
+}
+
+#[test]
+fun test_split_released_fee_full_retention_refunds_none() {
+    let (refund, retained) = quote_fee::split_released_fee(1_000, 10000);
+    assert!(refund == 0);
+    assert!(retained == 1_000);
+}
+
+#[test]
+fun test_split_released_fee_clamps_retention_above_full() {
+    // Governance caps the rate at 10000 bps, but the helper must not
+    // underflow if it is ever handed more.
+    let (refund, retained) = quote_fee::split_released_fee(1_000, 50_000);
+    assert!(refund == 0);
+    assert!(retained == 1_000);
+}
+
+#[test]
+fun test_split_released_fee_zero_basis() {
+    let (refund, retained) = quote_fee::split_released_fee(0, 2000);
+    assert!(refund == 0);
+    assert!(retained == 0);
+}

@@ -276,11 +276,15 @@ fun test_modify_bid_order_refunds_correct_quote_amount() {
         bal
     };
 
-    // Refund received = difference in free balance.
-    // price_scaling = 1  →  refund = cancel_qty × price = 5 × 5 × FLOAT_SCALING = 25 × FLOAT_SCALING
-    // math::mul (bug)    →  refund = math::mul(5, 5 × FLOAT_SCALING) = 25
+    // Refund received = difference in free balance: the cancelled principal
+    // plus the refundable 80% of the escrow held against it.
+    // price_scaling = 1  →  principal = cancel_qty × price = 5 × 5 × FLOAT_SCALING = 25 × FLOAT_SCALING
+    // math::mul (bug)    →  principal = math::mul(5, 5 × FLOAT_SCALING) = 25
+    let cancelled_quote = cancel_qty * price; // = 25 × FLOAT_SCALING = 25_000_000_000
+    // Multicoin maker rate is 0.9%, so 25 quote escrows 0.225; 80% comes back.
+    let released_escrow = cancelled_quote * 9 / 1000;
     let actual_refund = balance_after_modify - balance_after_bid;
-    let expected_refund = cancel_qty * price; // = 25 × FLOAT_SCALING = 25_000_000_000
+    let expected_refund = cancelled_quote + released_escrow * 8000 / 10000;
     assert!(actual_refund == expected_refund, 2);
 
     unit_test::destroy(collection_cap);
@@ -1058,7 +1062,7 @@ fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
     {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
         return_shared(pool);
         unit_test::destroy(admin_cap);
     };

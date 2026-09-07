@@ -408,7 +408,7 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
         return_shared(pool);
         destroy(admin_cap);
     };
@@ -690,7 +690,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
     {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(150_000, 50_000, &admin_cap);
+        pool.set_next_epoch_fee(150_000, 50_000, 2000, &admin_cap);
         return_shared(pool);
         destroy(admin_cap);
     };
@@ -762,10 +762,9 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
 }
 
 /// Acceptance: `quote_fee_reserve >= locked_maker_fees` holds across a
-/// place -> partial fill -> cancel sequence, and the escrow is released to
-/// revenue exactly as the order resolves: filled portions earn out at fill,
-/// the cancelled remainder is forfeited (today's semantics — TRIEX-138's
-/// refund replaces the forfeit with an 80/20 split on this same amount).
+/// place -> partial fill -> cancel sequence, and the escrow resolves exactly
+/// as the order does: filled portions earn out in full at fill, the cancelled
+/// remainder splits 80% back to the maker and 20% to revenue.
 public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
@@ -793,6 +792,10 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     // Bob fills half: 100 quote, earning out 1.8 of escrow and paying 2.2
     let half_maker_fee = 18 * constants::float_scaling() / 10;
     let half_taker_fee = 22 * constants::float_scaling() / 10;
+    // Cancelling the other half releases its 1.8 escrow: 1.44 refunded to
+    // Alice, 0.36 retained.
+    let cancel_refund = 144 * constants::float_scaling() / 100;
+    let cancel_retained = half_maker_fee - cancel_refund;
 
     let alice_order_id;
     {
@@ -846,8 +849,8 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
         return_shared(pool);
     };
 
-    // Alice cancels the unfilled remainder; the escrow on it is forfeited, so
-    // no funds leave the reserve but it stops being a claim.
+    // Alice cancels the unfilled remainder; 80% of the escrow on it leaves the
+    // reserve back to her, the rest becomes revenue.
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
@@ -866,9 +869,12 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let reserve = pool.quote_fee_reserve_balance();
-        assert!(reserve == locked_maker_fee + half_taker_fee, 7);
+        assert!(reserve == locked_maker_fee + half_taker_fee - cancel_refund, 7);
         assert!(pool.locked_maker_fees() == 0, 8);
+        // Everything left is earned: the taker fee, the filled half's escrow
+        // and the retention on the cancelled half.
         assert!(pool.withdrawable_pool_fees() == reserve, 9);
+        assert!(reserve == half_taker_fee + half_maker_fee + cancel_retained, 10);
         return_shared(pool);
     };
 
@@ -989,8 +995,11 @@ public(package) fun test_modify_down_releases_escrow_proportionally() {
     let quantity = 100 * constants::float_scaling();
     // 200 quote notional at 1.8% = 3.6 escrowed
     let locked_maker_fee = 36 * constants::float_scaling() / 10;
-    // Cutting to 40 releases the escrow on 60 (120 quote): 2.16
+    // Cutting to 40 releases the escrow on 60 (120 quote): 2.16, of which
+    // 1.728 refunds to Alice and 0.432 is retained.
     let released = 216 * constants::float_scaling() / 100;
+    let refunded = 1728 * constants::float_scaling() / 1000;
+    let retained = released - refunded;
 
     let order_id;
     {
@@ -1033,10 +1042,11 @@ public(package) fun test_modify_down_releases_escrow_proportionally() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        // Forfeited, so no funds move — only the classification changes.
-        assert!(pool.quote_fee_reserve_balance() == locked_maker_fee, 0);
+        // The refunded share leaves the reserve; the retained share stays and
+        // becomes sweepable. The escrow on the 40 still resting is untouched.
+        assert!(pool.quote_fee_reserve_balance() == locked_maker_fee - refunded, 0);
         assert!(pool.locked_maker_fees() == locked_maker_fee - released, 1);
-        assert!(pool.withdrawable_pool_fees() == released, 2);
+        assert!(pool.withdrawable_pool_fees() == retained, 2);
         return_shared(pool);
     };
 
@@ -1098,9 +1108,10 @@ public(package) fun test_admin_sweep_above_unlocked_portion_aborts() {
     end(test);
 }
 
-/// Edge: an expired bid maker forfeits the escrow held against the returned
-/// principal, so it becomes revenue rather than staying locked forever.
-/// (TRIEX-138 refunds 80% of this instead of forfeiting all of it.)
+/// Edge: an expired bid maker gets the escrow held against the returned
+/// principal split on cancel terms — 80% back, 20% retained. Expiry must not
+/// be cheaper than cancelling, or a spam order just carries a near-term
+/// `expire_timestamp` and never cancels.
 public(package) fun test_expired_bid_maker_releases_escrow() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
@@ -1124,6 +1135,8 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
     let price = 2 * constants::float_scaling();
     let quantity = 100 * constants::float_scaling();
     let locked_maker_fee = 36 * constants::float_scaling() / 10;
+    let expiry_refund = 288 * constants::float_scaling() / 100;
+    let expiry_retained = locked_maker_fee - expiry_refund;
     let expire_timestamp = get_time(&mut test) + 100;
 
     place_limit_order<SUI, USDC>(
@@ -1165,11 +1178,11 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
     test.next_tx(OWNER);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        // Nothing filled, so the reserve still holds only Alice's escrow —
-        // but it is no longer a claim against an open order.
-        assert!(pool.quote_fee_reserve_balance() == locked_maker_fee, 1);
+        // Nothing filled, so the only quote fee that ever entered the reserve
+        // was Alice's escrow; 80% of it has now left again.
+        assert!(pool.quote_fee_reserve_balance() == expiry_retained, 1);
         assert!(pool.locked_maker_fees() == 0, 2);
-        assert!(pool.withdrawable_pool_fees() == locked_maker_fee, 3);
+        assert!(pool.withdrawable_pool_fees() == expiry_retained, 3);
         return_shared(pool);
     };
 
@@ -6146,3 +6159,328 @@ fun get_quote_quantity_out_input_fee<BaseAsset, QuoteAsset>(
 //     let ctx = test.ctx_builder().set_gas_price(gas_price).set_epoch_timestamp(ts);
 //     test.next_with_context(ctx);
 // }
+
+/// Acceptance #1: place -> cancel with no fills returns the balance manager to
+/// its pre-order state minus the 20% retention. The refund has to come out of
+/// the fee reserve, not out of the pool balance holding other users' quote.
+public(package) fun test_cancel_refunds_escrow_to_maker() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 200 quote notional at 1.8% = 3.6 escrowed, so 0.72 is retained.
+    let retained = 72 * constants::float_scaling() / 100;
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Round trip cost Alice exactly the retention, nothing else.
+    assert!(balance_before - balance_after == retained, 0);
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // The refund left the reserve; only the retention remains, and it is
+        // fully sweepable because no escrow is outstanding.
+        assert!(pool.quote_fee_reserve_balance() == retained, 1);
+        assert!(pool.locked_maker_fees() == 0, 2);
+        assert!(pool.withdrawable_pool_fees() == retained, 3);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Acceptance #2: a partial fill earns its escrow out in full; only the
+/// unfilled remainder's escrow is eligible for the 80/20 split, so cancelling
+/// after a fill must not refund fees on volume that actually traded.
+public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 3.6 escrowed on 200 quote; Bob fills half, so 1.8 earns out and the
+    // other 1.8 splits 1.44 refunded / 0.36 retained.
+    let filled_maker_fee = 18 * constants::float_scaling() / 10;
+    let half_taker_fee = 22 * constants::float_scaling() / 10;
+    let cancel_refund = 144 * constants::float_scaling() / 100;
+    let cancel_retained = filled_maker_fee - cancel_refund;
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity / 2,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // The filled half's fee is revenue in full — the cancel refund never
+        // reaches it. What is left is that fee, Bob's taker fee and the
+        // retention on the unfilled half.
+        let reserve = pool.quote_fee_reserve_balance();
+        assert!(reserve == filled_maker_fee + half_taker_fee + cancel_retained, 0);
+        assert!(pool.locked_maker_fees() == 0, 1);
+        assert!(pool.withdrawable_pool_fees() == reserve, 2);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// A resting order keeps the retention rate it was placed under, so an admin
+/// raising the rate cannot retroactively tax orders already on the book.
+public(package) fun test_cancel_uses_snapshotted_retention_rate() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let retained_at_placement = 72 * constants::float_scaling() / 100;
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    // Admin keeps the fee rates but retains everything from here on.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee(22_000_000, 18_000_000, 10000, &admin_cap);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Alice still gets her 80% back: the order carries the 20% it was placed
+    // under, not the 100% now in force.
+    assert!(balance_after - balance_before == 200 * constants::float_scaling() +
+        288 * constants::float_scaling() / 100, 0);
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.quote_fee_reserve_balance() == retained_at_placement, 1);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// An expired bid maker is refunded on cancel terms, and the funds actually
+/// reach their balance manager rather than only being credited as settled.
+public(package) fun test_expired_bid_maker_is_refunded() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 3.6 escrowed, so 2.88 refunds and 0.72 is retained.
+    let retained = 72 * constants::float_scaling() / 100;
+    let expire_timestamp = get_time(&mut test) + 100;
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        expire_timestamp,
+        &mut test,
+    );
+
+    // Past the expiry, Bob's crossing ask expires the stale order out.
+    set_time(200, &mut test);
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // The refund lands in settled balances, which Alice withdraws.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.withdraw_settled_amounts(&mut balance_manager, &trade_proof);
+        return_shared(balance_manager);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Expiring cost Alice the same 0.72 a cancel would have.
+    assert!(balance_before - balance_after == retained, 0);
+
+    end(test);
+}

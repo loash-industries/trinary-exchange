@@ -558,7 +558,7 @@ public fun modify_order<QuoteAsset>(
         .book
         .modify_order(order_id, new_quantity, clock.timestamp_ms());
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed, released_fee) = pool_inner
+    let (settled, owed, fee_release) = pool_inner
         .state
         .process_modify(
             balance_manager.id(),
@@ -568,12 +568,22 @@ public fun modify_order<QuoteAsset>(
             pool_inner.book.price_scaling(),
             ctx,
         );
+    // The refund is already in `settled`, so it must reach the pool balance
+    // before settlement pays it out.
+    pool_inner
+        .vault
+        .unlock_quote_fees(
+            pool_inner.pool_id,
+            balance_manager.id(),
+            fee_release.release_refunded(),
+            clock.timestamp_ms(),
+        );
     pool_inner
         .vault
         .settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none(), ctx);
-    // A modify-down forfeits the released escrow on the same terms as a
-    // cancel, so it becomes sweepable revenue.
-    pool_inner.vault.recognize_locked_maker_fees(released_fee);
+    // A modify-down retains its share on the same terms as a cancel, so
+    // requoting down cannot dodge the retention.
+    pool_inner.vault.recognize_locked_maker_fees(fee_release.release_retained());
 
     order.emit_order_modified(
         pool_inner.pool_id,
@@ -596,7 +606,7 @@ public fun cancel_order<QuoteAsset>(
     let pool_inner = self.load_inner_mut();
     let mut order = pool_inner.book.cancel_order(order_id);
     assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
-    let (settled, owed, released_fee) = pool_inner
+    let (settled, owed, fee_release) = pool_inner
         .state
         .process_cancel(
             &mut order,
@@ -605,12 +615,22 @@ public fun cancel_order<QuoteAsset>(
             pool_inner.book.price_scaling(),
             ctx,
         );
+    // The refund is already in `settled`, so it must reach the pool balance
+    // before settlement pays it out.
+    pool_inner
+        .vault
+        .unlock_quote_fees(
+            pool_inner.pool_id,
+            balance_manager.id(),
+            fee_release.release_refunded(),
+            clock.timestamp_ms(),
+        );
     pool_inner
         .vault
         .settle_balance_manager(settled, owed, balance_manager, trade_proof, option::none(), ctx);
-    // Cancelling forfeits the escrow, so it stops being a user claim and
-    // becomes revenue the admin may sweep.
-    pool_inner.vault.recognize_locked_maker_fees(released_fee);
+    // The retained share stops being a user claim and becomes revenue the
+    // admin may sweep.
+    pool_inner.vault.recognize_locked_maker_fees(fee_release.release_retained());
 
     order.emit_order_canceled(
         pool_inner.pool_id,
@@ -697,10 +717,11 @@ public fun set_next_epoch_fee<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
     taker_fee: u64,
     maker_fee: u64,
+    cancel_retention_bps: u64,
     _cap: &TriexbookAdminCap,
 ) {
     let pool_inner = self.load_inner_mut();
-    pool_inner.state.set_next_epoch_fee(taker_fee, maker_fee);
+    pool_inner.state.set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps);
 }
 
 /// Unregister a pool in case it needs to be redeployed.
@@ -1063,7 +1084,9 @@ fun place_order_int<QuoteAsset>(
         // Roll governance into the current epoch before snapshotting the
         // maker rate, so an order placed on an epoch-boundary transaction
         // records the freshly promoted rate rather than last epoch's.
-        let maker_fee_rate = pool_inner.state.governance_mut(ctx).trade_params().maker_fee();
+        let trade_params = pool_inner.state.governance_mut(ctx).trade_params();
+        let maker_fee_rate = trade_params.maker_fee();
+        let cancel_retention_bps = trade_params.cancel_retention_bps();
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1075,6 +1098,7 @@ fun place_order_int<QuoteAsset>(
             is_bid,
             ctx.epoch(),
             maker_fee_rate,
+            cancel_retention_bps,
             expire_timestamp,
             market_order,
             clock.timestamp_ms(),
@@ -1084,6 +1108,17 @@ fun place_order_int<QuoteAsset>(
         let (settled, owed, fee_flows) = pool_inner
             .state
             .process_create(&mut order_info, pool_inner.pool_id, ctx);
+        // Makers whose orders expired during this match get the refundable
+        // share of their escrow credited to settled balances, so it has to
+        // leave the reserve for the pool balance that pays settlements out.
+        pool_inner
+            .vault
+            .unlock_quote_fees(
+                pool_inner.pool_id,
+                balance_manager.id(),
+                fee_flows.refunded(),
+                clock.timestamp_ms(),
+            );
         // Bid fees ride in with the quote the user pays (fee deposit); ask
         // fees were carved out of quote proceeds and are moved to the
         // reserve after settlement below.
@@ -1125,7 +1160,8 @@ fun place_order_int<QuoteAsset>(
                 );
             fee_idx = fee_idx + 1;
         };
-        // Escrow these fills earned out is revenue now, and sweepable.
+        // Escrow these fills earned out, plus the share retained from any
+        // expiries, is revenue now and sweepable.
         pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());

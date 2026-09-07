@@ -10,6 +10,7 @@ use triexbook::{
     balances,
     constants,
     ewma_tests::test_init_ewma_state,
+    order::{Self, Order},
     order_info_tests::{create_order_info_base, create_order_info},
     state
 };
@@ -1406,3 +1407,226 @@ fun process_cancel_after_partial_ok() {
 //     destroy(state);
 //     test.end();
 // }
+
+// === Cancel/expiry retention accounting ===
+// Escrow the protocol keeps when an order resolves without filling is
+// realized revenue, so it has to reach `total_fees_collected` — otherwise the
+// epoch fee totals understate what the pool actually earned. The refunded
+// share must not, since it goes back to the maker.
+
+#[test_only]
+// A resting bid of 100 @ 2 (200 quote) at the default 1.8% maker rate, placed
+// through `process_create` so the account owns the order id a cancel removes.
+// Escrow is 3.6, splitting 2.88 / 0.72 at the default 20% retention.
+fun rest_bid(state: &mut state::State, retention_bps: u64, ctx: &TxContext): Order {
+    let mut order_info = create_order_info_base(
+        ALICE,
+        2 * constants::float_scaling(),
+        100 * constants::float_scaling(),
+        true,
+        ctx.epoch(),
+    );
+    order_info.set_fee_snapshot_for_testing(18_000_000, retention_bps);
+    state.process_create(&mut order_info, object::id_from_address(@0x0), ctx);
+
+    order_info.to_order()
+}
+
+#[test]
+fun process_cancel_recognizes_only_the_retention() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(false, test.ctx());
+    let mut order = rest_bid(&mut state, 2000, test.ctx());
+    let fees_at_placement = state.total_fees_collected_for_testing();
+
+    let (settled, _owed, release) = state.process_cancel(
+        &mut order,
+        id_from_address(ALICE),
+        object::id_from_address(@0x0),
+        constants::float_scaling(),
+        test.ctx(),
+    );
+
+    // Alice gets her principal plus 80% of the escrow back.
+    let escrow = 36 * constants::float_scaling() / 10;
+    let refund = 288 * constants::float_scaling() / 100;
+    let retained = escrow - refund;
+    assert_eq!(settled, balances::new(0, 200 * constants::float_scaling() + refund, 0));
+    assert_eq!(release.release_refunded(), refund);
+    assert_eq!(release.release_retained(), retained);
+    // The 20% kept is booked as collected revenue; the refund is not.
+    let mut expected = fees_at_placement;
+    expected.add_balances(balances::new(0, retained, 0));
+    assert_eq!(state.total_fees_collected_for_testing(), expected);
+
+    destroy(state);
+    test.end();
+}
+
+#[test]
+fun process_cancel_zero_retention_collects_nothing() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(false, test.ctx());
+    let mut order = rest_bid(&mut state, 0, test.ctx());
+    let fees_at_placement = state.total_fees_collected_for_testing();
+
+    let (settled, _owed, release) = state.process_cancel(
+        &mut order,
+        id_from_address(ALICE),
+        object::id_from_address(@0x0),
+        constants::float_scaling(),
+        test.ctx(),
+    );
+
+    let escrow = 36 * constants::float_scaling() / 10;
+    assert_eq!(settled, balances::new(0, 200 * constants::float_scaling() + escrow, 0));
+    assert_eq!(release.release_retained(), 0);
+    assert_eq!(state.total_fees_collected_for_testing(), fees_at_placement);
+
+    destroy(state);
+    test.end();
+}
+
+#[test]
+fun process_cancel_ask_collects_nothing() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(false, test.ctx());
+    let mut order_info = create_order_info_base(
+        ALICE,
+        2 * constants::float_scaling(),
+        100 * constants::float_scaling(),
+        false,
+        test.ctx().epoch(),
+    );
+    order_info.set_fee_snapshot_for_testing(18_000_000, 2000);
+    state.process_create(&mut order_info, object::id_from_address(@0x0), test.ctx());
+    let mut order = order_info.to_order();
+    let fees_at_placement = state.total_fees_collected_for_testing();
+
+    let (settled, _owed, release) = state.process_cancel(
+        &mut order,
+        id_from_address(ALICE),
+        object::id_from_address(@0x0),
+        constants::float_scaling(),
+        test.ctx(),
+    );
+
+    // Asks lock nothing, so there is no escrow to split and nothing to book.
+    assert_eq!(settled, balances::new(100 * constants::float_scaling(), 0, 0));
+    assert_eq!(release.release_refunded(), 0);
+    assert_eq!(release.release_retained(), 0);
+    assert_eq!(state.total_fees_collected_for_testing(), fees_at_placement);
+
+    destroy(state);
+    test.end();
+}
+
+#[test]
+fun process_modify_recognizes_only_the_retention() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(false, test.ctx());
+    let order = order::new(
+        1,
+        id_from_address(ALICE),
+        2 * constants::float_scaling(),
+        true,
+        100 * constants::float_scaling(),
+        0,
+        0,
+        18_000_000,
+        2000,
+        constants::live(),
+        constants::max_u64(),
+    );
+    // Cut 100 to 40: releases the escrow on 60 (120 quote at 1.8% = 2.16).
+    let cancel_quantity = 60 * constants::float_scaling();
+
+    let (settled, _owed, release) = state.process_modify(
+        id_from_address(ALICE),
+        cancel_quantity,
+        &order,
+        object::id_from_address(@0x0),
+        constants::float_scaling(),
+        test.ctx(),
+    );
+
+    let refund = 1728 * constants::float_scaling() / 1000;
+    let retained = 216 * constants::float_scaling() / 100 - refund;
+    assert_eq!(settled, balances::new(0, 120 * constants::float_scaling() + refund, 0));
+    assert_eq!(release.release_refunded(), refund);
+    assert_eq!(release.release_retained(), retained);
+    assert_eq!(state.total_fees_collected_for_testing(), balances::new(0, retained, 0));
+
+    destroy(state);
+    test.end();
+}
+
+#[test]
+fun process_fills_books_expiry_retention_as_collected() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(false, test.ctx());
+
+    // Alice rests a bid for 10 SUI at $1 that has already expired, escrowing
+    // 1.8% of the 10 USDC notional = 0.18.
+    let mut maker_info = create_order_info(
+        id_from_address(ALICE),
+        ALICE,
+        0,
+        1 * constants::usdc_unit(),
+        10 * constants::sui_unit(),
+        true,
+        test.ctx().epoch(),
+        1, // expire_timestamp in the past
+        false,
+        false,
+        true,
+    );
+    maker_info.set_fee_snapshot_for_testing(18_000_000, 2000);
+    state.process_create(&mut maker_info, object::id_from_address(@0x0), test.ctx());
+    let escrow = maker_info.maker_fees();
+    let fees_at_placement = state.total_fees_collected_for_testing();
+
+    // Bob's crossing ask meets the stale order, expiring it out.
+    let mut order = maker_info.to_order();
+    let mut taker_order = create_order_info_base(
+        BOB,
+        1 * constants::usdc_unit(),
+        10 * constants::sui_unit(),
+        false,
+        test.ctx().epoch(),
+    );
+    taker_order.match_maker(&mut order, 10);
+    let (_settled, _owed, flows) = state.process_create(
+        &mut taker_order,
+        object::id_from_address(@0x0),
+        test.ctx(),
+    );
+
+    let refund = escrow * 8000 / 10000;
+    let retained = escrow - refund;
+    assert_eq!(flows.refunded(), refund);
+    assert_eq!(flows.recognized(), retained);
+
+    // Nothing traded, so the only fee collected this epoch is the retention
+    // the expiry realized — it must not be lost the way a forfeit would be.
+    let mut expected = fees_at_placement;
+    expected.add_balances(balances::new(0, retained, 0));
+    assert_eq!(state.total_fees_collected_for_testing(), expected);
+
+    // Alice gets her principal back plus the refundable share.
+    let (settled, _owed) = state.withdraw_settled_amounts(id_from_address(ALICE));
+    assert_eq!(settled, balances::new(0, 10 * constants::usdc_unit() + refund, 0));
+
+    destroy(state);
+    test.end();
+}
