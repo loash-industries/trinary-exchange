@@ -61,12 +61,12 @@ fun admin_set_fees_at_caps_ok() {
     let whitelisted = false;
     let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Both rates at their 5% caps — above the launch defaults
-    gov.set_next_trade_params(50000000, 50000000);
+    // Both rates at their 100% caps — above the launch defaults
+    gov.set_next_trade_params(1000000000, 1000000000);
 
     let next_params = gov.next_trade_params();
-    assert!(next_params.taker_fee() == 50000000, 0);
-    assert!(next_params.maker_fee() == 50000000, 0);
+    assert!(next_params.taker_fee() == 1000000000, 0);
+    assert!(next_params.maker_fee() == 1000000000, 0);
 
     governance::destroy_for_testing(gov);
     end(test);
@@ -136,8 +136,8 @@ fun admin_set_taker_fee_too_high_e() {
     let whitelisted = false;
     let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Taker fee above MAX_TAKER_FEE (50,000,000 = 5%)
-    gov.set_next_trade_params(51000000, 5000000);
+    // Taker fee above MAX_TAKER_FEE (1,000,000,000 = 100%)
+    gov.set_next_trade_params(1001000000, 5000000);
 
     abort 1
 }
@@ -149,8 +149,8 @@ fun admin_set_maker_fee_too_high_e() {
     let whitelisted = false;
     let mut gov = governance::empty(whitelisted, test.ctx());
 
-    // Maker fee above MAX_MAKER_FEE (50,000,000 = 5%)
-    gov.set_next_trade_params(10000000, 51000000);
+    // Maker fee above MAX_MAKER_FEE (1,000,000,000 = 100%)
+    gov.set_next_trade_params(10000000, 1001000000);
 
     abort 1
 }

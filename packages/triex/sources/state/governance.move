@@ -26,8 +26,8 @@ const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
 const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
 // Maker rates may be zero; only takers keep a floor. The caps bound what the
 // admin can ever set, independent of the launch defaults below.
-const MAX_TAKER_FEE: u64 = 50000000; // 500 basis points (5%)
-const MAX_MAKER_FEE: u64 = 50000000; // 500 basis points (5%)
+const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 
 const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
 const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
