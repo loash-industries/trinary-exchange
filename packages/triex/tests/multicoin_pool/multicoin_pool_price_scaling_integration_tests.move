@@ -979,3 +979,114 @@ fun test_fee_truncation_floor_and_threshold() {
     unit_test::destroy(collection_cap);
     end(test);
 }
+
+/// Multicoin mirror of the coin-pool rate-snapshot test: a resting bid keeps
+/// the maker rate it was placed under (the 0.9% multicoin default) across an
+/// admin rate change and epoch rollover, while a new bid locks at the
+/// promoted rate.
+#[test]
+fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
+        &mut test,
+    );
+    // Non-whitelisted pool, so the admin can change its fees.
+    let pool_id = mc_utils::setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+    let alice_bm_id = mc_utils::create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // price_scaling = 1 → quote = qty × price
+    let price = 1_000_000u64;
+    let qty = 1u64;
+    let quote = qty * price;
+    // Multicoin default maker rate at placement: 0.9% = 90 bps
+    let fee_at_default_rate = quote * 90 / 10_000;
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = alice_bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut alice_bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            qty,
+            true, // bid
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == quote + fee_at_default_rate, 0);
+
+        return_shared(pool);
+        return_shared(clock);
+        return_shared(alice_bm);
+    };
+
+    // Admin lowers the rates for the next epoch: taker 1%, maker 0.5%.
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        pool.set_next_epoch_fee(10_000_000, 5_000_000, &admin_cap);
+        return_shared(pool);
+        unit_test::destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    // The resting order still reports its snapshotted 0.9% rate; a new bid
+    // placed in the new epoch locks at the promoted 0.5%.
+    let fee_at_new_rate = quote * 50 / 10_000;
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == quote + fee_at_default_rate, 1);
+
+        let proof = alice_bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut alice_bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            qty,
+            true, // bid
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let (_, quote_locked, _) = pool.locked_balance(&alice_bm);
+        assert!(quote_locked == 2 * quote + fee_at_default_rate + fee_at_new_rate, 2);
+
+        return_shared(pool);
+        return_shared(clock);
+        return_shared(alice_bm);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}

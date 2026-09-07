@@ -848,6 +848,8 @@ public(package) fun test_get_order() {
     assert!(order.quantity() == 1 * constants::float_scaling(), 0);
     assert!(order.filled_quantity() == 0, 0);
     assert!(order.epoch() == 0, 0);
+    // Snapshotted at placement from the pool's default maker rate (1.8%)
+    assert!(order.maker_fee_rate() == 18_000_000, 0);
     assert!(order.status() == constants::live(), 0);
     assert!(order.expire_timestamp() == constants::max_u64(), 0);
 
