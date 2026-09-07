@@ -17,6 +17,11 @@ fun test_admin_withdraws_quote_fee_reserve() {
 }
 
 #[test]
+fun test_admin_can_sweep_locked_maker_fees_until_triex138() {
+    pool_test_utils::test_admin_can_sweep_locked_maker_fees_until_triex138();
+}
+
+#[test]
 fun test_ask_taker_fee_conservation() {
     pool_test_utils::test_ask_taker_fee_conservation();
 }

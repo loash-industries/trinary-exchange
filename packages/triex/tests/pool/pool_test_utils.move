@@ -470,6 +470,69 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     end(test);
 }
 
+/// Characterization of a KNOWN GAP, kept until TRIEX-138 lands: the fee
+/// reserve does not yet distinguish earned fees from a bid maker's
+/// still-locked fee escrow, so the admin can sweep fees backing an open,
+/// unfilled order. Today that money is forfeited on cancel anyway, so no
+/// user claim exists on it — but TRIEX-138 makes it refundable, adds a
+/// locked_maker_fees counter, and caps withdrawals at
+/// reserve − locked_maker_fees. When that lands, this test must be
+/// replaced by its inverse (admin CANNOT withdraw locked fees).
+public(package) fun test_admin_can_sweep_locked_maker_fees_until_triex138() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    // Alice rests a bid that never fills: 100 @ 2 locks a 1.8% maker fee
+    // (3.6 quote) into the reserve as escrow, not earned revenue.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        2 * constants::float_scaling(),
+        100 * constants::float_scaling(),
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+
+        let reserve = pool.quote_fee_reserve_balance();
+        // The entire reserve is Alice's locked fee — her order is open with
+        // zero fills, so none of it is earned yet.
+        assert!(reserve == 36 * constants::float_scaling() / 10, 0);
+
+        // The sweep succeeds anyway: nothing tracks the locked portion.
+        let fee_coin = pool.withdraw_pool_fees(&admin_cap, reserve, &clock, test.ctx());
+        assert!(fee_coin.value() == reserve, 1);
+        assert!(pool.quote_fee_reserve_balance() == 0, 2);
+
+        destroy(fee_coin);
+        return_shared(clock);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    end(test);
+}
+
 public(package) fun test_admin_withdraws_quote_fee_reserve() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
