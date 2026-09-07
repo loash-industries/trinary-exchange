@@ -960,8 +960,10 @@ fun multicoin_test_swap_exact_not_fully_filled(
     } else if (!partially_filled_maker) {
         if (is_bid) {
             assert!(base_out.value() == 2, constants::e_order_info_mismatch());
+            // Bob sells into the bids as an ask taker: 1.1% of the 6 quote
+            // proceeds is deducted (6 − 0.066)
             assert!(
-                quote_out.value() == 6 * constants::float_scaling(),
+                quote_out.value() == 5_934 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
@@ -982,8 +984,10 @@ fun multicoin_test_swap_exact_not_fully_filled(
         // partially_filled_maker case
         if (is_bid) {
             assert!(base_out.value() == 3, constants::e_order_info_mismatch());
+            // Bob sells into the remaining bid as an ask taker: 1.1% of the
+            // 3 quote proceeds is deducted (3 − 0.033)
             assert!(
-                quote_out.value() == 3 * constants::float_scaling(),
+                quote_out.value() == 2_967 * constants::float_scaling() / 1000,
                 constants::e_order_info_mismatch(),
             );
 
@@ -1210,6 +1214,146 @@ fun multicoin_test_modify_order(
 
 // === Advanced Fill Scenarios ===
 
+/// Regression: a bid whose owed quote is fully covered by the placer's own
+/// pending settled quote used to abort here — nothing was withdrawn, so the
+/// fee deposit reached a destructor that asserts it is zero. The fee is now
+/// carved out of the quote the pool retains by netting, so the order rests
+/// and its escrow reaches the reserve.
+#[test]
+fun test_multicoin_bid_fee_reaches_reserve_when_settled_covers_owed() {
+    let mut test = begin(OWNER);
+
+    let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+    // Not whitelisted, so the pool charges the default taker/maker fees
+    let pool_id = setup_multicoin_pool(
+        OWNER,
+        registry_id,
+        collection_id,
+        ASSET_GOLD,
+        false,
+        false,
+        &mut test,
+    );
+
+    let alice_bm_id = create_balance_manager_with_funds(
+        ALICE,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+    let bob_bm_id = create_balance_manager_with_funds(
+        BOB,
+        1_000_000 * constants::float_scaling(),
+        1_000_000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    // Mint gold for Bob so he can rest an ask
+    test.next_tx(OWNER);
+    let mut collection = test.take_shared<Collection>();
+    let gold = multicoin::mint_and_keep(
+        &collection_cap,
+        &mut collection,
+        ASSET_GOLD,
+        1_000_000 * constants::float_scaling(),
+        test.ctx(),
+    );
+    return_shared(collection);
+    transfer::public_transfer(gold, BOB);
+
+    test.next_tx(BOB);
+    let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+    let gold = test.take_from_sender<multicoin::Balance>();
+    bob_bm.deposit_multicoin(gold, test.ctx());
+    return_shared(bob_bm);
+
+    let price = 2 * constants::float_scaling();
+
+    // Bob rests an ask, Alice takes it. Bob's proceeds (net of his ask-maker
+    // fee) stay as pending settled quote — he never withdraws them.
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            100,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        assert!(order.status() == constants::filled(), 0);
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    // Bob now rests a bid for half the quantity. Its principal plus maker fee
+    // sit well inside his settled proceeds, so the vault withdraws nothing
+    // from his balance manager.
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let proof = bm.generate_proof_as_owner(test.ctx());
+
+        let reserve_before = pool.quote_fee_reserve_balance();
+        let order = pool.place_limit_order(
+            &mut bm,
+            &proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            50,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        assert!(order.status() == constants::live(), 1);
+        assert!(order.maker_fees() > 0, 2);
+        assert!(pool.quote_fee_reserve_balance() - reserve_before == order.maker_fees(), 3);
+
+        return_shared(bm);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    unit_test::destroy(collection_cap);
+    end(test);
+}
+
 #[test]
 fun test_multicoin_pool_fill_partial_maker_bid_ok() {
     multicoin_partial_fill_maker_order(
@@ -1218,7 +1362,8 @@ fun test_multicoin_pool_fill_partial_maker_bid_ok() {
         3,
         2,
         4 * constants::float_scaling(),
-        3 * constants::maybe_apply_fee(false) * constants::cred_multiplier(),
+        // Bob takes as an ask: 1.1% of the 4-quote proceeds
+        4 * constants::float_scaling() * 110 / 10_000,
         constants::partially_filled(),
     );
 }

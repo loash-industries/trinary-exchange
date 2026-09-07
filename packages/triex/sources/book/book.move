@@ -5,7 +5,7 @@
 /// All order book operations are defined in this module.
 module triexbook::book;
 
-use triexbook::{constants, math, order::Order, order_info::OrderInfo};
+use triexbook::{constants, math, order::Order, order_info::OrderInfo, quote_fee};
 
 /// === Errors ===
 const EInvalidAmountIn: u64 = 1;
@@ -159,13 +159,15 @@ public(package) fun get_quantity_out(
 
         if (current_timestamp <= order.expire_timestamp()) {
             let mut matched_base_quantity;
-            let quantity_to_match = if (fee_waived) {
-                quantity_in_left
-            } else {
-                math::div(quantity_in_left, constants::float_scaling() + input_fee_rate)
-            };
 
             if (is_bid) {
+                // Bid takers pay the fee on top of the quote they spend, so
+                // part of the input is reserved for it.
+                let quantity_to_match = if (fee_waived) {
+                    quantity_in_left
+                } else {
+                    math::div(quantity_in_left, constants::float_scaling() + input_fee_rate)
+                };
                 matched_base_quantity =
                     math::quote_to_qty(quantity_to_match, cur_price, self.price_scaling).min(
                         cur_quantity,
@@ -182,14 +184,27 @@ public(package) fun get_quantity_out(
                         quantity_in_left - math::mul(matched_quote_quantity, input_fee_rate);
                 };
             } else {
-                matched_base_quantity = quantity_to_match.min(cur_quantity);
-                quantity_out =
-                    quantity_out + math::qty_to_quote(matched_base_quantity, cur_price, self.price_scaling);
-                quantity_in_left = quantity_in_left - matched_base_quantity;
-                if (!fee_waived) {
-                    quantity_in_left =
-                        quantity_in_left - math::mul(matched_base_quantity, input_fee_rate);
+                // Ask takers have the fee deducted from the quote proceeds,
+                // so the full base input matches and the output is netted
+                // through the same helper settlement uses, per level, so the
+                // quote agrees with what calculate_partial_fill_balances
+                // settles.
+                matched_base_quantity = quantity_in_left.min(cur_quantity);
+                let matched_quote_quantity = math::qty_to_quote(
+                    matched_base_quantity,
+                    cur_price,
+                    self.price_scaling,
+                );
+                let fee = if (fee_waived) {
+                    0
+                } else {
+                    quote_fee::fee_from_scaled_rate(
+                        trade_specific_taker_fee,
+                        matched_quote_quantity,
+                    )
                 };
+                quantity_out = quantity_out + matched_quote_quantity - fee;
+                quantity_in_left = quantity_in_left - matched_base_quantity;
             };
 
             if (matched_base_quantity == 0) break;

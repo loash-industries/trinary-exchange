@@ -89,7 +89,11 @@ Trade parameters carry separate taker and maker rates (coin pools default to
 taker 2.2% / maker 1.8%; multicoin pools to taker 1.1% / maker 0.9%) and are
 admin-set per epoch
 (`set_next_epoch_fee(taker_fee, maker_fee)`); each order snapshots the maker
-rate at placement and settles against it for its lifetime. The original
+rate at placement and settles against it for its lifetime. Fees are charged
+on both sides of a trade, always denominated in quote: bid takers pay on top
+of the quote they owe and bid makers lock their fee at placement, while ask
+takers and ask makers have theirs deducted from the quote proceeds at fill
+time. The original
 DeepBook stake/proposal/vote system, flash loans, and referral system are
 present in the source but disabled (commented out) — none of them are part of
 this protocol. An optional

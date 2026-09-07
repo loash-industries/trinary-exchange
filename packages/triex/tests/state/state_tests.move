@@ -56,7 +56,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info1,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -84,7 +84,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info2,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -112,7 +112,7 @@ fun process_create_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info3,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -126,24 +126,19 @@ fun process_create_ok() {
     // quote quantity = 1 * 1 + 1.001001 * 1.001 = 2.002002001 rounds down to
     // 2.002002
     // remaining quantity = 10 - 2.001001 = 7.998999
-    // taker gets reduced taker fees (no stake required)
-    // taker fees = 2.001001 * 0.001 = 0.002001001
-    // maker fees = 7.998999 * 0.0005 = 0.0039994995 rounds down to 0.003999499
-    // total fees = 0.002001001 + 0.003999499 = 0.0060005 = 6000500
-    // #feat:fee_gov
-    // let (settled, owed) = state.process_create(
-    //     &mut taker_order,
-    //     &ewma_state,
-    //     object::id_from_address(@0x0),
-    //     test.ctx(),
-    // );
-    let (settled, owed) = state.process_create(
+    // Bob is an ask taker: his 2.2% fee is deducted from quote proceeds,
+    // per fill: 1_000_000 × 2.2% = 22_000; 1_002_002 × 2.2% = 22_044
+    let (settled, owed, proceeds_fees) = state.process_create(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
     );
-    assert_eq!(settled, balances::new(0, 2_002_002, 0));
+    assert_eq!(settled, balances::new(0, 2_002_002 - 44_044, 0));
     assert_eq!(owed, balances::new(10 * constants::sui_unit(), 0, 0));
+    // Reported as a single deposit attributed to Bob, the account charged.
+    assert!(proceeds_fees.length() == 1, 0);
+    assert!(proceeds_fees[0].amount() == 44_044, 0);
+    assert!(proceeds_fees[0].balance_manager_id() == id_from_address(BOB), 0);
 
     // Alice has 1 open order remaining. The first two orders have been filled.
     let alice = state.account(id_from_address(ALICE));
@@ -215,7 +210,7 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info1,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -232,12 +227,13 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
     );
-    assert_eq!(settled, balances::new(0, 5 * constants::usdc_unit(), 0));
+    // Bob's ask-taker fee (2.2% of 5 USDC = 0.11) comes out of proceeds
+    assert_eq!(settled, balances::new(0, 5 * constants::usdc_unit() - 110_000, 0));
     assert_eq!(owed, balances::new(5 * constants::sui_unit(), 0, 0));
 
     let mut taker_order2 = create_order_info_base(
@@ -255,7 +251,7 @@ fun process_create_expired_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut taker_order2,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -330,7 +326,7 @@ fun process_create_cred_price_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info,
         object::id_from_address(@0x0),
         test.ctx(),
@@ -348,14 +344,14 @@ fun process_create_cred_price_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut taker_order,
         object::id_from_address(@0x0),
         test.ctx(),
     );
 
-    assert_eq!(settled, balances::new(0, 130 * constants::usdc_unit(), 0));
-    // Taker fee = 0 (new fee model: ASK orders/sellers don't pay)
+    // Bob's ask-taker fee (2.2% of 130 USDC = 2.86) comes out of proceeds
+    assert_eq!(settled, balances::new(0, 130 * constants::usdc_unit() - 2_860_000, 0));
     assert_eq!(owed, balances::new(10_000_000_000, 0, 0));
 
     destroy(state);
@@ -527,7 +523,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -556,7 +552,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -605,7 +601,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -633,7 +629,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -716,7 +712,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -745,7 +741,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -772,7 +768,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -820,7 +816,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -849,7 +845,7 @@ fun process_create_cred_price_ok() {
 //     //     object::id_from_address(@0x0),
 //     //     test.ctx(),
 //     // );
-//     let (settled, owed) = state.process_create(
+//     let (settled, owed, _) = state.process_create(
 //         &mut taker_order,
 //         object::id_from_address(@0x0),
 //         test.ctx(),
@@ -885,7 +881,7 @@ fun process_cancel_ok() {
     //     object::id_from_address(@0x0),
     //     test.ctx(),
     // );
-    let (settled, owed) = state.process_create(
+    let (settled, owed, _) = state.process_create(
         &mut order_info,
         object::id_from_address(@0x0),
         test.ctx(),

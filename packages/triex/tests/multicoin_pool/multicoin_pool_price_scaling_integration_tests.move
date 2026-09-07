@@ -409,8 +409,14 @@ fun test_vault_fee_reserve_correct_after_fill() {
         let buggy_quote = math::mul(qty, price);
         let buggy_fees = buggy_quote * FEE_BPS / FEE_PRECISION;
 
-        // Vault must hold the correct fee, not the undercharged amount.
-        assert!(pool.quote_fee_reserve_balance() == expected_fees, 0);
+        // Vault must hold the correct fees, not the undercharged amount.
+        // The reserve holds Bob's taker fee plus Alice's ask-maker fee
+        // (0.9% of the same quote), deducted from her proceeds.
+        let expected_maker_fees = expected_quote * 90 / FEE_PRECISION;
+        assert!(
+            pool.quote_fee_reserve_balance() == expected_fees + expected_maker_fees,
+            0,
+        );
         // Confirm the ratio: the fix collects at least FLOAT_SCALING× more
         // than the bug (the buggy fee also truncates, so the ratio can
         // exceed it).
@@ -659,7 +665,10 @@ fun test_trade_nft_for_100_billion_cred() {
         assert!(order_info.status() == constants::filled(), 0);
         assert!(order_info.cumulative_quote_quantity() == expected_quote, 1);
         assert!(order_info.paid_fees() == expected_fee, 2);
-        assert!(pool.quote_fee_reserve_balance() == expected_fee, 3);
+        // The reserve also holds the ask maker's 0.9% fee on the same quote
+        let expected_maker_fee =
+            (((expected_quote as u128) * 90) / (FEE_PRECISION as u128)) as u64;
+        assert!(pool.quote_fee_reserve_balance() == expected_fee + expected_maker_fee, 3);
         // The fix captures FLOAT_SCALING× more fee than the bug
         assert!(expected_fee / buggy_fee == constants::float_scaling(), 4);
 
@@ -797,7 +806,9 @@ fun test_fee_large_quote_no_u64_overflow() {
 
         assert!(order_info.status() == constants::filled(), 1);
         assert!(order_info.paid_fees() == expected_fee, 2);
-        assert!(pool.quote_fee_reserve_balance() == expected_fee, 3);
+        // The reserve also holds the ask maker's 0.9% fee on the same quote
+        let expected_maker_fee = (((quote as u128) * 90) / (FEE_PRECISION as u128)) as u64;
+        assert!(pool.quote_fee_reserve_balance() == expected_fee + expected_maker_fee, 3);
 
         return_shared(pool);
         return_shared(clock);

@@ -82,6 +82,18 @@ public(package) fun zero(): QuoteFeeInfo {
     }
 }
 
+/// Fee charged on `quote_quantity` at a FLOAT_SCALING-denominated rate.
+/// This is the single source of truth for quote fee amounts: order placement,
+/// fill settlement and dry-run quotes all price through it, so a quote can
+/// never disagree with what settles. Rates are honored at the full precision
+/// governance accepts (FEE_MULTIPLE allows 0.01 bp), and clamped at 100%.
+public(package) fun fee_from_scaled_rate(rate_scaled: u64, quote_quantity: u64): u64 {
+    let scaling = constants::float_scaling_u128();
+    let rate = if ((rate_scaled as u128) > scaling) scaling else rate_scaled as u128;
+
+    ((quote_quantity as u128) * rate / scaling) as u64
+}
+
 /// Convert FLOAT_SCALING based fee rates to basis points (rounded down)
 public(package) fun scaled_to_bps(rate_scaled: u64): u64 {
     let numerator = (rate_scaled as u128) * (FEE_PRECISION as u128);

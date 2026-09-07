@@ -30,6 +30,24 @@ public struct State has store {
     governance: Governance, // #feat:gov
 }
 
+/// A quote fee taken out of trade proceeds rather than paid in with the order,
+/// tagged with the balance manager that was charged. Ask takers and ask makers
+/// both pay this way, and one transaction can charge several makers, so the
+/// portions stay separate: each reaches the fee reserve attributed to the
+/// account that actually paid it.
+public struct ProceedsFee has copy, drop, store {
+    balance_manager_id: ID,
+    amount: u64,
+}
+
+public(package) fun balance_manager_id(self: &ProceedsFee): ID {
+    self.balance_manager_id
+}
+
+public(package) fun amount(self: &ProceedsFee): u64 {
+    self.amount
+}
+
 // #feat:stake - DISABLED
 // public struct StakeEvent has copy, drop {
 //     pool_id: ID,
@@ -99,17 +117,21 @@ fun new_state(governance: Governance, ctx: &mut TxContext): State {
 /// volumes. Funds are settled for those makers. Then, the taker's trading fee
 /// is calculated and the taker's volumes are updated. Finally, the taker's
 /// balances are settled.
+/// Returns the settled and owed balances, plus the fees charged out of quote
+/// proceeds this transaction (ask-taker + ask-maker fees), one entry per
+/// account charged, which the pool must move from the vault's quote balance
+/// into the fee reserve.
 public(package) fun process_create(
     self: &mut State,
     order_info: &mut OrderInfo,
     // ewma_state: &EWMAState, // #feat:ewma
     pool_id: ID,
     ctx: &TxContext,
-): (Balances, Balances) {
+): (Balances, Balances, vector<ProceedsFee>) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
     let fills = order_info.fills_ref();
-    self.process_fills(fills, ctx);
+    let ask_maker_fees = self.process_fills(fills, ctx);
 
     self.update_account(order_info.balance_manager_id(), ctx);
     let account = &mut self.accounts[order_info.balance_manager_id()];
@@ -152,7 +174,18 @@ public(package) fun process_create(
     settled.add_balances(old_settled);
     owed.add_balances(old_owed);
 
-    (settled, owed)
+    // Ask-taker fees were deducted from settled proceeds rather than paid in;
+    // together with the ask-maker fill deductions collected above they must be
+    // moved into the vault's fee reserve by the caller.
+    let mut proceeds_fees = ask_maker_fees;
+    if (!order_info.is_bid() && order_info.paid_fees() > 0) {
+        proceeds_fees.push_back(ProceedsFee {
+            balance_manager_id: order_info.balance_manager_id(),
+            amount: order_info.paid_fees(),
+        });
+    };
+
+    (settled, owed, proceeds_fees)
 }
 
 public(package) fun withdraw_settled_amounts(
@@ -428,34 +461,55 @@ public(package) fun history(self: &State): &History {
 
 // === Private Functions ===
 /// Process fills for all makers. Update maker accounts and history.
-fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext) {
+/// Maker fees are charged at the rate snapshotted on the maker's order:
+/// bid makers locked theirs in quote at placement (the fill recognizes it),
+/// ask makers have theirs deducted from the quote proceeds of the fill.
+/// Returns the ask-maker fees deducted from proceeds, one entry per maker
+/// charged, which the pool must move from the vault's quote balance into the
+/// fee reserve.
+fun process_fills(
+    self: &mut State,
+    fills: &mut vector<Fill>,
+    ctx: &TxContext,
+): vector<ProceedsFee> {
+    let mut ask_maker_fees = vector[];
+    let mut total_maker_fees = 0;
     let mut i = 0;
     let num_fills = fills.length();
     while (i < num_fills) {
         let fill = &mut fills[i];
         let maker = fill.balance_manager_id();
         self.update_account(maker, ctx);
+
+        if (!fill.expired()) {
+            // Settlement derives this same amount from the fill, so recording
+            // it here is for the fill event and fee accounting: ask makers
+            // settle quote net of it, bid makers settle base untouched (their
+            // fee left escrow for the reserve at placement).
+            let maker_fee = fill.maker_fee_charged();
+            fill.set_fill_maker_fee(&balances::new(0, maker_fee, 0));
+            if (fill.taker_is_bid() && maker_fee > 0) {
+                ask_maker_fees.push_back(ProceedsFee {
+                    balance_manager_id: maker,
+                    amount: maker_fee,
+                });
+            };
+            // Maker fees count as collected at fill time, on both sides.
+            total_maker_fees = total_maker_fees + maker_fee;
+            // #feat:stake - DISABLED: pass 0 for account stake
+            self.history.add_volume(fill.base_quantity(), 0);
+        };
+
         let account = &mut self.accounts[maker];
         account.process_maker_fill(fill);
 
-        let base_volume = fill.base_quantity();
-
-        // Maker fees are collected up front in the quote currency when the
-        // resting order is placed (see order_info::calculate_partial_fill_balances,
-        // which locks the maker fee into the quote_fee_reserve for bid makers).
-        // The legacy DeepBook path charged a CRED maker fee again here at fill
-        // time; in the unified quote-fee model that would double-charge the
-        // maker, so the fill-time maker fee is always zero.
-        let fee_quantity = balances::new(0, 0, 0);
-
-        if (!fill.expired()) {
-            fill.set_fill_maker_fee(&fee_quantity);
-            // #feat:stake - DISABLED: pass 0 for account stake
-            self.history.add_volume(base_volume, 0);
-        } else {};
-
         i = i + 1;
     };
+    if (total_maker_fees > 0) {
+        self.history.add_total_fees_collected(balances::new(0, total_maker_fees, 0));
+    };
+
+    ask_maker_fees
 }
 
 /// If account doesn't exist, create it. Update account volumes and rebates.

@@ -335,13 +335,18 @@ public fun check_locked_balance<BaseAsset, QuoteAsset>(
     expected_balances: &ExpectedBalances,
     test: &mut Scenario,
 ) {
-    let (base, _, _) = locked_balance<BaseAsset, QuoteAsset>(
+    let (base, quote, cred) = locked_balance<BaseAsset, QuoteAsset>(
         sender,
         pool_id,
         balance_manager_id,
         test,
     );
     assert!(base == expected_balances.sui, 0);
+    // Quote fees are locked alongside quote principal, so the quote side is
+    // part of what this checks — leaving it unasserted made every
+    // quote-denominated expectation dead weight.
+    assert!(quote == expected_balances.usdc, 1);
+    assert!(cred == expected_balances.cred, 2);
 }
 
 public fun get_level2_range<BaseAsset, QuoteAsset>(

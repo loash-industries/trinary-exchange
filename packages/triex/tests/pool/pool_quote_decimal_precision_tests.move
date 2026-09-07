@@ -48,6 +48,8 @@ const BOB: address = @0xBBBB;
 // Pool governance default: 2% taker fee on bids
 const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
+// Ask makers pay the maker rate out of fill proceeds; it lands in the same reserve.
+const MAKER_FEE_BPS: u64 = 180;
 
 // Enough to cover the largest test (100 × FLOAT_SCALING × FLOAT_SCALING quote)
 const LARGE_BALANCE: u64 = 100_000_000_000_000_000;
@@ -213,7 +215,8 @@ fun test_q9_two_dollar_fill_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 40_000_000
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
     assert!(expected_fee > 0, 2);
 
     end(test);
@@ -247,7 +250,8 @@ fun test_q9_large_fill_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 300_000_000
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
 
     end(test);
 }
@@ -283,7 +287,8 @@ fun test_q6_two_dollar_fill_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 40_000
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
     assert!(expected_fee > 0, 2);
 
     end(test);
@@ -318,7 +323,8 @@ fun test_q6_fractional_price_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 150_000
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
 
     end(test);
 }
@@ -354,7 +360,8 @@ fun test_q2_two_dollar_fill_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 4
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
     assert!(expected_fee > 0, 2);
 
     end(test);
@@ -436,7 +443,8 @@ fun test_q1_adequate_price_fee_captured() {
     let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 5
 
     assert!(paid_fees == expected_fee, 0);
-    assert!(vault_reserve == expected_fee, 1);
+    let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
+    assert!(vault_reserve == expected_fee + expected_maker_fee, 1);
     assert!(expected_fee > 0, 2);
 
     end(test);

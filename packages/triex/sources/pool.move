@@ -448,7 +448,8 @@ public fun swap_exact_quantity_with_manager<BaseAsset, QuoteAsset>(
         (order_info.executed_quantity(), quote_left)
     } else {
         let base_left = base_quantity - order_info.executed_quantity();
-        (base_left, order_info.cumulative_quote_quantity())
+        // Ask-taker fees come out of the quote proceeds
+        (base_left, order_info.cumulative_quote_quantity() - order_info.paid_fees())
     };
 
     let base_out = balance_manager.withdraw_with_cap(withdraw_cap, base_out, ctx);
@@ -1068,13 +1069,7 @@ public fun get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
 ): (u64, u64) {
     let self = self.load_inner();
     let params = self.state.governance().trade_params();
-    // Asks quote fee-free until ask-side charging lands (TRIEX-135 Phase 2),
-    // keeping dry-runs aligned with settlement.
-    let trade_specific_taker_fee = if (quote_quantity > 0) {
-        params.taker_fee()
-    } else {
-        0
-    };
+    let trade_specific_taker_fee = params.taker_fee();
     self
         .book
         .get_quantity_out(
@@ -1437,7 +1432,7 @@ fun place_order_int<BaseAsset, QuoteAsset>(
             pool_inner.book.price_scaling(),
         );
         pool_inner.book.create_order(&mut order_info, clock.timestamp_ms());
-        let (settled, owed) = pool_inner
+        let (settled, owed, proceeds_fees) = pool_inner
             .state
             .process_create(
                 &mut order_info,
@@ -1445,13 +1440,21 @@ fun place_order_int<BaseAsset, QuoteAsset>(
                 pool_inner.pool_id,
                 ctx,
             );
-        let quote_fee_amount = order_info.paid_fees() + order_info.maker_fees();
-        let fee_deposit = if (quote_fee_amount > 0) {
+        // Bid fees ride in with the quote the user pays (fee deposit); ask
+        // fees were carved out of quote proceeds and are moved to the
+        // reserve after settlement below.
+        let (taker_fee_amount, maker_fee_amount) = if (order_info.is_bid()) {
+            (order_info.paid_fees(), order_info.maker_fees())
+        } else {
+            (0, 0)
+        };
+        let fee_deposit = if (taker_fee_amount + maker_fee_amount > 0) {
             option::some(
                 vault::new_quote_fee_deposit(
                     pool_inner.pool_id,
                     balance_manager.id(),
-                    quote_fee_amount,
+                    taker_fee_amount,
+                    maker_fee_amount,
                     clock.timestamp_ms(),
                 ),
             )
@@ -1461,6 +1464,22 @@ fun place_order_int<BaseAsset, QuoteAsset>(
         pool_inner
             .vault
             .settle_balance_manager(settled, owed, balance_manager, trade_proof, fee_deposit);
+        // One deposit per account charged, so each reaches the reserve
+        // attributed to whoever paid it: the ask taker for their own fee,
+        // each ask maker for the fee taken out of their fill proceeds.
+        let mut fee_idx = 0;
+        while (fee_idx < proceeds_fees.length()) {
+            let proceeds_fee = &proceeds_fees[fee_idx];
+            pool_inner
+                .vault
+                .move_quote_to_fee_reserve(
+                    pool_inner.pool_id,
+                    proceeds_fee.balance_manager_id(),
+                    proceeds_fee.amount(),
+                    clock.timestamp_ms(),
+                );
+            fee_idx = fee_idx + 1;
+        };
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());
         order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());

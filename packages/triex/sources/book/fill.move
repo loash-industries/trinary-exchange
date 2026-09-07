@@ -4,7 +4,7 @@
 /// `Fill` struct represents the results of a match between two orders.
 module triexbook::fill;
 
-use triexbook::balances::{Self, Balances};
+use triexbook::{balances::{Self, Balances}, quote_fee};
 
 // === Structs ===
 /// Fill struct represents the results of a match between two orders.
@@ -122,9 +122,23 @@ public(package) fun new(
     }
 }
 
+/// Fee the maker owes on this fill, priced at the rate snapshotted on their
+/// order at placement. Derived from the fill's own fields so settlement can
+/// never depend on `set_fill_maker_fee` having run first. Expired fills are
+/// not charged.
+public(package) fun maker_fee_charged(self: &Fill): u64 {
+    if (self.expired) {
+        0
+    } else {
+        quote_fee::fee_from_scaled_rate(self.maker_fee_rate, self.quote_quantity)
+    }
+}
+
 /// Calculate the quantities to settle for the maker.
-/// Note: In the unified fee model, maker fees are already paid upfront when the order is placed.
-/// This function calculates settlement amounts without additional fee deductions.
+/// Bid makers locked their fee in quote at placement, so their (base) fills
+/// settle without deductions. Ask makers lock nothing — their fee comes out
+/// of the quote proceeds here, at the rate recorded on the fill. Expired
+/// fills return principal untouched.
 public(package) fun get_settled_maker_quantities(self: &Fill): Balances {
     let (base, quote) = if (self.expired) {
         if (self.taker_is_bid) {
@@ -134,7 +148,7 @@ public(package) fun get_settled_maker_quantities(self: &Fill): Balances {
         }
     } else {
         if (self.taker_is_bid) {
-            (0, self.quote_quantity)
+            (0, self.quote_quantity - self.maker_fee_charged())
         } else {
             (self.base_quantity, 0)
         }
@@ -143,9 +157,12 @@ public(package) fun get_settled_maker_quantities(self: &Fill): Balances {
     balances::new(base, quote, 0)
 }
 
-/// Set the maker fee for this fill (for tracking purposes).
-/// Note: In the unified fee model, maker orders already paid fees upfront.
-/// This is used for record-keeping and events, not for charging additional fees.
+/// Record the maker fee charged for this fill on the fill itself, for the
+/// `OrderFilled` event and fee accounting. For ask makers this is the amount
+/// `get_settled_maker_quantities` deducts from their quote proceeds; for bid
+/// makers it is the portion of their placement-locked fee this fill
+/// recognizes. Settlement derives the same value itself, so this is
+/// bookkeeping rather than an input to it.
 public(package) fun set_fill_maker_fee(self: &mut Fill, fee: &Balances) {
     self.maker_fee = fee.non_zero_value();
 }

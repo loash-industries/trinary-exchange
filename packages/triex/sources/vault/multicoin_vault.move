@@ -16,7 +16,6 @@ use triexbook::{balance_manager::{TradeProof, BalanceManager}, balances::Balance
 const EInsufficientBaseBalance: u64 = 1;
 const EInsufficientQuoteBalance: u64 = 2;
 const EInsufficientCredBalance: u64 = 3;
-const EInvalidQuoteFeeAmount: u64 = 4;
 const EInsufficientFeeReserve: u64 = 5;
 const ENoBalanceToSettle: u64 = 7;
 const EHasOwedBalances: u64 = 8;
@@ -147,41 +146,36 @@ public(package) fun settle_balance_manager<QuoteAsset>(
     };
     if (balances_in.quote() > balances_out.quote()) {
         let amount = balances_in.quote() - balances_out.quote();
-        let mut withdrawn: Balance<QuoteAsset> = balance_manager.withdraw_with_proof(
+        let withdrawn: Balance<QuoteAsset> = balance_manager.withdraw_with_proof(
             trade_proof,
             amount,
             false,
         );
-        if (option::is_some(&quote_fee_deposit)) {
-            let deposit = quote_fee_deposit.destroy_some();
-            let (
-                pool_id,
-                balance_manager_id,
-                fee_amount,
-                timestamp,
-            ) = vault::quote_fee_deposit_into_parts(deposit);
-            assert!(fee_amount <= withdrawn.value(), EInvalidQuoteFeeAmount);
-            if (fee_amount > 0) {
-                let fee_balance = withdrawn.split(fee_amount);
-                self.quote_fee_reserve.join(fee_balance);
-                vault::emit_pool_fees_deposited<QuoteAsset>(
-                    pool_id,
-                    fee_amount,
-                    balance_manager_id,
-                    timestamp,
-                );
-            };
-        } else {
-            option::destroy_none(quote_fee_deposit);
-        };
         self.quote_balance.join(withdrawn);
+    };
+    // Fee escrow is carved out of the pool's quote balance rather than out of
+    // the marginal withdrawal above. The quote a user owes (fees included) is
+    // retained by the pool either way — withdrawn from their balance manager,
+    // or netted against settled balances the pool therefore never paid out —
+    // so the fee is covered even when prior settled balances cover the order
+    // outright and nothing is withdrawn at all.
+    if (option::is_some(&quote_fee_deposit)) {
+        let deposit = quote_fee_deposit.destroy_some();
+        let (
+            pool_id,
+            balance_manager_id,
+            taker_fee_amount,
+            maker_fee_amount,
+            timestamp,
+        ) = vault::quote_fee_deposit_into_parts(deposit);
+        self.move_quote_to_fee_reserve(
+            pool_id,
+            balance_manager_id,
+            taker_fee_amount + maker_fee_amount,
+            timestamp,
+        );
     } else {
-        if (option::is_some(&quote_fee_deposit)) {
-            let deposit = quote_fee_deposit.destroy_some();
-            vault::destroy_zero_quote_fee_deposit(deposit);
-        } else {
-            option::destroy_none(quote_fee_deposit);
-        };
+        option::destroy_none(quote_fee_deposit);
     };
 
     // === CRED settlements ===
@@ -276,6 +270,27 @@ public(package) fun deposit_quote<QuoteAsset>(
     to_deposit: Balance<QuoteAsset>,
 ) {
     self.quote_balance.join(to_deposit);
+}
+
+/// Move already-held quote from the pool balance into the fee reserve.
+/// Used for fees charged out of quote proceeds (ask-taker and ask-maker
+/// fees), which never pass through a user withdrawal.
+public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
+    self: &mut MultiCoinVault<QuoteAsset>,
+    pool_id: ID,
+    balance_manager_id: ID,
+    amount: u64,
+    timestamp: u64,
+) {
+    if (amount == 0) return;
+    let fee_balance = self.quote_balance.split(amount);
+    self.quote_fee_reserve.join(fee_balance);
+    vault::emit_pool_fees_deposited<QuoteAsset>(
+        pool_id,
+        amount,
+        balance_manager_id,
+        timestamp,
+    );
 }
 
 public(package) fun deposit_quote_fees<QuoteAsset>(
