@@ -281,12 +281,15 @@ unreachable — all four callers already test `expired()` — and the `taker_is_
 half is reachable only through the event. Both are defence in depth, not dead
 code worth deleting.
 
-Not covered, deliberately: retention on a **whitelisted** pool. Those are
-fee-exempt in intent but `governance::empty` ignores the flag when choosing
-defaults, so they launch at 1.8% maker and `set_next_trade_params` aborts with
-`EWhitelistedPoolCannotChange` — the rate cannot be corrected. That is a
-pre-existing bug already on `cycle-7`; a test here would codify the wrong
-behaviour. Needs its own ticket.
+Not covered, deliberately: retention on a **whitelisted** pool. In this fork
+`whitelisted` does not mean fee-exempt — that is upstream DeepBook's meaning,
+and nothing here reads the flag when pricing. Its only live effect is that
+`set_next_trade_params` aborts with `EWhitelistedPoolCannotChange`, so such a
+pool launches at the normal defaults (now including a 2000 bps retention) and
+can never be re-rated. The precision test suites actually create whitelisted
+pools to measure fees, so current behaviour is load-bearing. Whether the flag
+should keep any meaning is a design decision, tracked as TRIEX-139; asserting
+either way here would prejudge it.
 
 ### Closed alongside the refund
 
