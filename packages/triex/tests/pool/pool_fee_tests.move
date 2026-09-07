@@ -112,3 +112,48 @@ fun test_cancel_and_refund_events_agree() {
 fun test_expiry_refund_event_attributes_the_maker() {
     pool_test_utils::test_expiry_refund_event_attributes_the_maker();
 }
+
+#[test]
+fun test_cancel_refund_survives_sweep_to_the_floor() {
+    pool_test_utils::test_cancel_refund_survives_sweep_to_the_floor();
+}
+
+#[test]
+fun test_repeated_modify_downs_then_cancel_stay_solvent() {
+    pool_test_utils::test_repeated_modify_downs_then_cancel_stay_solvent();
+}
+
+#[test]
+fun test_many_partial_fills_then_cancel_stay_solvent() {
+    pool_test_utils::test_many_partial_fills_then_cancel_stay_solvent();
+}
+
+#[test]
+fun test_multiple_expired_makers_each_get_their_own_refund() {
+    pool_test_utils::test_multiple_expired_makers_each_get_their_own_refund();
+}
+
+#[test]
+fun test_expired_ask_maker_refunds_nothing() {
+    pool_test_utils::test_expired_ask_maker_refunds_nothing();
+}
+
+#[test]
+fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
+    pool_test_utils::test_self_match_cancel_maker_refunds_the_bid_escrow();
+}
+
+#[test]
+fun test_cancel_all_orders_refunds_every_bid() {
+    pool_test_utils::test_cancel_all_orders_refunds_every_bid();
+}
+
+#[test]
+fun test_zero_retention_refunds_the_whole_escrow() {
+    pool_test_utils::test_zero_retention_refunds_the_whole_escrow();
+}
+
+#[test]
+fun test_refund_rounding_dust_favors_the_retention() {
+    pool_test_utils::test_refund_rounding_dust_favors_the_retention();
+}

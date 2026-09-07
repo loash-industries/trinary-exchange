@@ -216,3 +216,51 @@ fun admin_multiple_fee_changes_ok() {
     governance::destroy_for_testing(gov);
     end(test);
 }
+
+#[test, expected_failure(abort_code = governance::EInvalidCancelRetention)]
+fun admin_set_cancel_retention_above_full_e() {
+    let mut test = begin(OWNER);
+
+    let whitelisted = false;
+    test.next_tx(OWNER);
+    let mut gov = governance::empty(whitelisted, test.ctx());
+    // 10000 bps keeps the whole escrow; anything above is not a share.
+    gov.set_next_trade_params(10000000, 5000000, 10001);
+
+    governance::destroy_for_testing(gov);
+    test.end();
+}
+
+#[test]
+fun admin_set_cancel_retention_boundaries_ok() {
+    let mut test = begin(OWNER);
+
+    let whitelisted = false;
+    test.next_tx(OWNER);
+    let mut gov = governance::empty(whitelisted, test.ctx());
+
+    // Both ends are legal policy: refund everything, or keep everything.
+    gov.set_next_trade_params(10000000, 5000000, 0);
+    assert!(gov.next_trade_params().cancel_retention_bps() == 0);
+    gov.set_next_trade_params(10000000, 5000000, 10000);
+    assert!(gov.next_trade_params().cancel_retention_bps() == 10000);
+
+    governance::destroy_for_testing(gov);
+    test.end();
+}
+
+#[test]
+fun default_cancel_retention_is_twenty_percent() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(OWNER);
+    let coin_gov = governance::empty(false, test.ctx());
+    let multicoin_gov = governance::empty_multicoin(false, test.ctx());
+
+    assert!(coin_gov.trade_params().cancel_retention_bps() == 2000);
+    assert!(multicoin_gov.trade_params().cancel_retention_bps() == 2000);
+
+    governance::destroy_for_testing(coin_gov);
+    governance::destroy_for_testing(multicoin_gov);
+    test.end();
+}

@@ -6406,6 +6406,131 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
         return_shared(pool);
     };
 
+    // The other half of snapshotting: the new policy has to actually bind for
+    // an order placed after it, or the rate would be unreachable rather than
+    // merely non-retroactive.
+    let new_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        new_order_id = order_info.order_id();
+    };
+
+    let before_second_cancel = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, new_order_id, &clock, test.ctx());
+
+        // 100% retention: nothing to unlock, so no refund event at all.
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 0, 2);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let after_second_cancel = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Principal back, escrow entirely forfeited under the new policy.
+    assert!(after_second_cancel - before_second_cancel == 200 * constants::float_scaling(), 3);
+
+    end(test);
+}
+
+/// The zero end of the range: a pool configured to retain nothing refunds the
+/// whole escrow, so placing and cancelling is free at the fee level.
+public(package) fun test_zero_retention_refunds_the_whole_escrow() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee(22_000_000, 18_000_000, 0, &admin_cap);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+    test.next_epoch(OWNER);
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let escrow = 36 * constants::float_scaling() / 10;
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 0);
+        let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+        assert!(amount == escrow, 1);
+
+        // The reserve is empty: nothing traded and nothing was retained.
+        assert!(pool.quote_fee_reserve_balance() == 0, 2);
+        assert!(pool.locked_maker_fees() == 0, 3);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Exactly whole: the round trip cost nothing but gas.
+    assert!(balance_after == balance_before, 4);
+
     end(test);
 }
 
@@ -6659,6 +6784,789 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
         return_shared(clock);
         return_shared(pool);
     };
+
+    end(test);
+}
+
+/// Solvency edge: an admin sweeping every unlocked unit leaves the reserve
+/// holding exactly the outstanding escrow. A cancel then has to unlock a real
+/// balance out of it — `unlock_quote_fees` aborts if it is short, unlike the
+/// saturating subtract recognition uses — so this is the case where the
+/// `reserve >= locked` invariant actually has to hold, not just be tidy.
+public(package) fun test_cancel_refund_survives_sweep_to_the_floor() {
+    let mut test = begin(OWNER);
+    let (pool_id, balance_manager_id_alice, _bob) = setup_pool_with_half_filled_bid(&mut test);
+
+    // Half filled: reserve 5.8 (3.6 escrow + 2.2 taker fee), 1.8 still locked.
+    let alice_order_id;
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        alice_order_id = pool.account_open_orders(&balance_manager).into_keys()[0];
+        return_shared(balance_manager);
+        return_shared(pool);
+    };
+
+    let swept;
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        swept = pool.withdrawable_pool_fees();
+        let fee_coin = pool.withdraw_pool_fees(&admin_cap, swept, &clock, test.ctx());
+        // Nothing sweepable is left; the reserve is pure escrow now.
+        assert!(pool.withdrawable_pool_fees() == 0, 0);
+        assert!(pool.quote_fee_reserve_balance() == pool.locked_maker_fees(), 1);
+        destroy(fee_coin);
+        return_shared(clock);
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    // The refund must still be payable out of what the sweep could not touch.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(
+            &mut balance_manager,
+            &trade_proof,
+            alice_order_id,
+            &clock,
+            test.ctx(),
+        );
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // Only the retention on the cancelled half is left, and it is earned.
+        let retained = 36 * constants::float_scaling() / 100;
+        assert!(pool.quote_fee_reserve_balance() == retained, 2);
+        assert!(pool.locked_maker_fees() == 0, 3);
+        assert!(pool.withdrawable_pool_fees() == retained, 4);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Repeated modify-downs each release a slice of the escrow, and the final
+/// cancel releases the remainder. The slices are floored independently while
+/// the lock was floored once, so their sum can only ever be <= the lock —
+/// a release path that over-counted would abort here rather than silently
+/// spending another maker's escrow.
+public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let price = 3 * constants::float_scaling();
+    let quantity = 97 * constants::float_scaling();
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    let escrow_at_placement;
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        escrow_at_placement = pool.locked_maker_fees();
+        return_shared(pool);
+    };
+
+    // Whittle the order down in uneven steps, checking the invariant after
+    // each one rather than only at the end.
+    let steps = vector[71, 53, 29, 11];
+    let mut i = 0;
+    while (i < steps.length()) {
+        test.next_tx(ALICE);
+        {
+            let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+                balance_manager_id_alice,
+            );
+            let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+            pool.modify_order(
+                &mut balance_manager,
+                &trade_proof,
+                order_id,
+                steps[i] * constants::float_scaling(),
+                &clock,
+                test.ctx(),
+            );
+            assert!(pool.quote_fee_reserve_balance() >= pool.locked_maker_fees(), 0);
+            return_shared(balance_manager);
+            return_shared(clock);
+            return_shared(pool);
+        };
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // Every slice resolved, so nothing is escrowed. What stayed behind is
+        // the retention, which can never exceed the original escrow.
+        assert!(pool.locked_maker_fees() == 0, 1);
+        let kept = pool.quote_fee_reserve_balance();
+        assert!(kept == pool.withdrawable_pool_fees(), 2);
+        assert!(kept <= escrow_at_placement, 3);
+        // Retention is 20% of an escrow that was fully released in slices;
+        // per-slice flooring can only lose dust, never a fifth of it.
+        assert!(kept >= escrow_at_placement / 5 - 10, 4);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Several partial fills before a cancel: each fill floors its own recognition
+/// while the lock floored once over the whole order, so the accumulated
+/// recognitions plus the cancel release must still not exceed the lock.
+public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 3 * constants::float_scaling();
+    let quantity = 97 * constants::float_scaling();
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    let bites = vector[13, 7, 23, 11];
+    let mut i = 0;
+    while (i < bites.length()) {
+        place_limit_order<SUI, USDC>(
+            BOB,
+            pool_id,
+            balance_manager_id_bob,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            bites[i] * constants::float_scaling(),
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+        test.next_tx(ALICE);
+        {
+            let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            assert!(pool.quote_fee_reserve_balance() >= pool.locked_maker_fees(), 0);
+            return_shared(pool);
+        };
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    test.next_tx(OWNER);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.locked_maker_fees() == 0, 1);
+        assert!(pool.quote_fee_reserve_balance() == pool.withdrawable_pool_fees(), 2);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// One match can expire several makers' orders at once. Each refund has to be
+/// unlocked against its own maker and order — the aggregate the refund path
+/// started as would have attributed every one of them to the taker.
+public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let balance_manager_id_owner = create_acct_and_share_with_funds(
+        OWNER,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let expire_timestamp = get_time(&mut test) + 100;
+    // Two different sizes, so the two refunds are distinguishable.
+    let alice_quantity = 100 * constants::float_scaling();
+    let owner_quantity = 40 * constants::float_scaling();
+    let alice_refund = 288 * constants::float_scaling() / 100; // 80% of 3.6
+    let owner_refund = 1152 * constants::float_scaling() / 1000; // 80% of 1.44
+
+    let alice_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            alice_quantity,
+            true,
+            expire_timestamp,
+            &mut test,
+        );
+        alice_order_id = order_info.order_id();
+    };
+    let owner_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            OWNER,
+            pool_id,
+            balance_manager_id_owner,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            owner_quantity,
+            true,
+            expire_timestamp,
+            &mut test,
+        );
+        owner_order_id = order_info.order_id();
+    };
+
+    // Bob's ask is large enough to sweep both stale bids out.
+    set_time(200, &mut test);
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            alice_quantity + owner_quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        // Two refunds, one per expired maker, each naming its own order.
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 2, 0);
+        let (id_a, amount_a, bm_a) = vault::refunded_event_parts(&refunds[0]);
+        let (id_b, amount_b, bm_b) = vault::refunded_event_parts(&refunds[1]);
+        assert!(bm_a != bm_b, 1);
+        // Neither is attributed to Bob, who merely triggered the expiries.
+        assert!(bm_a != balance_manager_id_bob, 2);
+        assert!(bm_b != balance_manager_id_bob, 3);
+
+        let (alice_amount, owner_amount) = if (bm_a == balance_manager_id_alice) {
+            assert!(id_a == alice_order_id, 4);
+            assert!(id_b == owner_order_id, 5);
+            (amount_a, amount_b)
+        } else {
+            assert!(id_b == alice_order_id, 6);
+            assert!(id_a == owner_order_id, 7);
+            (amount_b, amount_a)
+        };
+        assert!(alice_amount == alice_refund, 8);
+        assert!(owner_amount == owner_refund, 9);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// An expired ask escrowed nothing, so it must release nothing. A refund here
+/// would be paid out of some bid maker's locked fee.
+public(package) fun test_expired_ask_maker_refunds_nothing() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let expire_timestamp = get_time(&mut test) + 100;
+
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false, // ask
+        expire_timestamp,
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        // Asks escrow nothing at placement.
+        assert!(pool.locked_maker_fees() == 0, 0);
+        return_shared(pool);
+    };
+
+    set_time(200, &mut test);
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_bob,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true, // bid crosses the stale ask
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        // The stale ask escrowed nothing, so nothing is refunded.
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 0, 1);
+
+        // And the expiry event must not claim otherwise. Nothing moves funds
+        // on this path, so a non-zero split here would be visible only in the
+        // event — an indexer would book a refund that never happened.
+        let expiries = event::events_by_type<order_info::OrderExpired>();
+        assert!(expiries.length() == 1, 9);
+        let (_id, fee_refunded, fee_retained) = order_info::expired_event_parts(&expiries[0]);
+        assert!(fee_refunded == 0, 10);
+        assert!(fee_retained == 0, 11);
+
+        // Bob's bid found only an expired ask, so it did not fill — it rests
+        // and escrows its own 1.8% of 200 quote. That escrow is his, and it
+        // is the only thing in the reserve: nothing traded, so there are no
+        // earned fees and the whole reserve is still a claim.
+        let bob_escrow = 36 * constants::float_scaling() / 10;
+        assert!(pool.locked_maker_fees() == bob_escrow, 2);
+        assert!(pool.quote_fee_reserve_balance() == bob_escrow, 3);
+        assert!(pool.withdrawable_pool_fees() == 0, 4);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// A self-match resolved with `cancel_maker` expires the maker side out. That
+/// is a cancellation the maker did choose, so it splits on cancel terms like
+/// any other — not silently forfeiting, and not refunding in full.
+public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    let escrow = 36 * constants::float_scaling() / 10;
+    let expected_refund = 288 * constants::float_scaling() / 100;
+
+    let bid_order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        bid_order_id = order_info.order_id();
+    };
+
+    // Alice crosses her own bid asking for the maker side to be cancelled.
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.place_limit_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::no_restriction(),
+            constants::cancel_maker(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 0);
+        let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            &refunds[0],
+        );
+        assert!(refund_order_id == bid_order_id, 1);
+        assert!(refund_amount == expected_refund, 2);
+        assert!(refund_bm == balance_manager_id_alice, 3);
+
+        // A self-match cancel emits OrderCanceled rather than OrderExpired,
+        // and it has to carry the same split.
+        let cancels = event::events_by_type<order::OrderCanceled>();
+        assert!(cancels.length() == 1, 4);
+        let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
+            &cancels[0],
+        );
+        assert!(cancel_order_id == bid_order_id, 5);
+        assert!(fee_refunded == expected_refund, 6);
+        assert!(fee_refunded + fee_retained == escrow, 7);
+
+        assert!(pool.locked_maker_fees() == 0, 8);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// `cancel_all_orders` loops over single cancels, so several bids resolve in
+/// one transaction: each must unlock its own refund and clear its own escrow.
+public(package) fun test_cancel_all_orders_refunds_every_bid() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    // Three resting bids at different prices, plus an ask that escrows nothing.
+    let quantities = vector[100, 40, 20];
+    let mut i = 0;
+    while (i < quantities.length()) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (2 + i) * constants::float_scaling(),
+            quantities[i] * constants::float_scaling(),
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        50 * constants::float_scaling(),
+        10 * constants::float_scaling(),
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    let escrow_before;
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        escrow_before = pool.locked_maker_fees();
+        assert!(escrow_before > 0, 0);
+        return_shared(pool);
+    };
+
+    let total_refunded;
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_all_orders(&mut balance_manager, &trade_proof, &clock, test.ctx());
+
+        // One refund per bid; the ask escrowed nothing and contributes none.
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 3, 1);
+        let mut summed = 0;
+        let mut r = 0;
+        while (r < refunds.length()) {
+            let (_id, amount, bm) = vault::refunded_event_parts(&refunds[r]);
+            assert!(bm == balance_manager_id_alice, 2);
+            summed = summed + amount;
+            r = r + 1;
+        };
+        total_refunded = summed;
+
+        assert!(pool.locked_maker_fees() == 0, 3);
+        // Whatever was not refunded is retention, and it is all earned now.
+        // Derived from the refunds rather than an aggregate 20%, since each
+        // order floors its own split.
+        assert!(pool.quote_fee_reserve_balance() == escrow_before - total_refunded, 4);
+        assert!(pool.withdrawable_pool_fees() == escrow_before - total_refunded, 5);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Place three bids and an ask, then cancel the lot: Alice is out exactly
+    // the retention, and nothing else.
+    assert!(balance_before - balance_after == escrow_before - total_refunded, 6);
+
+    end(test);
+}
+
+/// Rounding edge at pool scale. Lot size is well below `FLOAT_SCALING`, so a
+/// maker can rest a quantity whose escrow does not divide by five: 1000 quote
+/// at 1.8% escrows 18, and 80% of 18 is 14.4. The refund floors to 14, so the
+/// retention takes 4 — a shade over its nominal 20%.
+///
+/// That direction matters. Dust must fall to the protocol, never to the
+/// refund: a refund that rounded up would pay a fraction of a unit out of some
+/// other maker's escrow every time, and the two halves must still sum to the
+/// released amount or `locked_maker_fees` would never reach zero.
+public(package) fun test_refund_rounding_dust_favors_the_retention() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    // 1000 base at price 1.0 => 1000 quote notional.
+    let price = 1 * constants::float_scaling();
+    let quantity = 1000;
+    let escrow = 18; // floor(1000 * 1.8%)
+    let expected_refund = 14; // floor(18 * 80%), not 14.4
+    let expected_retained = 4; // the dust lands here
+
+    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+
+    let order_id;
+    {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        order_id = order_info.order_id();
+    };
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        assert!(pool.locked_maker_fees() == escrow, 0);
+        return_shared(pool);
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+
+        let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+        assert!(refunds.length() == 1, 1);
+        let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+        assert!(amount == expected_refund, 2);
+
+        let cancels = event::events_by_type<order::OrderCanceled>();
+        let (_cid, fee_refunded, fee_retained) = order::canceled_event_parts(&cancels[0]);
+        assert!(fee_refunded == expected_refund, 3);
+        assert!(fee_retained == expected_retained, 4);
+        // The halves still sum exactly, so the escrow counter can reach zero.
+        assert!(fee_refunded + fee_retained == escrow, 5);
+        assert!(pool.locked_maker_fees() == 0, 6);
+        assert!(pool.quote_fee_reserve_balance() == expected_retained, 7);
+
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    // Alice paid 4 of 18 rather than the nominal 3.6 — dust rounds against the
+    // maker, which is the only safe direction for a solvency counter.
+    assert!(balance_before - balance_after == expected_retained, 8);
 
     end(test);
 }

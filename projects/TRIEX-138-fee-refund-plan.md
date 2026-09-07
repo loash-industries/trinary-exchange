@@ -234,6 +234,60 @@ place/fill/cancel sequence.
       `state::recognize_retention`, which touches `add_total_fees_collected` and
       deliberately not `add_volume`.
 
+### Edge cases covered
+
+A coverage sweep after the main implementation added these; the ones marked
+**(gap)** were genuine holes rather than restatements of the acceptance
+criteria.
+
+- **Solvency under a full sweep (gap).** An admin sweeping every unlocked unit
+  leaves the reserve holding exactly the outstanding escrow. `unlock_quote_fees`
+  splits a real balance and aborts if short, unlike the saturating subtract
+  recognition uses, so this is where `reserve >= locked` has to actually hold.
+- **Repeated releases (gap).** Several modify-downs then a cancel, and several
+  partial fills then a cancel. Each slice floors independently while the lock
+  floored once, so the accumulated releases can only ever be <= the lock.
+- **Several makers expiring in one match (gap).** The case that forced
+  `FeeFlows.refunded` to become a per-maker vector; each refund is attributed to
+  its own maker and order.
+- **Expired ask (gap).** No escrow exists, so nothing is refunded — and the
+  `OrderExpired` event must not claim otherwise. The funds paths are guarded by
+  `taker_is_bid` twice over, but the event calls `maker_fee_refunded()`
+  unguarded, so this is observable only in the event.
+- **Self-match resolved with `cancel_maker` (gap).** Runs through the expiry
+  branch but emits `OrderCanceled`; splits on cancel terms.
+- **`cancel_all_orders` (gap).** Several bids plus an ask in one transaction:
+  one refund each for the bids, none for the ask.
+- **Rounding dust at pool scale (gap).** Lot size is 1000 raw units, far below
+  `FLOAT_SCALING`, so a maker *can* rest a quantity whose escrow does not divide
+  by five: 1000 quote at 1.8% escrows 18, and 80% of that is 14.4. The refund
+  floors to 14 and retention takes 4. Dust must fall to the protocol — a refund
+  that rounded up would pay a fraction of a unit out of another maker's escrow
+  every time — and the halves must still sum to the released amount or
+  `locked_maker_fees` could never reach zero.
+- **Retention policy range.** `> 10000` bps aborts; 0 and 10000 are both legal;
+  defaults are 2000 on both pool types. End-to-end, a zero-retention pool makes
+  place -> cancel free at the fee level, and a 100%-retention pool emits no
+  refund event at all.
+- **Policy changes bind forward only.** A resting order keeps the retention it
+  was placed under *and* an order placed after the change picks the new one up —
+  the second half matters, or the rate would be unreachable rather than merely
+  non-retroactive.
+- **Multicoin mirrors** for cancel, modify-down, expiry (including maker
+  attribution) and escrow tracking.
+
+Two mutants survive deliberately. `expiry_fee_split`'s `!self.expired` guard is
+unreachable — all four callers already test `expired()` — and the `taker_is_bid`
+half is reachable only through the event. Both are defence in depth, not dead
+code worth deleting.
+
+Not covered, deliberately: retention on a **whitelisted** pool. Those are
+fee-exempt in intent but `governance::empty` ignores the flag when choosing
+defaults, so they launch at 1.8% maker and `set_next_trade_params` aborts with
+`EWhitelistedPoolCannotChange` — the rate cannot be corrected. That is a
+pre-existing bug already on `cycle-7`; a test here would codify the wrong
+behaviour. Needs its own ticket.
+
 ### Closed alongside the refund
 
 Two gaps found reviewing PR #5, both addressed here:
