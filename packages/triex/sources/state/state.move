@@ -538,6 +538,12 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             total_maker_fees = total_maker_fees + maker_fee;
             // #feat:stake - DISABLED: pass 0 for account stake
             self.history.add_volume(fill.base_quantity(), 0);
+        } else if (!fill.taker_is_bid()) {
+            // An expired bid maker gets their principal back but forfeits the
+            // escrow held against it, so it stops being a claim and becomes
+            // revenue. Leaving it locked would strand the funds: neither
+            // refundable nor sweepable. TRIEX-138 refunds 80% of this instead.
+            recognized = recognized + fill.maker_fee_escrowed();
         };
 
         let account = &mut self.accounts[maker];

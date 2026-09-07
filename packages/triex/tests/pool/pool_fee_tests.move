@@ -17,6 +17,32 @@ fun test_admin_withdraws_quote_fee_reserve() {
 }
 
 #[test]
+fun test_ask_cancel_leaves_bid_escrow_intact() {
+    pool_test_utils::test_ask_cancel_leaves_bid_escrow_intact();
+}
+
+#[test]
+fun test_modify_down_releases_escrow_proportionally() {
+    pool_test_utils::test_modify_down_releases_escrow_proportionally();
+}
+
+#[test]
+fun test_admin_sweep_takes_unlocked_portion() {
+    pool_test_utils::test_admin_sweep_takes_unlocked_portion();
+}
+
+#[test]
+#[expected_failure(abort_code = triexbook::vault::EFeesLocked)]
+fun test_admin_sweep_above_unlocked_portion_aborts() {
+    pool_test_utils::test_admin_sweep_above_unlocked_portion_aborts();
+}
+
+#[test]
+fun test_expired_bid_maker_releases_escrow() {
+    pool_test_utils::test_expired_bid_maker_releases_escrow();
+}
+
+#[test]
 fun test_locked_fee_escrow_tracks_open_orders() {
     pool_test_utils::test_locked_fee_escrow_tracks_open_orders();
 }
