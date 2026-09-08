@@ -1,0 +1,23 @@
+{
+  "name": "@triex/error-codes",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Generates a Move abort-code catalog from the triex sources and decodes transaction errors against it.",
+  "main": "decode.mjs",
+  "exports": {
+    ".": "./decode.mjs",
+    "./catalog": "./generated/error-codes.json"
+  },
+  "bin": {
+    "decode-abort": "./bin/decode-abort.mjs"
+  },
+  "scripts": {
+    "generate": "node generate.mjs",
+    "check": "node generate.mjs --check",
+    "test": "node --test decode.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

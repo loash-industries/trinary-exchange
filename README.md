@@ -71,6 +71,8 @@ deployments are on Sui testnet.
 ```
 trinary-exchange/
 ├── CAPABILITIES.md       # Trust model & admin capability reference
+├── tooling/
+│   └── error-codes/      # Abort-code catalog generator + transaction error decoder
 └── packages/
     ├── token/            # CRED token package
     │   ├── Move.toml
@@ -84,6 +86,21 @@ trinary-exchange/
 
 > Note: `build/` output and `.env*` files are git-ignored and regenerated locally —
 > see [`.gitignore`](.gitignore).
+
+## Error codes
+
+A failed transaction's `effects.status.error` contains only the raw `u64` abort code, so
+[`tooling/error-codes/`](tooling/error-codes/) generates a `(module, code) -> label`
+catalog from the Move sources and decodes that string against it:
+
+```bash
+node tooling/error-codes/generate.mjs                # regenerate the catalog
+node tooling/error-codes/generate.mjs --check        # CI: fail if stale
+node tooling/error-codes/bin/decode-abort.mjs --digest <digest>
+```
+
+Regenerate whenever an error constant is added, removed or renumbered. See
+[`tooling/error-codes/README.md`](tooling/error-codes/README.md).
 
 ## Security
 
