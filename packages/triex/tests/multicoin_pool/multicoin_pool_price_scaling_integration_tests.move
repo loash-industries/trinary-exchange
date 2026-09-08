@@ -19,6 +19,7 @@ use triexbook::{
     integration_multicoin_test_utils::{Self as mc_utils, USDC},
     math,
     multicoin_pool::{Self, MultiCoinPool},
+    quote_fee,
     registry::{Self as registry, Registry}
 };
 
@@ -280,7 +281,8 @@ fun test_modify_bid_order_refunds_correct_quote_amount() {
     // Multicoin maker rate is 0.9%, so 25 quote escrows 0.225; 80% comes back.
     let released_escrow = cancelled_quote * 9 / 1000;
     let actual_refund = balance_after_modify - balance_after_bid;
-    let expected_refund = cancelled_quote + released_escrow * 8000 / 10000;
+    let (escrow_refund, _) = quote_fee::split_released_fee(released_escrow, 2000);
+    let expected_refund = cancelled_quote + escrow_refund;
     assert!(actual_refund == expected_refund, 2);
 
     unit_test::destroy(collection_cap);

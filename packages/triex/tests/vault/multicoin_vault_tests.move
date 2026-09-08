@@ -718,3 +718,143 @@ fun test_settle_insufficient_cred_e() {
 
     abort (0)
 }
+
+// === Quote Fee Reserve Tests ===
+// Mirrors of `vault_tests`' fee-reserve suite. The locked-escrow mechanism is
+// duplicated code between the two vaults, so it needs duplicated tests — a fix
+// applied to one vault and not the other would otherwise ship silently.
+
+#[test]
+fun test_withdrawable_excludes_locked_escrow() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(4_000);
+
+    assert!(vault.quote_fee_reserve_balance() == 10_000);
+    assert!(vault.locked_maker_fees() == 4_000);
+    assert!(vault.withdrawable_quote_fees() == 6_000);
+
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+fun test_recognizing_escrow_moves_it_to_withdrawable() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(4_000);
+
+    // Recognition reclassifies without moving funds.
+    vault.recognize_locked_maker_fees(1_500);
+    assert!(vault.quote_fee_reserve_balance() == 10_000);
+    assert!(vault.locked_maker_fees() == 2_500);
+    assert!(vault.withdrawable_quote_fees() == 7_500);
+
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+fun test_recognizing_more_than_locked_saturates_at_zero() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(1_000);
+
+    // Per-fill flooring can never exceed the once-floored lock, but the
+    // counter saturates rather than underflowing if it ever did.
+    vault.recognize_locked_maker_fees(4_000);
+    assert!(vault.locked_maker_fees() == 0);
+    assert!(vault.withdrawable_quote_fees() == 10_000);
+
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+fun test_withdraw_exactly_unlocked_ok() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(4_000);
+
+    let fee_coin = vault.withdraw_quote_fees(6_000, test.ctx());
+    assert!(fee_coin.value() == 6_000);
+    // The escrow is untouched and still fully backed.
+    assert!(vault.quote_fee_reserve_balance() == 4_000);
+    assert!(vault.locked_maker_fees() == 4_000);
+    assert!(vault.withdrawable_quote_fees() == 0);
+
+    destroy(fee_coin);
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+#[expected_failure(abort_code = multicoin_vault::EFeesLocked)]
+fun test_withdraw_one_above_unlocked_e() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(4_000);
+
+    let fee_coin = vault.withdraw_quote_fees(6_001, test.ctx());
+
+    destroy(fee_coin);
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+#[expected_failure(abort_code = multicoin_vault::EInsufficientFeeReserve)]
+fun test_unlock_more_than_reserve_e() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(1_000);
+
+    vault.unlock_quote_fees(
+        collection_id,
+        1,
+        collection_id,
+        2_000,
+        0,
+    );
+
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}
+
+#[test]
+fun test_unlock_moves_escrow_out_of_the_reserve() {
+    let mut test = begin(OWNER);
+    let (collection_id, collection_cap) = setup_collection(&mut test);
+    let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+    vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+    vault.lock_maker_fees_for_testing(4_000);
+
+    // A refund leaves the reserve entirely, so it stops counting as escrow
+    // too — otherwise the counter would strand the funds it no longer holds.
+    vault.unlock_quote_fees(collection_id, 1, collection_id, 3_000, 0);
+    assert!(vault.quote_fee_reserve_balance() == 7_000);
+    assert!(vault.locked_maker_fees() == 1_000);
+    assert!(vault.withdrawable_quote_fees() == 6_000);
+
+    destroy(vault);
+    destroy(collection_cap);
+    end(test);
+}

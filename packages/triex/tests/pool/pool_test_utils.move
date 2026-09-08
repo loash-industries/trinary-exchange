@@ -31,6 +31,7 @@ use triexbook::{
     order::{Self, Order},
     order_info::{Self, OrderInfo},
     pool::{Self, Pool},
+    quote_fee,
     registry::{Self, Registry},
     vault
 };
@@ -7648,6 +7649,50 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
         return_shared(pool);
     };
 
+    // Give the book depth again so there is something to quote against.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // A dry run must price at the rate the trader will actually be charged.
+    // Quoting the entry rung here is what made a promoted trader under-fill:
+    // `swap_exact_quantity_with_manager` sizes its order from this number.
+    test.next_tx(BOB);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+        let clock = test.take_shared<Clock>();
+
+        let (_, entry_rung_quote) = pool.get_quantity_out(quantity, 0, &clock);
+        let (_, bobs_quote) = pool.get_quantity_out_for_account(
+            &bob,
+            quantity,
+            0,
+            &clock,
+            test.ctx(),
+        );
+
+        // Selling 200 notional: the entry rung nets 2.2% out of the proceeds,
+        // Bob's rung 1.1%, so his quote is exactly the rate difference better.
+        let notional = 200 * constants::float_scaling();
+        assert_eq!(entry_rung_quote, notional - quote_fee::fee_from_scaled_rate(22_000_000, notional));
+        assert_eq!(bobs_quote, notional - quote_fee::fee_from_scaled_rate(11_000_000, notional));
+        assert!(bobs_quote > entry_rung_quote, 0);
+
+        return_shared(clock);
+        return_shared(bob);
+        return_shared(pool);
+    };
+
     end(test);
 }
 
@@ -7985,7 +8030,10 @@ public(package) fun test_resting_order_keeps_placement_rate_across_schedule_chan
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
         pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
 
-        let expected_retained = placement_escrow * 2000 / 10000;
+        // Split through the production helper: the refund floors, so dust
+        // lands in the retained half. Computing 20% directly agrees only when
+        // the escrow happens to divide evenly.
+        let (_, expected_retained) = quote_fee::split_released_fee(placement_escrow, 2000);
         assert!(pool.quote_fee_reserve_balance() == expected_retained, 1);
         assert!(pool.locked_maker_fees() == 0, 2);
 
@@ -8753,3 +8801,74 @@ fun bench_place_bids_under_ladder(tiers: u64) {
 public(package) fun bench_ladder_1_tier() { bench_place_bids_under_ladder(1) }
 
 public(package) fun bench_ladder_8_tiers() { bench_place_bids_under_ladder(8) }
+
+/// Set up a pool and hand its admin a ladder, so the validation the entry point
+/// performs can be exercised through the real admin path rather than by calling
+/// `fee_schedule::validate` directly with hand-copied bounds.
+fun set_schedule_via_admin(
+    min_turnovers: vector<u128>,
+    taker_fees: vector<u64>,
+    maker_fees: vector<u64>,
+    cancel_retention_bps: u64,
+) {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+
+    test.next_tx(OWNER);
+    {
+        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        pool.set_next_epoch_fee_schedule(
+            min_turnovers,
+            taker_fees,
+            maker_fees,
+            cancel_retention_bps,
+            &admin_cap,
+        );
+        return_shared(pool);
+        destroy(admin_cap);
+    };
+
+    end(test);
+}
+
+/// The entry point must reject a retention above 100%. Covered at the leaf in
+/// `governance_admin_tests`, but only through `set_next_trade_params` — nothing
+/// pinned the schedule setter's own bound.
+public(package) fun test_schedule_setter_rejects_retention_above_full() {
+    set_schedule_via_admin(vector[0], vector[22_000_000], vector[18_000_000], 10_001);
+}
+
+/// A ladder whose thresholds descend must be rejected by the admin entry point.
+/// `fee_schedule_tests` covers every rejection, but by calling `validate`
+/// directly with its own copies of the bounds — so deleting the `validate` call
+/// from `set_next_fee_schedule` would not have failed anything.
+public(package) fun test_schedule_setter_rejects_descending_thresholds() {
+    set_schedule_via_admin(
+        vector[0, 100, 50],
+        vector[22_000_000, 15_000_000, 11_000_000],
+        vector[18_000_000, 12_000_000, 9_000_000],
+        2000,
+    );
+}
+
+/// And a ladder that prices more turnover *higher* on the taker side.
+public(package) fun test_schedule_setter_rejects_rising_taker_rate() {
+    set_schedule_via_admin(
+        vector[0, 100],
+        vector[11_000_000, 22_000_000],
+        vector[9_000_000, 9_000_000],
+        2000,
+    );
+}

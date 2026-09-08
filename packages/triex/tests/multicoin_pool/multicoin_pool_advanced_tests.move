@@ -22,6 +22,7 @@ use triexbook::{
     multicoin_pool::{Self, MultiCoinPool},
     order_info::OrderInfo,
     pool::{Self, Pool},
+    quote_fee,
     registry::{Self, Registry},
     vault
 };
@@ -1264,8 +1265,7 @@ fun test_multicoin_cancel_releases_bid_escrow() {
 
         // 80% leaves the reserve back to Alice; the 20% retention stays and
         // is the only sweepable balance left.
-        let refund = alice_maker_fee * 8000 / 10000;
-        let retained = alice_maker_fee - refund;
+        let (refund, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
         assert!(pool.quote_fee_reserve_balance() == retained, 2);
         assert!(pool.locked_maker_fees() == 0, 3);
         assert!(pool.withdrawable_pool_fees() == retained, 4);
@@ -1358,7 +1358,7 @@ fun test_multicoin_cancel_refunds_escrow_to_maker() {
         bal
     };
 
-    let retained = alice_maker_fee - alice_maker_fee * 8000 / 10000;
+    let (_, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
     assert!(balance_before - balance_after == retained, 1);
 
     unit_test::destroy(collection_cap);
@@ -3145,7 +3145,7 @@ fun test_multicoin_expired_bid_maker_is_refunded() {
             test.ctx(),
         );
 
-        let refund = alice_escrow * 8000 / 10000;
+        let (refund, _) = quote_fee::split_released_fee(alice_escrow, 2000);
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 2);
         let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
@@ -3186,7 +3186,7 @@ fun test_multicoin_expired_bid_maker_is_refunded() {
     };
 
     // Expiring cost Alice exactly the retention a cancel would have.
-    let retained = alice_escrow - alice_escrow * 8000 / 10000;
+    let (_, retained) = quote_fee::split_released_fee(alice_escrow, 2000);
     assert!(balance_before - balance_after == retained, 9);
 
     unit_test::destroy(collection_cap);
@@ -3317,6 +3317,23 @@ fun test_multicoin_fill_accrues_turnover_and_schedule_activates() {
 
         // Bob paid a taker fee out of proceeds, so he has turnover now.
         assert!(pool.account_fee_turnover(&bm, test.ctx()) > 0, 4);
+        // Turnover alone is not the point — the tier must actually move, and
+        // the rates he trades at must follow it. Nothing asserted this on the
+        // multicoin side before, so the two views had no test caller at all.
+        assert!(pool.account_fee_tier(&bm, test.ctx()) == 1, 6);
+        let (taker, maker) = pool.trade_params_for_account(&bm, test.ctx());
+        assert!(taker == 5_000_000, 7);
+        assert!(maker == 4_000_000, 8);
+        // And a dry run prices at his rung, not the entry one.
+        let (_, entry_quote) = pool.get_quantity_out(100, 0, &clock);
+        let (_, bobs_quote) = pool.get_quantity_out_for_account(
+            &bm,
+            100,
+            0,
+            &clock,
+            test.ctx(),
+        );
+        assert!(bobs_quote >= entry_quote, 9);
 
         return_shared(bm);
         return_shared(clock);

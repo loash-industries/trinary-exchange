@@ -229,3 +229,21 @@ fun test_each_maker_accrues_only_their_own_fee() {
 fun test_untouched_account_reports_entry_tier() {
     pool_test_utils::test_untouched_account_reports_entry_tier();
 }
+
+#[test]
+#[expected_failure(abort_code = triexbook::governance::EInvalidCancelRetention)]
+fun test_schedule_setter_rejects_retention_above_full() {
+    pool_test_utils::test_schedule_setter_rejects_retention_above_full();
+}
+
+#[test]
+#[expected_failure(abort_code = triexbook::fee_schedule::EThresholdsNotAscending)]
+fun test_schedule_setter_rejects_descending_thresholds() {
+    pool_test_utils::test_schedule_setter_rejects_descending_thresholds();
+}
+
+#[test]
+#[expected_failure(abort_code = triexbook::fee_schedule::ETakerRateNotMonotone)]
+fun test_schedule_setter_rejects_rising_taker_rate() {
+    pool_test_utils::test_schedule_setter_rejects_rising_taker_rate();
+}

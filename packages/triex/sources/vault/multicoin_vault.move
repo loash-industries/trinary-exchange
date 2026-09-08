@@ -114,6 +114,16 @@ public(package) fun withdrawable_quote_fees<QuoteAsset>(self: &MultiCoinVault<Qu
     self.quote_fee_reserve.value() - self.locked_maker_fees
 }
 
+#[test_only]
+/// Mark quote already in the reserve as bid-maker escrow, standing in for a
+/// placement, so the locked-fee arithmetic can be exercised directly.
+public(package) fun lock_maker_fees_for_testing<QuoteAsset>(
+    self: &mut MultiCoinVault<QuoteAsset>,
+    amount: u64,
+) {
+    self.locked_maker_fees = self.locked_maker_fees + amount;
+}
+
 /// Recognize bid-maker escrow as earned revenue once the order fills. The
 /// funds are already in the reserve; only their classification changes.
 public(package) fun recognize_locked_maker_fees<QuoteAsset>(

@@ -12,6 +12,7 @@ use triexbook::{
     ewma_tests::test_init_ewma_state,
     order::{Self, Order},
     order_info_tests::{create_order_info_base, create_order_info},
+    quote_fee,
     state
 };
 
@@ -1607,8 +1608,7 @@ fun process_fills_books_expiry_retention_as_collected() {
         test.ctx(),
     );
 
-    let refund = escrow * 8000 / 10000;
-    let retained = escrow - refund;
+    let (refund, retained) = quote_fee::split_released_fee(escrow, 2000);
     // One refund entry, attributed to the expired maker and their order —
     // not to Bob, whose order merely triggered the expiry.
     let refunds = flows.refunded();

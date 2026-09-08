@@ -296,33 +296,39 @@ public fun check_balance(
         let usdc = balance_manager::balance<USDC>(&my_manager);
         let spam = balance_manager::balance<SPAM>(&my_manager);
 
-        std::debug::print(&std::string::utf8(b"--- Balance Check ---"));
-        std::debug::print(&std::string::utf8(b"SUI:"));
-        std::debug::print(&sui);
-        std::debug::print(&expected_balances.sui);
-        std::debug::print(&std::string::utf8(b"USDC:"));
-        std::debug::print(&usdc);
-        std::debug::print(&expected_balances.usdc);
-        std::debug::print(&std::string::utf8(b"SPAM:"));
-        std::debug::print(&spam);
-        std::debug::print(&expected_balances.spam);
-
+        // WARNING: this helper asserts nothing. Every `ExpectedBalances` the
+        // `master_*` suites thread into it is dead weight — the same defect
+        // `check_locked_balance` below was fixed for, and the reason that fix
+        // carries the comment it does.
+        //
+        // It is left this way deliberately, not by oversight. Turning the
+        // printouts below into assertions was tried and fails on all three
+        // assets: USDC by roughly the accumulated quote-fee take (these
+        // expectations predate dual-sided fees), and SUI and SPAM in three
+        // tests each — `test_master_cred_price_ok`,
+        // `test_master_both_conversion_available_ok` and
+        // `test_master_both_conversion_available_cred_is_base_ok`. So the base
+        // side has drifted too, and asserting it needs each scenario's expected
+        // balances rebuilt from the current fee schedule rather than nudged.
+        // Guessing the numbers would bake in a wrong answer that looks checked.
+        //
+        // Until that is done, use `check_locked_balance` for anything that
+        // must actually hold.
         if (sui != expected_balances.sui) {
-            std::debug::print(&std::string::utf8(b"SUI mismatch:"));
-            std::debug::print(&std::string::utf8(b"actual:"));
+            std::debug::print(&std::string::utf8(b"SUI mismatch (NOT asserted):"));
             std::debug::print(&sui);
-            std::debug::print(&std::string::utf8(b"expected:"));
             std::debug::print(&expected_balances.sui);
         };
         if (usdc != expected_balances.usdc) {
-            std::debug::print(&std::string::utf8(b"USDC mismatch:"));
-            std::debug::print(&std::string::utf8(b"actual:"));
+            std::debug::print(&std::string::utf8(b"USDC mismatch (NOT asserted):"));
             std::debug::print(&usdc);
-            std::debug::print(&std::string::utf8(b"expected:"));
             std::debug::print(&expected_balances.usdc);
         };
-        // Quote-only fees: USDC/SPAM balances may vary due to fee locking
-        // Skip strict equality checks for quote-denominated assets
+        if (spam != expected_balances.spam) {
+            std::debug::print(&std::string::utf8(b"SPAM mismatch (NOT asserted):"));
+            std::debug::print(&spam);
+            std::debug::print(&expected_balances.spam);
+        };
 
         return_shared(my_manager);
     }
