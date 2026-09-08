@@ -36,6 +36,7 @@ use sui::{
 use triexbook::{
     balance_manager::{Self as balance_manager, BalanceManager},
     constants,
+    fee_policy::{Self, FeePolicy},
     math,
     pool::{Self, Pool},
     registry::{Self, Registry}
@@ -45,11 +46,16 @@ const OWNER: address = @0x1;
 const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 
-// Pool governance default: 2% taker fee on bids
+// Fee-policy default: 2.2% taker fee on bids
 const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 // Ask makers pay the maker rate out of fill proceeds; it lands in the same reserve.
 const MAKER_FEE_BPS: u64 = 180;
+
+// The same rates as scaled fractions (1e9 = 100%), the unit `FeePolicy` takes.
+const TAKER_FEE_SCALED: u64 = 22_000_000;
+const MAKER_FEE_SCALED: u64 = 18_000_000;
+const CANCEL_RETENTION_BPS: u64 = 2_000;
 
 // Enough to cover the largest test (100 × FLOAT_SCALING × FLOAT_SCALING quote)
 const LARGE_BALANCE: u64 = 100_000_000_000_000_000;
@@ -87,13 +93,28 @@ fun setup_registry_and_clock(test: &mut sui::test_scenario::Scenario): ID {
     registry::test_registry(test.ctx())
 }
 
-/// Approve a quote type in the registry. Call once per (registry, QuoteAsset) pair.
+/// Approve a quote type in the registry and share a `FeePolicy` carrying its
+/// default fee class at the launch rates. Call once per (registry, QuoteAsset)
+/// pair.
 fun approve_quote<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scenario) {
     test.next_tx(OWNER);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
     registry.add_approved_quote_unchecked<QuoteAsset>(&admin_cap);
     return_shared(registry);
+
+    let mut policy = fee_policy::create_for_testing(test.ctx());
+    policy.create_class<QuoteAsset>(
+        0,
+        vector[0],
+        vector[TAKER_FEE_SCALED],
+        vector[MAKER_FEE_SCALED],
+        CANCEL_RETENTION_BPS,
+        &admin_cap,
+        test.ctx(),
+    );
+    policy.set_default_class<QuoteAsset>(0, &admin_cap);
+    fee_policy::share_for_testing(policy);
     destroy(admin_cap);
 }
 
@@ -102,12 +123,15 @@ fun create_pool<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scen
     test.next_tx(OWNER);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let policy = test.take_shared<FeePolicy>();
     let pool_id = pool::create_pool_admin<SUI, QuoteAsset>(
         &mut registry,
+        &policy,
         &admin_cap,
         test.ctx(),
     );
     return_shared(registry);
+    return_shared(policy);
     destroy(admin_cap);
     pool_id
 }
@@ -135,10 +159,12 @@ fun fill_and_get_fees<QuoteAsset>(
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, QuoteAsset>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
         let proof = bm.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
+            &policy,
             &mut bm,
             &proof,
             constants::no_restriction(),
@@ -151,6 +177,7 @@ fun fill_and_get_fees<QuoteAsset>(
             test.ctx(),
         );
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
     };
@@ -159,10 +186,12 @@ fun fill_and_get_fees<QuoteAsset>(
     test.next_tx(BOB);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, QuoteAsset>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
         let proof = bm.generate_proof_as_owner(test.ctx());
         let order_info = pool.place_limit_order(
+            &policy,
             &mut bm,
             &proof,
             constants::no_restriction(),
@@ -177,6 +206,7 @@ fun fill_and_get_fees<QuoteAsset>(
         let paid_fees = order_info.paid_fees();
         let vault_reserve = pool.quote_fee_reserve_balance();
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
         (paid_fees, vault_reserve)

@@ -16,7 +16,7 @@ use triexbook::{
     balance_manager::{Self, BalanceManager, TradeCap, DepositCap, WithdrawCap},
     constants,
     fill::Fill,
-    integration_multicoin_test_utils::{Self as mc_utils, USDC},
+    integration_multicoin_test_utils::{Self as mc_utils},
     math,
     multicoin_pool::{Self, MultiCoinPool},
     order_info::OrderInfo,

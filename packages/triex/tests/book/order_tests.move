@@ -564,7 +564,7 @@ fun calculate_cancel_refund_includes_refundable_escrow() {
 #[test]
 fun calculate_cancel_refund_honors_snapshotted_retention() {
     // A zero-retention order refunds the whole escrow; a full-retention one
-    // refunds none. Both read the rate off the order, not from governance.
+    // refunds none. Both read the rate off the order, not from the fee policy.
     let principal = 200 * constants::float_scaling();
     let escrow = 36 * constants::float_scaling() / 10;
 

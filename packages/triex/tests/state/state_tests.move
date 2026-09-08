@@ -22,6 +22,12 @@ const BOB: address = @0xB;
 const CHARLIE: address = @0xC;
 // const POOL_ID: address = @0x1;
 
+// Rate resolution lives at the pool layer now (`FeePolicy` + the trader's
+// `BalanceManager` ring), so state takes pre-resolved rates. These are the
+// launch-default coin-pool rates the deleted internal resolution produced.
+const TAKER_FEE: u64 = 22_000_000; // 2.2%
+const MAKER_FEE: u64 = 18_000_000; // 1.8%
+
 #[test]
 fun process_create_ok() {
     let mut test = begin(OWNER);
@@ -59,6 +65,8 @@ fun process_create_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info1,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -87,6 +95,8 @@ fun process_create_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info2,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -115,6 +125,8 @@ fun process_create_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info3,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -131,6 +143,8 @@ fun process_create_ok() {
     // per fill: 1_000_000 × 2.2% = 22_000; 1_002_002 × 2.2% = 22_044
     let (settled, owed, fee_flows) = state.process_create_for_testing(
         &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -216,6 +230,8 @@ fun process_create_expired_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info1,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -233,6 +249,8 @@ fun process_create_expired_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -257,6 +275,8 @@ fun process_create_expired_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order2,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -331,6 +351,8 @@ fun process_create_cred_price_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -349,6 +371,8 @@ fun process_create_cred_price_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -885,6 +909,8 @@ fun process_cancel_ok() {
     // );
     let (settled, owed, _) = state.process_create_for_testing(
         &mut order_info,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -935,6 +961,8 @@ fun process_cancel_after_partial_ok() {
     // );
     state.process_create_for_testing(
         &mut order_info,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -960,6 +988,8 @@ fun process_cancel_after_partial_ok() {
     // );
     state.process_create_for_testing(
         &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -1423,7 +1453,13 @@ fun rest_bid(state: &mut state::State, retention_bps: u64, ctx: &TxContext): Ord
         ctx.epoch(),
     );
     order_info.set_fee_snapshot_for_testing(18_000_000, retention_bps);
-    state.process_create_for_testing(&mut order_info, object::id_from_address(@0x0), ctx);
+    state.process_create_for_testing(
+        &mut order_info,
+        TAKER_FEE,
+        MAKER_FEE,
+        object::id_from_address(@0x0),
+        ctx,
+    );
 
     order_info.to_order()
 }
@@ -1501,7 +1537,13 @@ fun process_cancel_ask_collects_nothing() {
         test.ctx().epoch(),
     );
     order_info.set_fee_snapshot_for_testing(18_000_000, 2000);
-    state.process_create_for_testing(&mut order_info, object::id_from_address(@0x0), test.ctx());
+    state.process_create_for_testing(
+        &mut order_info,
+        TAKER_FEE,
+        MAKER_FEE,
+        object::id_from_address(@0x0),
+        test.ctx(),
+    );
     let mut order = order_info.to_order();
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1588,7 +1630,13 @@ fun process_fills_books_expiry_retention_as_collected() {
         true,
     );
     maker_info.set_fee_snapshot_for_testing(18_000_000, 2000);
-    state.process_create_for_testing(&mut maker_info, object::id_from_address(@0x0), test.ctx());
+    state.process_create_for_testing(
+        &mut maker_info,
+        TAKER_FEE,
+        MAKER_FEE,
+        object::id_from_address(@0x0),
+        test.ctx(),
+    );
     let escrow = maker_info.maker_fees();
     let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1604,6 +1652,8 @@ fun process_fills_books_expiry_retention_as_collected() {
     taker_order.match_maker(&mut order, 10);
     let (_settled, _owed, flows) = state.process_create_for_testing(
         &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
         object::id_from_address(@0x0),
         test.ctx(),
     );
@@ -1627,6 +1677,97 @@ fun process_fills_books_expiry_retention_as_collected() {
     // Alice gets her principal back plus the refundable share.
     let (settled, _owed) = state.withdraw_settled_amounts(id_from_address(ALICE));
     assert_eq!(settled, balances::new(0, 10 * constants::usdc_unit() + refund, 0));
+
+    destroy(state);
+    test.end();
+}
+
+// === Pending turnover ledger ===
+// Maker fees recognized at fill count toward the maker's exchange-wide
+// turnover, but the fill runs in the taker's transaction, which does not
+// carry the maker's `BalanceManager`. The credit therefore queues on the
+// maker's pool account until their own next transaction drains it for
+// folding into the BM-hosted ring.
+
+#[test]
+fun maker_fill_queues_pending_turnover() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(test.ctx());
+    let mut maker_info = create_order_info_base(
+        ALICE,
+        1 * constants::usdc_unit(),
+        10 * constants::sui_unit(),
+        true,
+        test.ctx().epoch(),
+    );
+    maker_info.set_fee_snapshot_for_testing(MAKER_FEE, 2000);
+    state.process_create_for_testing(
+        &mut maker_info,
+        TAKER_FEE,
+        MAKER_FEE,
+        object::id_from_address(@0x0),
+        test.ctx(),
+    );
+    // Nothing pends at placement: escrow the maker can still cancel out of
+    // must not buy tier progress.
+    assert_eq!(state.pending_turnover_total(id_from_address(ALICE), test.ctx()), 0);
+
+    let mut order = maker_info.to_order();
+    let mut taker_order = create_order_info_base(
+        BOB,
+        1 * constants::usdc_unit(),
+        10 * constants::sui_unit(),
+        false,
+        test.ctx().epoch(),
+    );
+    taker_order.match_maker(&mut order, 0);
+    state.process_create_for_testing(
+        &mut taker_order,
+        TAKER_FEE,
+        MAKER_FEE,
+        object::id_from_address(@0x0),
+        test.ctx(),
+    );
+
+    // The fill earned Alice's escrow out at her snapshotted 1.8% on the
+    // 10 USDC notional; the credit is visible to views immediately...
+    let expected = quote_fee::fee_from_scaled_rate(MAKER_FEE, 10 * constants::usdc_unit());
+    assert_eq!(
+        state.pending_turnover_total(id_from_address(ALICE), test.ctx()),
+        expected as u128,
+    );
+
+    // ...and draining hands it over tagged with the epoch it was earned in,
+    // leaving nothing behind.
+    let entries = state.take_pending_turnover(id_from_address(ALICE), test.ctx());
+    assert_eq!(entries.length(), 1);
+    assert_eq!(entries[0].entry_epoch(), test.ctx().epoch());
+    assert_eq!(entries[0].entry_amount(), expected);
+    assert_eq!(state.pending_turnover_total(id_from_address(ALICE), test.ctx()), 0);
+
+    destroy(state);
+    test.end();
+}
+
+#[test]
+fun pending_turnover_reads_before_any_trade() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut state = state::empty(test.ctx());
+
+    // The view reports zero for an account that has never traded here,
+    // without creating it...
+    assert_eq!(state.pending_turnover_total(id_from_address(ALICE), test.ctx()), 0);
+    assert!(!state.account_exists(id_from_address(ALICE)), 0);
+
+    // ...while the trade-path drain creates the account, so pricing a first
+    // order shares one call site with every later one.
+    let entries = state.take_pending_turnover(id_from_address(ALICE), test.ctx());
+    assert!(entries.is_empty(), 0);
+    assert!(state.account_exists(id_from_address(ALICE)), 0);
 
     destroy(state);
     test.end();

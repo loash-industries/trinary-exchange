@@ -7,7 +7,8 @@ module triexbook::account;
 use sui::vec_set::{Self, VecSet};
 use triexbook::{
     balances::{Self, Balances},
-    fee_turnover::{Self, FeeTurnover},
+    constants,
+    fee_turnover::{Self, EpochAmount},
     fill::Fill
 };
 
@@ -26,11 +27,15 @@ public struct Account has copy, drop, store {
     // unclaimed_rebates: Balances, // #feat:rebate
     settled_balances: Balances,
     owed_balances: Balances,
-    /// Fees this account has paid over the trailing window, which resolves its
-    /// fee tier. Unlike `taker_volume` / `maker_volume` above, this one is live:
-    /// it is rolled on every touch by `state::update_account`, so it does not
-    /// depend on the disabled `#feat:rebate` epoch path below.
-    fee_turnover: FeeTurnover,
+    /// Maker fees recognized at fill but not yet folded into the owner's
+    /// exchange-wide turnover ring on their `BalanceManager`. A fill is
+    /// processed in the *taker's* transaction, which does not carry the
+    /// maker's manager, so the credit waits here — tagged with the epoch it
+    /// was earned in — until the maker's own next transaction against this
+    /// pool folds it. Ascending by epoch, at most one entry per epoch, and
+    /// entries older than the turnover window are dropped on append, so the
+    /// vector is bounded by the window length.
+    pending_turnover: vector<EpochAmount>,
 }
 
 // === Public-View Functions ===
@@ -93,32 +98,55 @@ public(package) fun empty(ctx: &TxContext): Account {
         // unclaimed_rebates: balances::empty(), // #feat:rebate
         settled_balances: balances::empty(),
         owed_balances: balances::empty(),
-        fee_turnover: fee_turnover::empty(ctx.epoch()),
+        pending_turnover: vector[],
     }
 }
 
-/// Advance the account's fee turnover window to the current epoch.
-///
-/// Called on every account touch rather than from `update` below, which is
-/// rebate-shaped and currently disabled — tier progression must not depend on
-/// re-enabling that path.
-public(package) fun roll_fee_turnover(self: &mut Account, ctx: &TxContext) {
-    self.fee_turnover.roll(ctx.epoch());
+/// Queue a maker-fee credit recognized at fill, earned in `epoch`. Credits
+/// only fees recognized as revenue — escrow a maker can still cancel out of
+/// never reaches here, so resting orders buy no tier progress.
+public(package) fun add_pending_turnover(self: &mut Account, epoch: u64, amount: u64) {
+    if (amount == 0) return;
+
+    // Entries the window can no longer see will be dropped at fold time
+    // anyway; dropping them here instead bounds the vector at the window
+    // length even for a maker who never sends their own transaction.
+    let window = constants::turnover_window_epochs();
+    while (
+        self.pending_turnover.length() > 0 &&
+        self.pending_turnover[0].entry_epoch() + window <= epoch
+    ) {
+        self.pending_turnover.remove(0);
+    };
+
+    let len = self.pending_turnover.length();
+    if (len > 0 && self.pending_turnover[len - 1].entry_epoch() == epoch) {
+        self.pending_turnover[len - 1].add_to_entry(amount);
+    } else {
+        self.pending_turnover.push_back(fee_turnover::new_epoch_amount(epoch, amount));
+    };
 }
 
-/// Credit fees recognized as revenue at fill. See `fee_turnover` for what is
-/// deliberately excluded.
-public(package) fun record_fee_turnover(self: &mut Account, amount: u64) {
-    self.fee_turnover.record(amount);
+/// Drain the pending credits for folding into the owner's ring.
+public(package) fun take_pending_turnover(self: &mut Account): vector<EpochAmount> {
+    let pending = self.pending_turnover;
+    self.pending_turnover = vector[];
+
+    pending
 }
 
-public(package) fun fee_turnover_total(self: &Account): u128 {
-    self.fee_turnover.total()
-}
+/// Sum of pending credits still inside the window as of `epoch`, for views
+/// that must report what the next trade will actually resolve against.
+public(package) fun pending_turnover_total(self: &Account, epoch: u64): u128 {
+    let window = constants::turnover_window_epochs();
+    let mut total = 0u128;
+    self.pending_turnover.do_ref!(|entry| {
+        if (entry.entry_epoch() + window > epoch) {
+            total = total + (entry.entry_amount() as u128);
+        };
+    });
 
-/// Turnover as of `epoch`, for read-only callers that cannot roll first.
-public(package) fun fee_turnover_total_at(self: &Account, epoch: u64): u128 {
-    self.fee_turnover.total_at(epoch)
+    total
 }
 
 /// Update the account data for the new epoch.

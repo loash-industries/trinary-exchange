@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// History module tracks the volume data for the current epoch and past epochs.
-/// It also tracks past trade params. Past maker fees are used to calculate
-/// fills for old orders. The historic median is used to calculate rebates and
-/// burns.
+/// The historic median is used to calculate rebates and burns.
+///
+/// Fee rates are deliberately not archived here: they live per class in the
+/// shared `FeePolicy` object, whose `FeeClassUpdated` events are the schedule
+/// history, and orders carry their own maker rate.
 /// #feat:rebate
 module triexbook::history;
 
 use sui::{event, table::{Self, Table}};
-use triexbook::{balances::{Self, Balances}, constants, math, trade_params::TradeParams};
+use triexbook::{balances::{Self, Balances}, constants, math};
 
 // === Errors ===
 // Referenced by the disabled #feat:rebate code path.
@@ -27,7 +29,6 @@ public struct Volumes has copy, drop, store {
     total_staked_volume: u128, // #feat:stake
     total_fees_collected: Balances,
     historic_median: u128,
-    trade_params: TradeParams,
 }
 
 /// `History` represents the volume data for the current epoch and past epochs.
@@ -47,24 +48,17 @@ public struct EpochData has copy, drop, store {
     base_fees_collected: u64,
     quote_fees_collected: u64,
     historic_median: u128,
-    taker_fee: u64,
-    maker_fee: u64,
 }
 
 // === Public-Package Functions ===
 /// Create a new `History` instance. Called once upon pool creation. A single
 /// blank `Volumes` instance is created and added to the historic_volumes table.
-public(package) fun empty(
-    trade_params: TradeParams,
-    epoch_created: u64,
-    ctx: &mut TxContext,
-): History {
+public(package) fun empty(epoch_created: u64, ctx: &mut TxContext): History {
     let volumes = Volumes {
         total_volume: 0,
         total_staked_volume: 0,
         total_fees_collected: balances::empty(),
         historic_median: 0,
-        trade_params,
     };
     let mut history = History {
         epoch: ctx.epoch(),
@@ -81,12 +75,7 @@ public(package) fun empty(
 /// Update the epoch if it has changed. If there are accounts with rebates,
 /// add the current epoch's volume data to the historic volumes.
 /// #feat:rebate
-public(package) fun update(
-    self: &mut History,
-    trade_params: TradeParams,
-    pool_id: ID,
-    ctx: &TxContext,
-) {
+public(package) fun update(self: &mut History, pool_id: ID, ctx: &TxContext) {
     let epoch = ctx.epoch();
     if (self.epoch == epoch) return;
     if (self.historic_volumes.contains(self.epoch)) {
@@ -103,17 +92,15 @@ public(package) fun update(
         base_fees_collected: self.volumes.total_fees_collected.base(),
         quote_fees_collected: self.volumes.total_fees_collected.quote(),
         historic_median: self.volumes.historic_median,
-        taker_fee: trade_params.taker_fee(),
-        maker_fee: trade_params.maker_fee(),
     });
 
     self.epoch = epoch;
-    self.reset_volumes(trade_params);
+    self.reset_volumes();
     self.historic_volumes.add(self.epoch, self.volumes);
 }
 
 /// Reset the current epoch's volume data.
-public(package) fun reset_volumes(self: &mut History, trade_params: TradeParams) {
+public(package) fun reset_volumes(self: &mut History) {
     event::emit(self.volumes);
     self.volumes =
         Volumes {
@@ -121,7 +108,6 @@ public(package) fun reset_volumes(self: &mut History, trade_params: TradeParams)
             total_staked_volume: 0,
             total_fees_collected: balances::empty(),
             historic_median: 0,
-            trade_params,
         };
 }
 

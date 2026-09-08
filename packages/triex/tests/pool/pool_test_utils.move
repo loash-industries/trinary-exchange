@@ -26,13 +26,14 @@ use triexbook::{
     },
     book,
     constants,
+    fee_policy::{Self, FeePolicy},
     fill::Fill,
     math,
     order::{Self, Order},
     order_info::{Self, OrderInfo},
     pool::{Self, Pool},
     quote_fee,
-    registry::{Self, Registry},
+    registry::{Self, Registry, TriexbookAdminCap},
     vault
 };
 
@@ -41,6 +42,145 @@ const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 
 const EBookOrderNotFound: u64 = 1;
+
+// Launch-default rates the shared `FeePolicy` is seeded with in tests —
+// the same flat rates pools carried before policy moved off-pool.
+const DEFAULT_TAKER_FEE: u64 = 22_000_000; // 220 bp (2.2%)
+const DEFAULT_MAKER_FEE: u64 = 18_000_000; // 180 bp (1.8%)
+const DEFAULT_TAKER_FEE_MULTICOIN: u64 = 11_000_000; // 110 bp (1.1%)
+const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9_000_000; // 90 bp (0.9%)
+const DEFAULT_CANCEL_RETENTION_BPS: u64 = 2_000; // 20% retained
+
+#[test_only]
+public(package) fun default_taker_fee(): u64 { DEFAULT_TAKER_FEE }
+
+#[test_only]
+public(package) fun default_maker_fee(): u64 { DEFAULT_MAKER_FEE }
+
+#[test_only]
+public(package) fun default_taker_fee_multicoin(): u64 { DEFAULT_TAKER_FEE_MULTICOIN }
+
+#[test_only]
+public(package) fun default_maker_fee_multicoin(): u64 { DEFAULT_MAKER_FEE_MULTICOIN }
+
+#[test_only]
+public(package) fun default_cancel_retention_bps(): u64 { DEFAULT_CANCEL_RETENTION_BPS }
+
+// Class-id scheme for tests: each approved quote gets a standard class at
+// 2*i and a multicoin class at 2*i + 1, in approval order
+// (USDC, USDT, SUI, CRED, SPAM).
+#[test_only]
+public(package) fun standard_class<QuoteAsset>(): u16 {
+    quote_class_base<QuoteAsset>()
+}
+
+#[test_only]
+public(package) fun multicoin_class<QuoteAsset>(): u16 {
+    quote_class_base<QuoteAsset>() + 1
+}
+
+#[test_only]
+fun quote_class_base<QuoteAsset>(): u16 {
+    let quote = std::type_name::with_defining_ids<QuoteAsset>();
+    if (quote == std::type_name::with_defining_ids<USDC>()) 0
+    else if (quote == std::type_name::with_defining_ids<USDT>()) 2
+    else if (quote == std::type_name::with_defining_ids<SUI>()) 4
+    else if (quote == std::type_name::with_defining_ids<CRED>()) 6
+    else 8 // SPAM
+}
+
+#[test_only]
+/// Share a `FeePolicy` seeded with a flat standard and multicoin class for
+/// every quote the tests approve, all at the launch-default rates, with each
+/// registered as its quote's default. Tests exercising tiers reshape a class
+/// via `update_class` afterwards.
+public(package) fun share_policy_for_testing(test: &mut Scenario) {
+    test.next_tx(OWNER);
+    let mut policy = fee_policy::create_for_testing(test.ctx());
+    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+
+    seed_quote_classes<USDC>(&mut policy, &admin_cap, test);
+    seed_quote_classes<USDT>(&mut policy, &admin_cap, test);
+    seed_quote_classes<SUI>(&mut policy, &admin_cap, test);
+    seed_quote_classes<CRED>(&mut policy, &admin_cap, test);
+    seed_quote_classes<SPAM>(&mut policy, &admin_cap, test);
+
+    fee_policy::share_for_testing(policy);
+    destroy(admin_cap);
+}
+
+#[test_only]
+fun seed_quote_classes<QuoteAsset>(
+    policy: &mut FeePolicy,
+    admin_cap: &TriexbookAdminCap,
+    test: &mut Scenario,
+) {
+    policy.create_class<QuoteAsset>(
+        standard_class<QuoteAsset>(),
+        vector[0],
+        vector[DEFAULT_TAKER_FEE],
+        vector[DEFAULT_MAKER_FEE],
+        DEFAULT_CANCEL_RETENTION_BPS,
+        admin_cap,
+        test.ctx(),
+    );
+    policy.set_default_class<QuoteAsset>(standard_class<QuoteAsset>(), admin_cap);
+    policy.create_class<QuoteAsset>(
+        multicoin_class<QuoteAsset>(),
+        vector[0],
+        vector[DEFAULT_TAKER_FEE_MULTICOIN],
+        vector[DEFAULT_MAKER_FEE_MULTICOIN],
+        DEFAULT_CANCEL_RETENTION_BPS,
+        admin_cap,
+        test.ctx(),
+    );
+    policy.set_multicoin_default_class<QuoteAsset>(multicoin_class<QuoteAsset>(), admin_cap);
+}
+
+#[test_only]
+/// Stage a new flat schedule for the standard class of `QuoteAsset`,
+/// effective next epoch — the replacement for the deleted per-pool
+/// `set_next_epoch_fee` in tests.
+public(package) fun set_next_epoch_fee_for_testing<QuoteAsset>(
+    taker_fee: u64,
+    maker_fee: u64,
+    cancel_retention_bps: u64,
+    test: &mut Scenario,
+) {
+    set_next_epoch_fee_schedule_for_testing<QuoteAsset>(
+        vector[0],
+        vector[taker_fee],
+        vector[maker_fee],
+        cancel_retention_bps,
+        test,
+    )
+}
+
+#[test_only]
+/// Stage a tier ladder for the standard class of `QuoteAsset`, effective
+/// next epoch — the replacement for the deleted `set_next_epoch_fee_schedule`.
+public(package) fun set_next_epoch_fee_schedule_for_testing<QuoteAsset>(
+    min_turnovers: vector<u128>,
+    taker_fees: vector<u64>,
+    maker_fees: vector<u64>,
+    cancel_retention_bps: u64,
+    test: &mut Scenario,
+) {
+    test.next_tx(OWNER);
+    let mut policy = test.take_shared<FeePolicy>();
+    let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+    policy.update_class(
+        standard_class<QuoteAsset>(),
+        min_turnovers,
+        taker_fees,
+        maker_fees,
+        cancel_retention_bps,
+        &admin_cap,
+        test.ctx(),
+    );
+    return_shared(policy);
+    destroy(admin_cap);
+}
 
 /// Create a pool with 1000 limit sell at $2 and 1000 limit buy at $1.
 #[test_only]
@@ -185,7 +325,9 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
 
         let reserve_before = pool.quote_fee_reserve_balance();
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order_with_quote_fees(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -197,6 +339,7 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         let reserve_after = pool.quote_fee_reserve_balance();
         // Alice's ask-maker fee (1.8% of the filled quote) is deducted from
         // her proceeds and lands in the same reserve as Bob's taker fee.
@@ -271,7 +414,9 @@ public(package) fun test_ask_taker_fee_conservation() {
         let reserve_before = pool.quote_fee_reserve_balance();
         assert!(reserve_before == locked_maker_fee, 0);
 
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -283,6 +428,7 @@ public(package) fun test_ask_taker_fee_conservation() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         // Bob's ask-taker fee was deducted from his quote proceeds and moved
         // into the reserve
@@ -346,14 +492,7 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     );
 
     // Admin lowers both rates for the next epoch: taker 1%, maker 0.5%
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_for_testing<USDC>(10_000_000, 5_000_000, 2000, &mut test);
     test.next_epoch(OWNER);
 
     test.next_tx(BOB);
@@ -366,7 +505,9 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
 
         let reserve_before = pool.quote_fee_reserve_balance();
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -378,6 +519,7 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         // Bob (taker) pays the promoted 1% rate: 200 × 1% = 2
         let bob_taker_fee = 2 * constants::float_scaling();
@@ -628,14 +770,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
 
     // Taker 1.5 bp, maker 0.5 bp: both legal (multiples of the 0.01 bp fee
     // step, taker above its 1 bp floor), neither a whole basis point.
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(150_000, 50_000, 2000, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_for_testing<USDC>(150_000, 50_000, 2000, &mut test);
     test.next_epoch(OWNER);
 
     let price = 2 * constants::float_scaling();
@@ -679,7 +814,9 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
 
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -691,6 +828,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         assert!(order_info.paid_fees() == taker_fee, 2);
         assert!(order_info.cumulative_quote_quantity() - order_info.paid_fees() == quote_out, 3);
@@ -1370,7 +1508,9 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
 
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order_with_quote_fees(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -1382,6 +1522,7 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         assert!(order_info.paid_fees() + order_info.maker_fees() > 0, 0);
 
         return_shared(balance_manager);
@@ -2002,6 +2143,7 @@ public(package) fun setup_test(owner: address, test: &mut Scenario): ID {
     share_clock(test);
     let registry_id = share_registry_for_testing(test);
     add_approved_quote_currencies(owner, registry_id, test);
+    share_policy_for_testing(test);
     registry_id
 }
 
@@ -2013,7 +2155,9 @@ public(package) fun setup_registry_without_approved_quotes(
 ): ID {
     test.next_tx(owner);
     share_clock(test);
-    share_registry_for_testing(test)
+    let registry_id = share_registry_for_testing(test);
+    share_policy_for_testing(test);
+    registry_id
 }
 
 #[test_only]
@@ -2203,7 +2347,9 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
         };
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_limit_order<BaseAsset, QuoteAsset>(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             order_type,
@@ -2215,6 +2361,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
         return_shared(balance_manager);
@@ -2252,7 +2399,9 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let order_info = pool.place_market_order<BaseAsset, QuoteAsset>(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             self_matching_option,
@@ -2261,6 +2410,7 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
         return_shared(balance_manager);
@@ -5570,13 +5720,16 @@ fun place_swap_exact_base_for_quote<BaseAsset, QuoteAsset>(
         let clock = test.take_shared<Clock>();
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out, cred_out) = pool.swap_exact_base_for_quote<BaseAsset, QuoteAsset>(
+            &policy,
             mint_for_testing<BaseAsset>(base_in, test.ctx()),
             mint_for_testing<CRED>(cred_in, test.ctx()),
             min_quote_out,
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5606,10 +5759,12 @@ fun place_exact_base_for_quote_with_manager<BaseAsset, QuoteAsset>(
         let withdraw_cap = test.take_from_sender<WithdrawCap>();
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.swap_exact_base_for_quote_with_manager<
             BaseAsset,
             QuoteAsset,
         >(
+            &policy,
             &mut balance_manager,
             &trade_cap,
             &deposit_cap,
@@ -5620,6 +5775,7 @@ fun place_exact_base_for_quote_with_manager<BaseAsset, QuoteAsset>(
             test.ctx(),
         );
 
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
         return_shared(balance_manager);
@@ -5647,13 +5803,16 @@ fun place_swap_exact_quote_for_base<BaseAsset, QuoteAsset>(
         let clock = test.take_shared<Clock>();
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out, cred_out) = pool.swap_exact_quote_for_base<BaseAsset, QuoteAsset>(
+            &policy,
             mint_for_testing<QuoteAsset>(quote_in, test.ctx()),
             mint_for_testing<CRED>(cred_in, test.ctx()),
             min_base_out,
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5683,10 +5842,12 @@ fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
         let withdraw_cap = test.take_from_sender<WithdrawCap>();
 
         // Place order in pool
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.swap_exact_quote_for_base_with_manager<
             BaseAsset,
             QuoteAsset,
         >(
+            &policy,
             &mut balance_manager,
             &trade_cap,
             &deposit_cap,
@@ -5697,6 +5858,7 @@ fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
             test.ctx(),
         );
 
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
         return_shared(balance_manager);
@@ -5798,16 +5960,19 @@ fun setup_pool<BaseAsset, QuoteAsset>(
     test.next_tx(sender);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let policy = test.take_shared<FeePolicy>();
     let pool_id;
     {
         pool_id =
             pool::create_pool_admin<BaseAsset, QuoteAsset>(
                 &mut registry,
+                &policy,
                 &admin_cap,
                 test.ctx(),
             );
     };
     return_shared(registry);
+    return_shared(policy);
     destroy(admin_cap);
 
     pool_id
@@ -5821,11 +5986,13 @@ fun setup_permissionless_pool<BaseAsset, QuoteAsset>(
     test.next_tx(sender);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let policy = test.take_shared<FeePolicy>();
     let pool_id;
     {
         pool_id =
             pool::create_permissionless_pool<BaseAsset, QuoteAsset>(
                 &mut registry,
+                &policy,
                 mint_for_testing<CRED>(
                     constants::pool_creation_fee(),
                     test.ctx(),
@@ -5834,6 +6001,7 @@ fun setup_permissionless_pool<BaseAsset, QuoteAsset>(
             );
     };
     return_shared(registry);
+    return_shared(policy);
     destroy(admin_cap);
 
     pool_id
@@ -5864,11 +6032,15 @@ fun get_quantity_out<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_quantity_out<BaseAsset, QuoteAsset>(
+            &policy,
             base_quantity,
             quote_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5887,11 +6059,15 @@ fun get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
+            &policy,
             base_quantity,
             quote_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5909,10 +6085,14 @@ fun get_base_quantity_out<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_base_quantity_out<BaseAsset, QuoteAsset>(
+            &policy,
             quote_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5930,10 +6110,14 @@ fun get_quote_quantity_out<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_quote_quantity_out<BaseAsset, QuoteAsset>(
+            &policy,
             base_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5951,10 +6135,14 @@ fun get_base_quantity_out_input_fee<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_base_quantity_out_input_fee<BaseAsset, QuoteAsset>(
+            &policy,
             quote_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -5972,10 +6160,14 @@ fun get_quote_quantity_out_input_fee<BaseAsset, QuoteAsset>(
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
 
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out) = pool.get_quote_quantity_out_input_fee<BaseAsset, QuoteAsset>(
+            &policy,
             base_quantity,
             &clock,
+            test.ctx(),
         );
+        return_shared(policy);
         return_shared(pool);
         return_shared(clock);
 
@@ -6196,14 +6388,7 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
     };
 
     // Admin keeps the fee rates but retains everything from here on.
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(22_000_000, 18_000_000, 10000, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_for_testing<USDC>(22_000_000, 18_000_000, 10000, &mut test);
     test.next_epoch(OWNER);
 
     let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
@@ -6299,14 +6484,7 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
         &mut test,
     );
 
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(22_000_000, 18_000_000, 0, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_for_testing<USDC>(22_000_000, 18_000_000, 0, &mut test);
     test.next_epoch(OWNER);
 
     let price = 2 * constants::float_scaling();
@@ -6576,7 +6754,9 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
             balance_manager_id_bob,
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -6588,6 +6768,7 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 0);
@@ -6969,7 +7150,9 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
             balance_manager_id_bob,
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -6981,6 +7164,7 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         // Two refunds, one per expired maker, each naming its own order.
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -7068,7 +7252,9 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
             balance_manager_id_bob,
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -7080,6 +7266,7 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         // The stale ask escrowed nothing, so nothing is refunded.
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -7160,7 +7347,9 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
             balance_manager_id_alice,
         );
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         pool.place_limit_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::no_restriction(),
@@ -7172,6 +7361,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
 
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 0);
@@ -7442,11 +7632,13 @@ public(package) fun test_resting_bid_earns_no_tier_progress() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
         assert!(pool.locked_maker_fees() > 0, 0);
         assert_eq!(pool.account_fee_turnover(&balance_manager, test.ctx()), 0);
-        assert_eq!(pool.account_fee_tier(&balance_manager, test.ctx()), 0);
+        assert_eq!(pool.account_fee_tier(&policy, &balance_manager, test.ctx()), 0);
         return_shared(balance_manager);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -7464,8 +7656,10 @@ public(package) fun test_resting_bid_earns_no_tier_progress() {
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
         pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
 
+        let policy = test.take_shared<FeePolicy>();
         assert_eq!(pool.account_fee_turnover(&balance_manager, test.ctx()), 0);
-        assert_eq!(pool.account_fee_tier(&balance_manager, test.ctx()), 0);
+        assert_eq!(pool.account_fee_tier(&policy, &balance_manager, test.ctx()), 0);
+        return_shared(policy);
 
         return_shared(balance_manager);
         return_shared(clock);
@@ -7571,20 +7765,13 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
 
     // Two rungs: 2.2%/1.8% until 4 of fees paid, then 1.1%/0.9%.
     let threshold = 4 * constants::float_scaling();
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            vector[0, threshold as u128],
-            vector[22_000_000, 11_000_000],
-            vector[18_000_000, 9_000_000],
-            2000,
-            &admin_cap,
-        );
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        vector[0, threshold as u128],
+        vector[22_000_000, 11_000_000],
+        vector[18_000_000, 9_000_000],
+        2000,
+        &mut test,
+    );
     test.next_epoch(OWNER);
 
     let price = 2 * constants::float_scaling();
@@ -7594,12 +7781,14 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
     test.next_tx(BOB);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
-        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
+        let (taker, maker) = pool.trade_params_for_account(&policy, &bob, test.ctx());
         assert_eq!(taker, 22_000_000);
         assert_eq!(maker, 18_000_000);
-        assert_eq!(pool.account_fee_tier(&bob, test.ctx()), 0);
+        assert_eq!(pool.account_fee_tier(&policy, &bob, test.ctx()), 0);
         return_shared(bob);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -7634,18 +7823,20 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
     test.next_tx(BOB);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
 
         // He was charged 4.4, not the discounted 2.2 — the crossing order paid
         // the old rate.
         assert_eq!(pool.account_fee_turnover(&bob, test.ctx()), (44 * constants::float_scaling() / 10) as u128);
         // And he is promoted for everything that follows.
-        assert_eq!(pool.account_fee_tier(&bob, test.ctx()), 1);
-        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
+        assert_eq!(pool.account_fee_tier(&policy, &bob, test.ctx()), 1);
+        let (taker, maker) = pool.trade_params_for_account(&policy, &bob, test.ctx());
         assert_eq!(taker, 11_000_000);
         assert_eq!(maker, 9_000_000);
 
         return_shared(bob);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -7669,11 +7860,13 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
     test.next_tx(BOB);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
         let clock = test.take_shared<Clock>();
 
-        let (_, entry_rung_quote) = pool.get_quantity_out(quantity, 0, &clock);
+        let (_, entry_rung_quote) = pool.get_quantity_out(&policy, quantity, 0, &clock, test.ctx());
         let (_, bobs_quote) = pool.get_quantity_out_for_account(
+            &policy,
             &bob,
             quantity,
             0,
@@ -7690,14 +7883,15 @@ public(package) fun test_tier_discount_applies_from_the_next_order() {
 
         return_shared(clock);
         return_shared(bob);
+        return_shared(policy);
         return_shared(pool);
     };
 
     end(test);
 }
 
-/// A schedule set by the admin takes effect at the epoch boundary, not
-/// immediately — the same pre-announced posture as `set_next_epoch_fee`.
+/// A schedule staged by the admin (`fee_policy::update_class`) takes effect at
+/// the epoch boundary, not immediately — fee changes stay pre-announced.
 public(package) fun test_fee_schedule_activates_next_epoch() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
@@ -7713,36 +7907,39 @@ public(package) fun test_fee_schedule_activates_next_epoch() {
         &mut test,
     );
 
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        vector[0, 1_000_000_000],
+        vector[10_000_000, 5_000_000],
+        vector[8_000_000, 4_000_000],
+        2000,
+        &mut test,
+    );
+
     test.next_tx(OWNER);
     {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            vector[0, 1_000_000_000],
-            vector[10_000_000, 5_000_000],
-            vector[8_000_000, 4_000_000],
-            2000,
-            &admin_cap,
-        );
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
 
         // Queued, not live: the current ladder is still the single default rung.
-        assert_eq!(pool.pool_fee_schedule().tier_count(), 1);
-        assert_eq!(pool.pool_fee_schedule_next().tier_count(), 2);
-        let (taker, maker) = pool.pool_trade_params();
+        assert_eq!(pool.pool_fee_schedule(&policy, test.ctx()).tier_count(), 1);
+        let (next, effective_epoch) = pool.pool_fee_schedule_next(&policy);
+        assert_eq!(next.tier_count(), 2);
+        assert_eq!(effective_epoch, test.ctx().epoch() + 1);
+        let (taker, maker) = pool.pool_trade_params(&policy, test.ctx());
         assert_eq!(taker, 22_000_000);
         assert_eq!(maker, 18_000_000);
-        // TradeParams tracks the incoming entry rung, so the two never diverge.
-        let (next_taker, next_maker) = pool.pool_trade_params_next();
-        assert_eq!(next_taker, 10_000_000);
-        assert_eq!(next_maker, 8_000_000);
+        // The staged ladder carries the incoming entry rung, so the two never
+        // diverge.
+        assert_eq!(next.base_taker_fee(), 10_000_000);
+        assert_eq!(next.base_maker_fee(), 8_000_000);
 
+        return_shared(policy);
         return_shared(pool);
-        destroy(admin_cap);
     };
 
     test.next_epoch(OWNER);
 
-    // The promotion is lazy, so it lands on the first action of the new epoch.
+    // The staged ladder binds from the first action of the new epoch.
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
@@ -7759,10 +7956,12 @@ public(package) fun test_fee_schedule_activates_next_epoch() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        assert_eq!(pool.pool_fee_schedule().tier_count(), 2);
-        let (taker, maker) = pool.pool_trade_params();
+        let policy = test.take_shared<FeePolicy>();
+        assert_eq!(pool.pool_fee_schedule(&policy, test.ctx()).tier_count(), 2);
+        let (taker, maker) = pool.pool_trade_params(&policy, test.ctx());
         assert_eq!(taker, 10_000_000);
         assert_eq!(maker, 8_000_000);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -7786,19 +7985,20 @@ public(package) fun test_flat_fee_setter_keeps_schedule_in_lockstep() {
         &mut test,
     );
 
+    set_next_epoch_fee_for_testing<USDC>(10_000_000, 5_000_000, 2000, &mut test);
+
     test.next_tx(OWNER);
     {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
 
-        let next = pool.pool_fee_schedule_next();
+        let (next, _) = pool.pool_fee_schedule_next(&policy);
         assert_eq!(next.tier_count(), 1);
         assert_eq!(next.base_taker_fee(), 10_000_000);
         assert_eq!(next.base_maker_fee(), 5_000_000);
 
+        return_shared(policy);
         return_shared(pool);
-        destroy(admin_cap);
     };
 
     end(test);
@@ -7874,6 +8074,7 @@ public(package) fun test_turnover_ages_out_after_the_window() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
 
@@ -7881,10 +8082,11 @@ public(package) fun test_turnover_ages_out_after_the_window() {
         // since — the view resolves as of the current epoch, not last touch.
         assert!(pool.account_fee_turnover(&alice, test.ctx()) == 0, 1);
         assert!(pool.account_fee_turnover(&bob, test.ctx()) == 0, 2);
-        assert!(pool.account_fee_tier(&alice, test.ctx()) == 0, 3);
+        assert!(pool.account_fee_tier(&policy, &alice, test.ctx()) == 0, 3);
 
         return_shared(bob);
         return_shared(alice);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -7999,20 +8201,13 @@ public(package) fun test_resting_order_keeps_placement_rate_across_schedule_chan
     };
 
     // Admin halves the ladder out from under the resting order.
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            vector[0],
-            vector[11_000_000],
-            vector[9_000_000],
-            2000,
-            &admin_cap,
-        );
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        vector[0],
+        vector[11_000_000],
+        vector[9_000_000],
+        2000,
+        &mut test,
+    );
     test.next_epoch(OWNER);
 
     // Cancelling releases the escrow the order actually holds, split at the
@@ -8068,20 +8263,13 @@ public(package) fun test_resting_order_keeps_placement_rate_across_tier_promotio
     );
 
     // Any fill at all promotes to the cheaper rung.
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            vector[0, 1],
-            vector[22_000_000, 11_000_000],
-            vector[18_000_000, 9_000_000],
-            2000,
-            &admin_cap,
-        );
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        vector[0, 1],
+        vector[22_000_000, 11_000_000],
+        vector[18_000_000, 9_000_000],
+        2000,
+        &mut test,
+    );
     test.next_epoch(OWNER);
 
     // Alice rests a bid far below the market, escrowing at the entry rate:
@@ -8104,10 +8292,12 @@ public(package) fun test_resting_order_keeps_placement_rate_across_tier_promotio
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
         assert!(pool.locked_maker_fees() == placement_escrow, 0);
-        assert!(pool.account_fee_tier(&alice, test.ctx()) == 0, 1);
+        assert!(pool.account_fee_tier(&policy, &alice, test.ctx()) == 0, 1);
         return_shared(alice);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -8141,11 +8331,12 @@ public(package) fun test_resting_order_keeps_placement_rate_across_tier_promotio
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
 
         // She really was promoted, so the test is not vacuous...
-        assert!(pool.account_fee_tier(&alice, test.ctx()) == 1, 2);
-        let (taker, maker) = pool.trade_params_for_account(&alice, test.ctx());
+        assert!(pool.account_fee_tier(&policy, &alice, test.ctx()) == 1, 2);
+        let (taker, maker) = pool.trade_params_for_account(&policy, &alice, test.ctx());
         assert!(taker == 11_000_000, 3);
         assert!(maker == 9_000_000, 4);
 
@@ -8154,6 +8345,7 @@ public(package) fun test_resting_order_keeps_placement_rate_across_tier_promotio
         assert!(pool.locked_maker_fees() == placement_escrow, 5);
 
         return_shared(alice);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -8495,34 +8687,29 @@ public(package) fun test_untouched_account_reports_entry_tier() {
         &mut test,
     );
 
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            vector[0, 1],
-            vector[22_000_000, 11_000_000],
-            vector[18_000_000, 9_000_000],
-            2000,
-            &admin_cap,
-        );
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        vector[0, 1],
+        vector[22_000_000, 11_000_000],
+        vector[18_000_000, 9_000_000],
+        2000,
+        &mut test,
+    );
     test.next_epoch(OWNER);
 
     test.next_tx(BOB);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
 
         assert!(pool.account_fee_turnover(&bob, test.ctx()) == 0, 0);
-        assert!(pool.account_fee_tier(&bob, test.ctx()) == 0, 1);
-        let (taker, maker) = pool.trade_params_for_account(&bob, test.ctx());
+        assert!(pool.account_fee_tier(&policy, &bob, test.ctx()) == 0, 1);
+        let (taker, maker) = pool.trade_params_for_account(&policy, &bob, test.ctx());
         assert!(taker == 22_000_000, 2);
         assert!(maker == 18_000_000, 3);
 
         return_shared(bob);
+        return_shared(policy);
         return_shared(pool);
     };
 
@@ -8767,14 +8954,13 @@ fun bench_place_bids_under_ladder(tiers: u64) {
         t = t + 1;
     };
 
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(min_turnovers, taker_fees, maker_fees, 2000, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        min_turnovers,
+        taker_fees,
+        maker_fees,
+        2000,
+        &mut test,
+    );
     test.next_epoch(OWNER);
 
     let quantity = 1 * constants::float_scaling();
@@ -8802,9 +8988,10 @@ public(package) fun bench_ladder_1_tier() { bench_place_bids_under_ladder(1) }
 
 public(package) fun bench_ladder_8_tiers() { bench_place_bids_under_ladder(8) }
 
-/// Set up a pool and hand its admin a ladder, so the validation the entry point
-/// performs can be exercised through the real admin path rather than by calling
-/// `fee_schedule::validate` directly with hand-copied bounds.
+/// Set up a pool and stage a ladder on its fee class, so the validation the
+/// admin entry point (`fee_policy::update_class`) performs can be exercised
+/// through the real path rather than by calling `fee_schedule::validate`
+/// directly with hand-copied bounds.
 fun set_schedule_via_admin(
     min_turnovers: vector<u128>,
     taker_fees: vector<u64>,
@@ -8825,27 +9012,19 @@ fun set_schedule_via_admin(
         &mut test,
     );
 
-    test.next_tx(OWNER);
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        pool.set_next_epoch_fee_schedule(
-            min_turnovers,
-            taker_fees,
-            maker_fees,
-            cancel_retention_bps,
-            &admin_cap,
-        );
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    set_next_epoch_fee_schedule_for_testing<USDC>(
+        min_turnovers,
+        taker_fees,
+        maker_fees,
+        cancel_retention_bps,
+        &mut test,
+    );
 
     end(test);
 }
 
-/// The entry point must reject a retention above 100%. Covered at the leaf in
-/// `governance_admin_tests`, but only through `set_next_trade_params` — nothing
-/// pinned the schedule setter's own bound.
+/// The entry point must reject a retention above 100% — nothing else pins the
+/// schedule setter's own bound.
 public(package) fun test_schedule_setter_rejects_retention_above_full() {
     set_schedule_via_admin(vector[0], vector[22_000_000], vector[18_000_000], 10_001);
 }
@@ -8853,7 +9032,7 @@ public(package) fun test_schedule_setter_rejects_retention_above_full() {
 /// A ladder whose thresholds descend must be rejected by the admin entry point.
 /// `fee_schedule_tests` covers every rejection, but by calling `validate`
 /// directly with its own copies of the bounds — so deleting the `validate` call
-/// from `set_next_fee_schedule` would not have failed anything.
+/// from `fee_policy::update_class` would not have failed anything.
 public(package) fun test_schedule_setter_rejects_descending_thresholds() {
     set_schedule_via_admin(
         vector[0, 100, 50],
@@ -8961,7 +9140,9 @@ public(package) fun bench_market_sweeps_10() {
         let clock = test.take_shared<Clock>();
         let mut balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
         let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         pool.place_market_order(
+            &policy,
             &mut balance_manager,
             &trade_proof,
             constants::self_matching_allowed(),
@@ -8970,6 +9151,7 @@ public(package) fun bench_market_sweeps_10() {
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         return_shared(balance_manager);
         return_shared(clock);
         return_shared(pool);
@@ -9020,13 +9202,16 @@ public(package) fun bench_swap_base_for_quote_10() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
+        let policy = test.take_shared<FeePolicy>();
         let (base_out, quote_out, cred_out) = pool.swap_exact_base_for_quote<SUI, USDC>(
+            &policy,
             mint_for_testing<SUI>(quantity * 10, test.ctx()),
             mint_for_testing<CRED>(0, test.ctx()),
             0,
             &clock,
             test.ctx(),
         );
+        return_shared(policy);
         destroy(base_out);
         destroy(quote_out);
         destroy(cred_out);

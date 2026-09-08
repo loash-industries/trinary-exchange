@@ -4,9 +4,9 @@
 /// Quote fee module encapsulates quote-denominated fee calculations.
 /// Used when pools operate in quote-fee mode instead of CRED-fee mode.
 ///
-/// Rates arrive here FLOAT_SCALING-denominated, matching what governance stores
+/// Rates arrive here FLOAT_SCALING-denominated, matching what the fee policy stores
 /// and what an order snapshots. `FEE_PRECISION` below is basis points and is
-/// used only for the cancel-retention split, which governance also expresses in
+/// used only for the cancel-retention split, which the fee policy also expresses in
 /// bps — the two scales are deliberate, not interchangeable.
 module triexbook::quote_fee;
 
@@ -20,7 +20,7 @@ const FEE_PRECISION: u64 = 10000; // 100.00% = 10000 basis points
 /// This is the single source of truth for quote fee amounts: order placement,
 /// fill settlement and dry-run quotes all price through it, so a quote can
 /// never disagree with what settles. Rates are honored at the full precision
-/// governance accepts (FEE_MULTIPLE allows 0.01 bp), and clamped at 100%.
+/// the policy accepts (FEE_MULTIPLE allows 0.01 bp), and clamped at 100%.
 public(package) fun fee_from_scaled_rate(rate_scaled: u64, quote_quantity: u64): u64 {
     let scaling = constants::float_scaling_u128();
     let rate = if ((rate_scaled as u128) > scaling) scaling else rate_scaled as u128;

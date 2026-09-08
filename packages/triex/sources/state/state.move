@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// State module represents the current state of the pool. It maintains all
-/// the accounts, history, and governance information. It also processes all
-/// the transactions and updates the state accordingly.
+/// the accounts and history, and processes all the transactions that update
+/// them. Fee policy lives outside the pool entirely, in the shared
+/// `FeePolicy` object — the pool passes already-resolved rates in.
 module triexbook::state;
 
 use sui::table::{Self, Table};
@@ -11,9 +12,8 @@ use triexbook::{
     account::{Self, Account},
     balances::{Self, Balances},
     constants,
-    fee_schedule::FeeSchedule,
+    fee_turnover::EpochAmount,
     fill::Fill,
-    governance::{Self, Governance},
     history::{Self, History},
     order::Order,
     order_info::OrderInfo
@@ -28,7 +28,6 @@ const EMaxOpenOrders: u64 = 2;
 public struct State has store {
     accounts: Table<ID, Account>,
     history: History,
-    governance: Governance, // #feat:gov
 }
 
 /// A quote fee taken out of trade proceeds rather than paid in with the order,
@@ -161,18 +160,37 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // }
 
 public(package) fun empty(ctx: &mut TxContext): State {
-    new_state(governance::empty(ctx), ctx)
+    State { history: history::empty(ctx.epoch(), ctx), accounts: table::new(ctx) }
 }
 
-public(package) fun empty_multicoin(ctx: &mut TxContext): State {
-    new_state(governance::empty_multicoin(ctx), ctx)
+/// Drain this account's pending maker-fee credits for folding into the ring
+/// on the owner's `BalanceManager`. Creates the account if it does not exist,
+/// so the trade path has one call site for both.
+///
+/// Called before the order is priced: the fold must land before the turnover
+/// read, or a maker's own fills would not count toward the trade that follows
+/// them.
+public(package) fun take_pending_turnover(
+    self: &mut State,
+    balance_manager_id: ID,
+    ctx: &TxContext,
+): vector<EpochAmount> {
+    self.update_account(balance_manager_id, ctx);
+
+    self.accounts[balance_manager_id].take_pending_turnover()
 }
 
-fun new_state(governance: Governance, ctx: &mut TxContext): State {
-    let trade_params = governance.trade_params();
-    let history = history::empty(trade_params, ctx.epoch(), ctx);
+/// Sum of this account's pending credits still inside the window, for views
+/// that combine it with the ring total to report what the next trade will
+/// actually resolve against. An account that has never made here has none.
+public(package) fun pending_turnover_total(
+    self: &State,
+    balance_manager_id: ID,
+    ctx: &TxContext,
+): u128 {
+    if (!self.accounts.contains(balance_manager_id)) return 0;
 
-    State { history, governance, accounts: table::new(ctx) }
+    self.accounts[balance_manager_id].pending_turnover_total(ctx.epoch())
 }
 
 /// Up until this point, an OrderInfo object has been created and potentially
@@ -187,67 +205,6 @@ fun new_state(governance: Governance, ctx: &mut TxContext): State {
 /// pool must apply to the vault: fees charged out of proceeds (ask-taker +
 /// ask-maker), one entry per account charged, and the bid-maker escrow these
 /// fills turned into earned revenue.
-/// Resolve the taker and maker rates this account trades at, from its trailing
-/// fee turnover against the pool's current tier ladder.
-///
-/// Called before the order is built, because the maker rate is snapshotted onto
-/// the order at construction. Rolls governance first so an order placed on an
-/// epoch-boundary transaction resolves against the freshly promoted schedule,
-/// and rolls the account so the turnover read is not stale. Returns the entry
-/// rung for an account that has never traded, which is also what the temporary
-/// balance manager behind a manager-less swap gets.
-public(package) fun resolve_trade_rates(
-    self: &mut State,
-    balance_manager_id: ID,
-    ctx: &TxContext,
-): (u64, u64) {
-    self.governance.update(ctx);
-    self.update_account(balance_manager_id, ctx);
-
-    let turnover = self.accounts[balance_manager_id].fee_turnover_total();
-    let (_tier, taker_fee, maker_fee) = self.governance.fee_schedule().resolve(turnover);
-
-    (taker_fee, maker_fee)
-}
-
-/// The tier index an account currently occupies, for events and views.
-///
-/// Resolves against turnover as of the current epoch rather than as of the
-/// account's last touch, so a dormant account is not reported holding a tier
-/// that has already aged out from under it. Both halves are resolved as of
-/// `ctx.epoch()`: `fee_schedule_at` picks up a schedule the epoch rollover has
-/// not promoted yet, matching what `resolve_trade_rates` would charge.
-public(package) fun account_fee_tier(self: &State, balance_manager_id: ID, ctx: &TxContext): u64 {
-    let (tier, _taker_fee, _maker_fee) = self.account_tier_rates(balance_manager_id, ctx);
-
-    tier
-}
-
-/// The tier index and the (taker, maker) rates this account trades at, as of
-/// the current epoch. Single source for every read-only tier view, so the
-/// pools cannot drift from `state` or from each other.
-public(package) fun account_tier_rates(
-    self: &State,
-    balance_manager_id: ID,
-    ctx: &TxContext,
-): (u64, u64, u64) {
-    let turnover = self.account_fee_turnover(balance_manager_id, ctx);
-
-    self.governance.fee_schedule_at(ctx.epoch()).resolve(turnover)
-}
-
-/// Fees an account has paid across the trailing window, as of the current
-/// epoch. An account that has never traded has none.
-public(package) fun account_fee_turnover(
-    self: &State,
-    balance_manager_id: ID,
-    ctx: &TxContext,
-): u128 {
-    if (!self.accounts.contains(balance_manager_id)) return 0;
-
-    self.accounts[balance_manager_id].fee_turnover_total_at(ctx.epoch())
-}
-
 public(package) fun process_create(
     self: &mut State,
     order_info: &mut OrderInfo,
@@ -257,8 +214,7 @@ public(package) fun process_create(
     pool_id: ID,
     ctx: &TxContext,
 ): (Balances, Balances, FeeFlows) {
-    self.governance.update(ctx);
-    self.history.update(self.governance.trade_params(), pool_id, ctx);
+    self.history.update(pool_id, ctx);
     let fills = order_info.fills_ref();
     let mut fee_flows = self.process_fills(fills, ctx);
 
@@ -300,11 +256,11 @@ public(package) fun process_create(
         taker_fee,
         maker_fee,
     );
-    // The taker fee is revenue the moment it is charged, so it counts toward
-    // this account's tier. Maker fees are credited in `process_fills`, at fill
-    // rather than at placement — escrow a bid maker can still cancel out of
-    // must not buy tier progress.
-    account.record_fee_turnover(order_info.paid_fees());
+    // The taker fee is revenue the moment it is charged and counts toward the
+    // taker's tier, but the ring it counts into lives on their
+    // `BalanceManager` — the pool credits it there after this returns. Maker
+    // fees are queued in `process_fills`, at fill rather than at placement —
+    // escrow a bid maker can still cancel out of must not buy tier progress.
     let (old_settled, old_owed) = account.settle();
     self.history.add_total_fees_collected(order_info.paid_fees_balances());
     settled.add_balances(old_settled);
@@ -349,8 +305,7 @@ public(package) fun process_cancel(
     price_scaling: u64,
     ctx: &TxContext,
 ): (Balances, Balances, FeeRelease) {
-    self.governance.update(ctx);
-    self.history.update(self.governance.trade_params(), pool_id, ctx);
+    self.history.update(pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
     order.set_canceled();
 
@@ -387,8 +342,7 @@ public(package) fun process_modify(
     price_scaling: u64,
     ctx: &TxContext,
 ): (Balances, Balances, FeeRelease) {
-    self.governance.update(ctx);
-    self.history.update(self.governance.trade_params(), pool_id, ctx);
+    self.history.update(pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
 
     let balances = order.calculate_cancel_refund(
@@ -589,16 +543,6 @@ public(package) fun process_modify(
 //     account.settle()
 // }
 
-public(package) fun governance(self: &State): &Governance {
-    &self.governance
-}
-
-public(package) fun governance_mut(self: &mut State, ctx: &TxContext): &mut Governance {
-    self.governance.update(ctx);
-
-    &mut self.governance
-}
-
 public(package) fun account_exists(self: &State, balance_manager_id: ID): bool {
     self.accounts.contains(balance_manager_id)
 }
@@ -680,11 +624,13 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
 
         let account = &mut self.accounts[maker];
         account.process_maker_fill(fill);
-        // Credited at fill, never at placement: a bid maker's escrow is
+        // Queued at fill, never at placement: a bid maker's escrow is
         // refundable until it trades, so counting it earlier would let resting
         // orders buy tier progress and cancel out. Expired fills charge nothing
-        // and so credit nothing.
-        account.record_fee_turnover(maker_fee_earned);
+        // and so queue nothing. The maker's `BalanceManager` is not in this
+        // transaction, so the credit waits here until their own next one
+        // against this pool folds it into their ring.
+        account.add_pending_turnover(ctx.epoch(), maker_fee_earned);
 
         i = i + 1;
     };
@@ -713,10 +659,6 @@ fun update_account(self: &mut State, balance_manager_id: ID, ctx: &TxContext) {
     if (!self.accounts.contains(balance_manager_id)) {
         self.accounts.add(balance_manager_id, account::empty(ctx));
     };
-    // Age the trailing fee-turnover window before anything reads or writes it.
-    // Deliberately not routed through `account.update` below: that path is
-    // rebate-shaped and disabled, and tier progression must not wait on it.
-    self.accounts[balance_manager_id].roll_fee_turnover(ctx);
     // #feat:rebate
     // let account = &mut self.accounts[balance_manager_id];
     // let (prev_epoch, maker_volume, _active_stake) = account.update(ctx);
@@ -736,45 +678,16 @@ public fun total_fees_collected_for_testing(self: &State): Balances {
 }
 
 #[test_only]
-/// Resolve the trader's tier rates and process the order, exactly as
-/// `pool::place_order_int` does. Tests written before rates became per-account
-/// call this so they keep exercising the real resolution path rather than
-/// pinning a hardcoded rate that would drift from production.
+/// Process an order at explicit rates. Rate resolution lives at the pool
+/// layer now (`FeePolicy` + the trader's `BalanceManager` ring), so state
+/// tests that do not care about tiers pass the rates directly.
 public fun process_create_for_testing(
     self: &mut State,
     order_info: &mut OrderInfo,
+    taker_fee: u64,
+    maker_fee: u64,
     pool_id: ID,
     ctx: &TxContext,
 ): (Balances, Balances, FeeFlows) {
-    let (taker_fee, maker_fee) = self.resolve_trade_rates(order_info.balance_manager_id(), ctx);
-
     self.process_create(order_info, taker_fee, maker_fee, pool_id, ctx)
-}
-
-/// Admin function to set the fees for the next epoch.
-/// Replaces the proposal/voting system with direct admin control.
-public(package) fun set_next_epoch_fee(
-    self: &mut State,
-    taker_fee: u64,
-    maker_fee: u64,
-    cancel_retention_bps: u64,
-) {
-    self.governance.set_next_trade_params(taker_fee, maker_fee, cancel_retention_bps);
-}
-
-/// Admin function to set the tier ladder for the next epoch.
-public(package) fun set_next_fee_schedule(
-    self: &mut State,
-    schedule: FeeSchedule,
-    cancel_retention_bps: u64,
-) {
-    self.governance.set_next_fee_schedule(schedule, cancel_retention_bps);
-}
-
-public(package) fun fee_schedule(self: &State): &FeeSchedule {
-    self.governance.fee_schedule()
-}
-
-public(package) fun next_fee_schedule(self: &State): &FeeSchedule {
-    self.governance.next_fee_schedule()
 }

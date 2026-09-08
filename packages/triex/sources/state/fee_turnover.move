@@ -17,7 +17,19 @@ module triexbook::fee_turnover;
 
 use triexbook::constants;
 
+// === Errors ===
+const EEpochAhead: u64 = 0;
+
 // === Structs ===
+/// A fee credit tagged with the epoch it was earned in. Maker fees are
+/// recognized in transactions that do not carry the maker's `BalanceManager`,
+/// so pools hold them as pending entries of this shape until the maker's own
+/// next transaction folds them into the BM-hosted ring — see `record_at`.
+public struct EpochAmount has copy, drop, store {
+    epoch: u64,
+    amount: u64,
+}
+
 public struct FeeTurnover has copy, drop, store {
     /// Epoch the newest bucket belongs to.
     anchor_epoch: u64,
@@ -117,7 +129,7 @@ public(package) fun roll(self: &mut FeeTurnover, epoch: u64) {
 }
 
 /// Credit fees to the current bucket. Callers must have rolled the ring to the
-/// current epoch first, which `state::update_account` does on every touch.
+/// current epoch first.
 public(package) fun record(self: &mut FeeTurnover, amount: u64) {
     if (amount == 0) return;
 
@@ -125,6 +137,44 @@ public(package) fun record(self: &mut FeeTurnover, amount: u64) {
     let bucket = self.buckets.borrow_mut(head);
     *bucket = *bucket + amount;
     self.rolling_sum = self.rolling_sum + (amount as u128);
+}
+
+/// Credit fees into the bucket of the epoch they were earned in, which may be
+/// behind the head. This is what makes folding a pool's pending maker credits
+/// exact: turnover lands where per-account-per-pool tracking would have put it,
+/// just later. Entries that have already aged out of the window are dropped.
+/// Callers must have rolled the ring to the current epoch first.
+public(package) fun record_at(self: &mut FeeTurnover, epoch: u64, amount: u64) {
+    if (amount == 0) return;
+    // Pending entries are earned at fill time, so they can never postdate a
+    // ring rolled to the current epoch.
+    assert!(epoch <= self.anchor_epoch, EEpochAhead);
+
+    let window = constants::turnover_window_epochs();
+    let behind = self.anchor_epoch - epoch;
+    if (behind >= window) return;
+
+    let index = (self.head + window - behind) % window;
+    let bucket = self.buckets.borrow_mut(index);
+    *bucket = *bucket + amount;
+    self.rolling_sum = self.rolling_sum + (amount as u128);
+}
+
+// === EpochAmount ===
+public(package) fun new_epoch_amount(epoch: u64, amount: u64): EpochAmount {
+    EpochAmount { epoch, amount }
+}
+
+public fun entry_epoch(self: &EpochAmount): u64 {
+    self.epoch
+}
+
+public fun entry_amount(self: &EpochAmount): u64 {
+    self.amount
+}
+
+public(package) fun add_to_entry(self: &mut EpochAmount, amount: u64) {
+    self.amount = self.amount + amount;
 }
 
 // === Test Functions ===

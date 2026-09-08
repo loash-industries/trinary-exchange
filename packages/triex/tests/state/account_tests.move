@@ -6,7 +6,7 @@ module triexbook::account_tests;
 
 use std::unit_test::assert_eq;
 use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-use triexbook::{account, balances, fill};
+use triexbook::{account, balances, constants, fill};
 
 const OWNER: address = @0xF;
 const ALICE: address = @0xA;
@@ -290,6 +290,129 @@ fun update_ok() {
 
 //     test.end();
 // }
+
+// === Pending turnover ledger ===
+// Maker-fee credits recognized at fill wait on the account — tagged with the
+// epoch they were earned in — until the owner's next transaction drains them
+// into the ring on their `BalanceManager`.
+
+#[test]
+fun pending_turnover_merges_credits_earned_in_the_same_epoch() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut account = account::empty(test.ctx());
+    account.add_pending_turnover(5, 100);
+    account.add_pending_turnover(5, 50);
+
+    // One entry per epoch: same-epoch credits fold into the last entry
+    // rather than growing the vector.
+    let entries = account.take_pending_turnover();
+    assert_eq!(entries.length(), 1);
+    assert_eq!(entries[0].entry_epoch(), 5);
+    assert_eq!(entries[0].entry_amount(), 150);
+
+    test.end();
+}
+
+#[test]
+fun pending_turnover_keeps_distinct_epochs_in_order() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut account = account::empty(test.ctx());
+    account.add_pending_turnover(3, 10);
+    account.add_pending_turnover(4, 20);
+    account.add_pending_turnover(4, 5);
+
+    let entries = account.take_pending_turnover();
+    assert_eq!(entries.length(), 2);
+    assert_eq!(entries[0].entry_epoch(), 3);
+    assert_eq!(entries[0].entry_amount(), 10);
+    assert_eq!(entries[1].entry_epoch(), 4);
+    assert_eq!(entries[1].entry_amount(), 25);
+
+    test.end();
+}
+
+#[test]
+fun pending_turnover_zero_credit_is_a_noop() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut account = account::empty(test.ctx());
+    // The fill path credits unconditionally, including expired fills that
+    // charge nothing, so zero must not grow the ledger.
+    account.add_pending_turnover(5, 0);
+
+    assert!(account.take_pending_turnover().is_empty(), 0);
+
+    test.end();
+}
+
+#[test]
+fun pending_turnover_drops_window_aged_entries_on_append() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let window = constants::turnover_window_epochs();
+    let mut account = account::empty(test.ctx());
+    account.add_pending_turnover(0, 100);
+    // A credit earned a full window later ages the epoch-0 entry out: the
+    // fold would drop it anyway, and pruning here is what bounds the vector
+    // for a maker who never sends their own transaction.
+    account.add_pending_turnover(window, 7);
+
+    let entries = account.take_pending_turnover();
+    assert_eq!(entries.length(), 1);
+    assert_eq!(entries[0].entry_epoch(), window);
+    assert_eq!(entries[0].entry_amount(), 7);
+
+    test.end();
+}
+
+#[test]
+fun take_pending_turnover_drains() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let mut account = account::empty(test.ctx());
+    account.add_pending_turnover(1, 40);
+    account.add_pending_turnover(2, 60);
+
+    let entries = account.take_pending_turnover();
+    assert_eq!(entries.length(), 2);
+
+    // The drain is total: a second take finds nothing, and the total view
+    // agrees.
+    assert!(account.take_pending_turnover().is_empty(), 0);
+    assert_eq!(account.pending_turnover_total(2), 0);
+
+    test.end();
+}
+
+#[test]
+fun pending_turnover_total_reports_only_the_window() {
+    let mut test = begin(OWNER);
+
+    test.next_tx(ALICE);
+    let window = constants::turnover_window_epochs();
+    let mut account = account::empty(test.ctx());
+    account.add_pending_turnover(0, 100);
+    account.add_pending_turnover(5, 50);
+
+    // Both in scope while the window still covers epoch 0.
+    assert_eq!(account.pending_turnover_total(5), 150);
+    assert_eq!(account.pending_turnover_total(window - 1), 150);
+    // The view must exclude what the fold would drop, or a trader would see
+    // a tier the next trade does not honor: epoch 0 ages out first...
+    assert_eq!(account.pending_turnover_total(window), 50);
+    // ...and eventually everything does, without mutating the ledger.
+    assert_eq!(account.pending_turnover_total(window + 5), 0);
+    assert_eq!(account.take_pending_turnover().length(), 2);
+
+    test.end();
+}
 
 // #feat:gov - DISABLED
 // #[test]

@@ -289,7 +289,7 @@ public(package) fun set_order_id(self: &mut OrderInfo, order_id: u64) {
 }
 
 #[test_only]
-/// Snapshot the rates a real placement takes from governance. Test helpers
+/// Snapshot the rates a real placement resolves from the fee policy. Test helpers
 /// build order info with zero rates, which skips the fee paths entirely; this
 /// lets a test opt into exercising them.
 public fun set_fee_snapshot_for_testing(

@@ -37,10 +37,16 @@ use sui::{clock::{Self, Clock}, coin::mint_for_testing, test_scenario::{begin, e
 use triexbook::{
     balance_manager::{Self as balance_manager, BalanceManager},
     constants,
+    fee_policy::FeePolicy,
     math,
     multicoin_pool::{Self, MultiCoinPool},
+    pool_test_utils,
     registry::{Self, Registry}
 };
+
+/// Fresh class id for each test's bespoke quote type — clear of the ids the
+/// seeded policy assigns to the standard test quotes.
+const QUOTE_FEE_CLASS: u16 = 100;
 
 const OWNER: address = @0x1;
 const ALICE: address = @0xAAAA;
@@ -91,6 +97,10 @@ fun setup_base(test: &mut sui::test_scenario::Scenario): (ID, ID, CollectionCap)
     test.next_tx(OWNER);
     clock::create_for_testing(test.ctx()).share_for_testing();
 
+    // Pools resolve rates through the shared `FeePolicy`; each test's bespoke
+    // quote gets its multicoin class registered in `create_pool_with_quote`.
+    pool_test_utils::share_policy_for_testing(test);
+
     test.next_tx(OWNER);
     let registry_id = registry::test_registry(test.ctx());
 
@@ -111,16 +121,31 @@ fun create_pool_with_quote<QuoteAsset>(
     test.next_tx(OWNER);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let mut policy = test.take_shared<FeePolicy>();
     let collection = test.take_shared<Collection>();
     registry.add_approved_quote_unchecked<QuoteAsset>(&admin_cap);
+    // Register a flat multicoin class for the bespoke quote at the multicoin
+    // launch defaults (1.1% taker / 0.9% maker) the fee assertions expect.
+    policy.create_class<QuoteAsset>(
+        QUOTE_FEE_CLASS,
+        vector[0],
+        vector[pool_test_utils::default_taker_fee_multicoin()],
+        vector[pool_test_utils::default_maker_fee_multicoin()],
+        pool_test_utils::default_cancel_retention_bps(),
+        &admin_cap,
+        test.ctx(),
+    );
+    policy.set_multicoin_default_class<QuoteAsset>(QUOTE_FEE_CLASS, &admin_cap);
     let pool_id = multicoin_pool::create_pool_admin<QuoteAsset>(
         &mut registry,
+        &policy,
         &collection,
         ASSET_GOLD,
         &admin_cap,
         test.ctx(),
     );
     return_shared(registry);
+    return_shared(policy);
     return_shared(collection);
     destroy(admin_cap);
     pool_id
@@ -183,10 +208,12 @@ fun fill_and_get_fees<QuoteAsset>(
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
         let proof = bm.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
+            &policy,
             &mut bm,
             &proof,
             constants::no_restriction(),
@@ -199,6 +226,7 @@ fun fill_and_get_fees<QuoteAsset>(
             test.ctx(),
         );
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
     };
@@ -207,10 +235,12 @@ fun fill_and_get_fees<QuoteAsset>(
     test.next_tx(BOB);
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
         let proof = bm.generate_proof_as_owner(test.ctx());
         let order_info = pool.place_limit_order(
+            &policy,
             &mut bm,
             &proof,
             constants::no_restriction(),
@@ -225,6 +255,7 @@ fun fill_and_get_fees<QuoteAsset>(
         let paid_fees = order_info.paid_fees();
         let vault_reserve = pool.quote_fee_reserve_balance();
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
         (paid_fees, vault_reserve)

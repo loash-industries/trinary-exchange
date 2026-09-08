@@ -14,9 +14,11 @@ use sui::{
 use token::cred::CRED;
 use triexbook::{
     balance_manager::{Self, BalanceManager, TradeCap, DepositCap, WithdrawCap},
+    balance_manager_tests::USDC,
     constants,
+    fee_policy::FeePolicy,
     fill::Fill,
-    integration_multicoin_test_utils::{Self as mc_utils, USDC},
+    integration_multicoin_test_utils::{Self as mc_utils},
     math,
     multicoin_pool::{Self, MultiCoinPool},
     order_info::OrderInfo,
@@ -143,6 +145,7 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
 
     test.next_tx(BOB);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
     let bob_trade_cap = test.take_from_sender<TradeCap>();
@@ -150,6 +153,7 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
 
     // BOB places bid order - willing to buy 1000 base at price 2
     pool.place_limit_order(
+        &policy,
         &mut bob_bm,
         &bob_proof,
         constants::no_restriction(),
@@ -163,6 +167,7 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
     );
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     return_shared(bob_bm);
     test.return_to_sender(bob_trade_cap);
@@ -183,11 +188,13 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
     // ALICE swaps base for quote
     test.next_tx(ALICE);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let base_in = test.take_from_sender<multicoin::Balance>();
     let cred_in = mint_for_testing<CRED>(0, test.ctx()); // No cred (fee paid from output)
 
     let (base_out, quote_out, cred_out) = pool.swap_exact_base_for_quote(
+        &policy,
         base_in,
         cred_in,
         0, // min_quote_out
@@ -204,6 +211,7 @@ fun test_multicoin_pool_swap_exact_base_for_quote_ok() {
     transfer::public_transfer(cred_out, ALICE);
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     unit_test::destroy(collection_cap);
     end(test);
@@ -253,12 +261,14 @@ fun test_multicoin_pool_swap_exact_quote_for_base_ok() {
     // BOB places ask order - selling 1000 base at price 2
     test.next_tx(BOB);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
     let bob_trade_cap = test.take_from_sender<TradeCap>();
     let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
     pool.place_limit_order(
+        &policy,
         &mut bob_bm,
         &bob_proof,
         constants::no_restriction(),
@@ -272,6 +282,7 @@ fun test_multicoin_pool_swap_exact_quote_for_base_ok() {
     );
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     return_shared(bob_bm);
     test.return_to_sender(bob_trade_cap);
@@ -279,11 +290,13 @@ fun test_multicoin_pool_swap_exact_quote_for_base_ok() {
     // ALICE swaps quote for base
     test.next_tx(ALICE);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let quote_in = mint_for_testing<USDC>(1000 * constants::usdc_unit(), test.ctx());
     let cred_in = mint_for_testing<CRED>(10_000 * constants::float_scaling(), test.ctx()); // CRED for fees
 
     let (base_out, quote_out, cred_out) = pool.swap_exact_quote_for_base(
+        &policy,
         quote_in,
         cred_in,
         0, // min_base_out
@@ -299,6 +312,7 @@ fun test_multicoin_pool_swap_exact_quote_for_base_ok() {
     transfer::public_transfer(cred_out, ALICE);
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     unit_test::destroy(collection_cap);
     end(test);
@@ -348,12 +362,14 @@ fun test_multicoin_pool_swap_exact_quote_for_base_min_not_met_e() {
     // BOB places ask order - selling 100 base at price 2
     test.next_tx(BOB);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
     let bob_trade_cap = test.take_from_sender<TradeCap>();
     let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
     pool.place_limit_order(
+        &policy,
         &mut bob_bm,
         &bob_proof,
         constants::no_restriction(),
@@ -367,6 +383,7 @@ fun test_multicoin_pool_swap_exact_quote_for_base_min_not_met_e() {
     );
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     return_shared(bob_bm);
     test.return_to_sender(bob_trade_cap);
@@ -374,12 +391,14 @@ fun test_multicoin_pool_swap_exact_quote_for_base_min_not_met_e() {
     // ALICE swaps quote for base but requires too much base output
     test.next_tx(ALICE);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let quote_in = mint_for_testing<USDC>(1000 * constants::usdc_unit(), test.ctx());
     let cred_in = mint_for_testing<CRED>(10_000 * constants::float_scaling(), test.ctx());
 
     // Expecting way more base than possible - should fail
     let (base_out, quote_out, cred_out) = pool.swap_exact_quote_for_base(
+        &policy,
         quote_in,
         cred_in,
         200 * constants::sui_unit(), // min_base_out - too high!
@@ -440,12 +459,14 @@ fun test_multicoin_pool_get_quantity_out_ok() {
     // BOB places ask at price 2
     test.next_tx(BOB);
     let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
     let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
     let bob_trade_cap = test.take_from_sender<TradeCap>();
     let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
     pool.place_limit_order(
+        &policy,
         &mut bob_bm,
         &bob_proof,
         constants::no_restriction(),
@@ -459,6 +480,7 @@ fun test_multicoin_pool_get_quantity_out_ok() {
     );
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     return_shared(bob_bm);
     test.return_to_sender(bob_trade_cap);
@@ -466,19 +488,23 @@ fun test_multicoin_pool_get_quantity_out_ok() {
     // Query get_quantity_out
     test.next_tx(ALICE);
     let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+    let policy = test.take_shared<FeePolicy>();
     let clock = test.take_shared<Clock>();
 
     // Query: if I put in 200 quote, how much base do I get?
     let (base_out, quote_remaining) = pool.get_quantity_out(
+        &policy,
         0, // base_quantity (0 since we're buying with quote)
         200 * constants::float_scaling(), // quote_quantity
         &clock,
+        test.ctx(),
     );
 
     // At price 2, 200 quote buys 100 base
     assert!(base_out > 0, 0);
 
     return_shared(pool);
+    return_shared(policy);
     return_shared(clock);
     unit_test::destroy(collection_cap);
     end(test);

@@ -4,7 +4,7 @@ module triexbook::fee_schedule_tests;
 use std::unit_test::assert_eq;
 use triexbook::fee_schedule;
 
-// Mirrors the bounds `governance` passes in. Kept local because `validate`
+// Mirrors the bounds `fee_policy` passes in. Kept local because `validate`
 // takes them as arguments precisely so this module stays a leaf.
 const MIN_TAKER: u64 = 100_000; // 1 bp
 const MAX_TAKER: u64 = 1_000_000_000; // 100%
@@ -50,9 +50,15 @@ fun launch_ladder(): fee_schedule::FeeSchedule {
 
 // === Resolution ===
 
+/// The one-rung ladder that replaced the deleted `flat` constructor: a single
+/// tier at zero turnover prices everyone identically.
+fun flat_schedule(taker_fee: u64, maker_fee: u64): fee_schedule::FeeSchedule {
+    fee_schedule::from_vectors(vector[0], vector[taker_fee], vector[maker_fee])
+}
+
 #[test]
 fun flat_schedule_prices_like_a_flat_fee() {
-    let schedule = fee_schedule::flat(22_000_000, 18_000_000);
+    let schedule = flat_schedule(22_000_000, 18_000_000);
 
     // Every turnover resolves to the single rung, so a one-tier ladder is
     // indistinguishable from the flat rate it replaces.
@@ -150,7 +156,7 @@ fun launch_ladder_validates() {
 
 #[test]
 fun flat_schedule_validates() {
-    fee_schedule::flat(22_000_000, 18_000_000)
+    flat_schedule(22_000_000, 18_000_000)
         .validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
 }
 
@@ -357,7 +363,7 @@ fun a_threshold_above_any_reachable_turnover_is_simply_never_hit() {
 
 #[test]
 fun single_tier_ladder_never_promotes() {
-    let schedule = fee_schedule::flat(22_000_000, 18_000_000);
+    let schedule = flat_schedule(22_000_000, 18_000_000);
     let (tier, _taker, _maker) = schedule.resolve(
         340282366920938463463374607431768211455,
     );

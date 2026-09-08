@@ -231,7 +231,7 @@ fun test_untouched_account_reports_entry_tier() {
 }
 
 #[test]
-#[expected_failure(abort_code = triexbook::governance::EInvalidCancelRetention)]
+#[expected_failure(abort_code = triexbook::fee_policy::EInvalidCancelRetention)]
 fun test_schedule_setter_rejects_retention_above_full() {
     pool_test_utils::test_schedule_setter_rejects_retention_above_full();
 }

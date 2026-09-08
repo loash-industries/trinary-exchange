@@ -11,9 +11,12 @@ use sui::{clock::{Self, Clock}, coin::mint_for_testing, test_scenario::{Scenario
 use token::cred::CRED;
 use triexbook::{
     balance_manager::{Self as balance_manager, BalanceManager, TradeCap},
+    balance_manager_tests::USDC,
     constants,
+    fee_policy::FeePolicy,
     multicoin_pool as multicoin_pool,
     pool::{Self as pool, Pool},
+    pool_test_utils,
     registry::{Self as registry, Registry}
 };
 
@@ -33,8 +36,8 @@ public fun asset_silver(): u64 { ASSET_SILVER }
 
 public fun asset_iron(): u64 { ASSET_IRON }
 
-// Quote currency for testing
-public struct USDC has store {}
+// Quote currency for testing is `balance_manager_tests::USDC`, the same type
+// the shared `FeePolicy` is seeded for in `pool_test_utils`.
 
 public fun get_time(test: &mut Scenario): u64 {
     test.next_tx(OWNER);
@@ -59,6 +62,9 @@ public fun share_clock(test: &mut Scenario) {
 }
 
 public fun share_registry_for_testing(test: &mut Scenario): ID {
+    // Every pool reads its fee class from the shared `FeePolicy`, so the
+    // seeded policy is shared alongside the registry.
+    pool_test_utils::share_policy_for_testing(test);
     test.next_tx(OWNER);
     registry::test_registry(test.ctx())
 }
@@ -117,10 +123,12 @@ public fun setup_multicoin_pool(
     test.next_tx(sender);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let policy = test.take_shared<FeePolicy>();
     let collection = test.take_shared<Collection>();
 
     let pool_id = multicoin_pool::create_pool_admin<USDC>(
         &mut registry,
+        &policy,
         &collection,
         asset_id,
         &admin_cap,
@@ -128,6 +136,7 @@ public fun setup_multicoin_pool(
     );
 
     return_shared(registry);
+    return_shared(policy);
     return_shared(collection);
     unit_test::destroy(admin_cap);
     pool_id
@@ -144,14 +153,17 @@ public fun setup_cred_usdc_reference_pool(
     test.next_tx(sender);
     let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
     let mut registry = test.take_shared_by_id<Registry>(registry_id);
+    let policy = test.take_shared<FeePolicy>();
 
     let reference_pool_id = pool::create_pool_admin<USDC, CRED>(
         &mut registry,
+        &policy,
         &admin_cap,
         test.ctx(),
     );
 
     return_shared(registry);
+    return_shared(policy);
     unit_test::destroy(admin_cap);
 
     let cred_multiplier = constants::cred_multiplier();
@@ -161,12 +173,14 @@ public fun setup_cred_usdc_reference_pool(
     test.next_tx(sender);
     {
         let mut pool = test.take_shared_by_id<Pool<USDC, CRED>>(reference_pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(balance_manager_id);
         let trade_cap = test.take_from_sender<TradeCap>();
         let trade_proof = bm.generate_proof_as_trader(&trade_cap, test.ctx());
 
         pool.place_limit_order(
+            &policy,
             &mut bm,
             &trade_proof,
             constants::no_restriction(),
@@ -180,6 +194,7 @@ public fun setup_cred_usdc_reference_pool(
         );
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
         test.return_to_sender(trade_cap);
@@ -188,12 +203,14 @@ public fun setup_cred_usdc_reference_pool(
     test.next_tx(sender);
     {
         let mut pool = test.take_shared_by_id<Pool<USDC, CRED>>(reference_pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bm = test.take_shared_by_id<BalanceManager>(balance_manager_id);
         let trade_cap = test.take_from_sender<TradeCap>();
         let trade_proof = bm.generate_proof_as_trader(&trade_cap, test.ctx());
 
         pool.place_limit_order(
+            &policy,
             &mut bm,
             &trade_proof,
             constants::no_restriction(),
@@ -207,6 +224,7 @@ public fun setup_cred_usdc_reference_pool(
         );
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(bm);
         test.return_to_sender(trade_cap);

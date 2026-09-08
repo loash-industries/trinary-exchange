@@ -23,7 +23,8 @@ use triexbook::{
     balance_manager::{Self, BalanceManager, TradeProof, TradeCap, DepositCap, WithdrawCap},
     book::{Self, Book},
     constants,
-    fee_schedule::{Self, FeeSchedule},
+    fee_policy::FeePolicy,
+    fee_schedule::FeeSchedule,
     multicoin_vault::{Self, MultiCoinVault},
     order::Order,
     order_info::{Self, OrderInfo},
@@ -64,6 +65,9 @@ public struct MultiCoinPoolInner<phantom QuoteAsset> has store {
     state: State,
     vault: MultiCoinVault<QuoteAsset>,
     registered_pool: bool,
+    /// The pricing class this pool belongs to in the shared `FeePolicy`
+    /// object — the only fee policy state a pool carries.
+    fee_class: u16,
 }
 
 public struct MultiCoinPoolCreated<phantom QuoteAsset> has copy, drop, store {
@@ -87,6 +91,7 @@ public struct MultiCoinCredBurned<phantom QuoteAsset> has copy, drop, store {
 /// #ref:functions
 public fun create_permissionless_pool<QuoteAsset>(
     registry: &mut Registry,
+    policy: &FeePolicy,
     collection: &Collection,
     asset_id: u64,
     creation_fee: Coin<CRED>,
@@ -95,6 +100,7 @@ public fun create_permissionless_pool<QuoteAsset>(
     assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
     create_pool<QuoteAsset>(
         registry,
+        policy,
         collection,
         asset_id,
         creation_fee,
@@ -107,6 +113,7 @@ public fun create_permissionless_pool<QuoteAsset>(
 /// #ref:functions
 public(package) fun create_pool<QuoteAsset>(
     registry: &mut Registry,
+    policy: &FeePolicy,
     collection: &Collection,
     asset_id: u64,
     creation_fee: Coin<CRED>,
@@ -119,6 +126,11 @@ public(package) fun create_pool<QuoteAsset>(
     let quote_type = type_name::with_defining_ids<QuoteAsset>();
     assert!(registry.is_quote_approved(quote_type), EQuoteNotApproved);
 
+    // Born into the multicoin default class for its quote — multicoin pools
+    // price differently from coin pools sharing the same quote, so they get
+    // their own default table in the policy object.
+    let fee_class = policy.multicoin_default_class(quote_type);
+
     let pool_id = object::new(ctx);
     let pool_inner = MultiCoinPoolInner<QuoteAsset> {
         allowed_versions: registry.allowed_versions(),
@@ -127,13 +139,12 @@ public(package) fun create_pool<QuoteAsset>(
         asset_id,
         quote_type,
         book: book::empty_multicoin(ctx),
-        state: state::empty_multicoin(ctx),
+        state: state::empty(ctx),
         vault: multicoin_vault::empty(collection_id, asset_id, ctx),
         registered_pool: true,
+        fee_class,
     };
-    let params = pool_inner.state.governance().trade_params();
-    let taker_fee = params.taker_fee();
-    let maker_fee = params.maker_fee();
+    let (_tier, taker_fee, maker_fee) = policy.resolve(fee_class, 0, ctx.epoch());
     let treasury_address = registry.treasury_address();
     let pool = MultiCoinPool<QuoteAsset> {
         id: pool_id,
@@ -163,6 +174,7 @@ public(package) fun create_pool<QuoteAsset>(
 /// #ref:functions
 public fun create_pool_admin<QuoteAsset>(
     registry: &mut Registry,
+    policy: &FeePolicy,
     collection: &Collection,
     asset_id: u64,
     _cap: &TriexbookAdminCap,
@@ -171,6 +183,7 @@ public fun create_pool_admin<QuoteAsset>(
     let creation_fee = coin::zero(ctx);
     create_pool<QuoteAsset>(
         registry,
+        policy,
         collection,
         asset_id,
         creation_fee,
@@ -185,6 +198,7 @@ public fun create_pool_admin<QuoteAsset>(
 /// #ref:functions
 public fun place_limit_order<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_proof: &TradeProof,
     order_type: u8,
@@ -197,6 +211,7 @@ public fun place_limit_order<QuoteAsset>(
     ctx: &mut TxContext,
 ): OrderInfo {
     self.place_limit_order_with_quote_fees(
+        policy,
         balance_manager,
         trade_proof,
         order_type,
@@ -212,6 +227,7 @@ public fun place_limit_order<QuoteAsset>(
 
 public fun place_limit_order_with_quote_fees<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_proof: &TradeProof,
     order_type: u8,
@@ -224,6 +240,7 @@ public fun place_limit_order_with_quote_fees<QuoteAsset>(
     ctx: &mut TxContext,
 ): OrderInfo {
     self.place_order_int(
+        policy,
         balance_manager,
         trade_proof,
         order_type,
@@ -242,6 +259,7 @@ public fun place_limit_order_with_quote_fees<QuoteAsset>(
 /// #ref:functions
 public fun place_market_order<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_proof: &TradeProof,
     self_matching_option: u8,
@@ -251,6 +269,7 @@ public fun place_market_order<QuoteAsset>(
     ctx: &mut TxContext,
 ): OrderInfo {
     self.place_market_order_with_quote_fees(
+        policy,
         balance_manager,
         trade_proof,
         self_matching_option,
@@ -263,6 +282,7 @@ public fun place_market_order<QuoteAsset>(
 
 public fun place_market_order_with_quote_fees<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_proof: &TradeProof,
     self_matching_option: u8,
@@ -272,6 +292,7 @@ public fun place_market_order_with_quote_fees<QuoteAsset>(
     ctx: &mut TxContext,
 ): OrderInfo {
     self.place_order_int(
+        policy,
         balance_manager,
         trade_proof,
         constants::immediate_or_cancel(),
@@ -293,6 +314,7 @@ public fun place_market_order_with_quote_fees<QuoteAsset>(
 /// #ref:functions
 public fun swap_exact_base_for_quote<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     base_in: multicoin::Balance,
     cred_in: Coin<CRED>,
     min_quote_out: u64,
@@ -304,6 +326,7 @@ public fun swap_exact_base_for_quote<QuoteAsset>(
     let asset_id = self.load_inner().asset_id;
 
     self.swap_exact_quantity(
+        policy,
         base_in,
         quote_in,
         cred_in,
@@ -320,6 +343,7 @@ public fun swap_exact_base_for_quote<QuoteAsset>(
 /// #ref:functions
 public fun swap_exact_base_for_quote_with_manager<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_cap: &TradeCap,
     deposit_cap: &DepositCap,
@@ -334,6 +358,7 @@ public fun swap_exact_base_for_quote_with_manager<QuoteAsset>(
     let asset_id = self.load_inner().asset_id;
 
     self.swap_exact_quantity_with_manager(
+        policy,
         balance_manager,
         trade_cap,
         deposit_cap,
@@ -353,6 +378,7 @@ public fun swap_exact_base_for_quote_with_manager<QuoteAsset>(
 /// #ref:functions
 public fun swap_exact_quote_for_base<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     quote_in: Coin<QuoteAsset>,
     cred_in: Coin<CRED>,
     min_base_out: u64,
@@ -364,6 +390,7 @@ public fun swap_exact_quote_for_base<QuoteAsset>(
     let base_in = multicoin::zero(collection_id, asset_id, ctx);
 
     self.swap_exact_quantity(
+        policy,
         base_in,
         quote_in,
         cred_in,
@@ -380,6 +407,7 @@ public fun swap_exact_quote_for_base<QuoteAsset>(
 /// #ref:functions
 public fun swap_exact_quote_for_base_with_manager<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_cap: &TradeCap,
     deposit_cap: &DepositCap,
@@ -394,6 +422,7 @@ public fun swap_exact_quote_for_base_with_manager<QuoteAsset>(
     let base_in = multicoin::zero(collection_id, asset_id, ctx);
 
     self.swap_exact_quantity_with_manager(
+        policy,
         balance_manager,
         trade_cap,
         deposit_cap,
@@ -412,6 +441,7 @@ public fun swap_exact_quote_for_base_with_manager<QuoteAsset>(
 /// #ref:functions
 fun swap_exact_quantity<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     base_in: multicoin::Balance,
     quote_in: Coin<QuoteAsset>,
     cred_in: Coin<CRED>,
@@ -427,7 +457,7 @@ fun swap_exact_quantity<QuoteAsset>(
 
     let is_bid = quote_quantity > 0;
     if (is_bid) {
-        (base_quantity, _) = self.get_quantity_out_input_fee(0, quote_quantity, clock)
+        (base_quantity, _) = self.get_quantity_out_input_fee(policy, 0, quote_quantity, clock, ctx)
     };
 
     let mut temp_balance_manager = balance_manager::new(ctx);
@@ -437,6 +467,7 @@ fun swap_exact_quantity<QuoteAsset>(
     temp_balance_manager.deposit(cred_in, ctx);
 
     self.place_market_order(
+        policy,
         &mut temp_balance_manager,
         &trade_proof,
         constants::self_matching_allowed(),
@@ -456,6 +487,9 @@ fun swap_exact_quantity<QuoteAsset>(
         assert!(quote_out.value() >= min_out, EMinimumQuantityOutNotMet);
     };
 
+    // The market order above credited taker fees into a ring on the
+    // temporary manager; detach it before deletion so nothing leaks.
+    temp_balance_manager.remove_fee_turnover<QuoteAsset>();
     temp_balance_manager.delete();
 
     (base_out, quote_out, cred_out)
@@ -465,6 +499,7 @@ fun swap_exact_quantity<QuoteAsset>(
 /// #ref:functions
 fun swap_exact_quantity_with_manager<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_cap: &TradeCap,
     deposit_cap: &DepositCap,
@@ -487,6 +522,7 @@ fun swap_exact_quantity_with_manager<QuoteAsset>(
         // Sized at this account's own taker rate — see the twin in `pool`.
         (adjusted_base_quantity, _) =
             self.get_quantity_out_for_account(
+                policy,
                 balance_manager,
                 0,
                 quote_quantity,
@@ -495,6 +531,7 @@ fun swap_exact_quantity_with_manager<QuoteAsset>(
             )
     } else {
         let (base_remaining, _) = self.get_quantity_out_for_account(
+            policy,
             balance_manager,
             base_quantity,
             0,
@@ -508,6 +545,7 @@ fun swap_exact_quantity_with_manager<QuoteAsset>(
     balance_manager.deposit_with_cap(deposit_cap, quote_in, ctx);
     let trade_proof = balance_manager.generate_proof_as_trader(trade_cap, ctx);
     let order_info = self.place_market_order(
+        policy,
         balance_manager,
         &trade_proof,
         constants::self_matching_allowed(),
@@ -725,37 +763,22 @@ public fun withdraw_settled_amounts_permissionless<QuoteAsset>(
 
 // === Public-Mutative Functions * ADMIN * ===
 
-/// Admin function to set the fees for the next epoch.
+/// Admin function to reassign this pool to another pricing class — the only
+/// per-pool policy operation left. Rates themselves are set on the shared
+/// `FeePolicy` object, one transaction per class, never per pool.
 /// #ref:functions
-public fun set_next_epoch_fee<QuoteAsset>(
+public fun set_pool_fee_class<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
-    taker_fee: u64,
-    maker_fee: u64,
-    cancel_retention_bps: u64,
+    policy: &FeePolicy,
+    fee_class: u16,
     _cap: &TriexbookAdminCap,
 ) {
+    policy.assert_class_matches_quote(
+        fee_class,
+        type_name::with_defining_ids<QuoteAsset>(),
+    );
     let pool_inner = self.load_inner_mut();
-    pool_inner.state.set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps);
-}
-
-/// Admin function to set the tier ladder for the next epoch.
-///
-/// Takes columns rather than tier structs because entry functions cannot accept
-/// Move structs as arguments. `fee_schedule::validate` rejects schedules that
-/// are empty, do not start at zero turnover, have non-ascending thresholds, or
-/// price more turnover higher on either side.
-/// #ref:functions
-public fun set_next_epoch_fee_schedule<QuoteAsset>(
-    self: &mut MultiCoinPool<QuoteAsset>,
-    min_turnovers: vector<u128>,
-    taker_fees: vector<u64>,
-    maker_fees: vector<u64>,
-    cancel_retention_bps: u64,
-    _cap: &TriexbookAdminCap,
-) {
-    let schedule = fee_schedule::from_vectors(min_turnovers, taker_fees, maker_fees);
-    let pool_inner = self.load_inner_mut();
-    pool_inner.state.set_next_fee_schedule(schedule, cancel_retention_bps);
+    pool_inner.fee_class = fee_class;
 }
 
 /// Unregister a pool in case it needs to be redeployed.
@@ -860,11 +883,13 @@ public fun mid_price<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>, clock: &Clock
 /// Uses quote-denominated fees.
 public fun get_quantity_out<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     base_quantity: u64,
     quote_quantity: u64,
     clock: &Clock,
+    ctx: &TxContext,
 ): (u64, u64) {
-    self.get_quantity_out_input_fee(base_quantity, quote_quantity, clock)
+    self.get_quantity_out_input_fee(policy, base_quantity, quote_quantity, clock, ctx)
 }
 
 /// Dry run to determine the quantity out for a given base or quote quantity.
@@ -872,19 +897,20 @@ public fun get_quantity_out<QuoteAsset>(
 /// Returns the (base_quantity_out, quote_quantity_out, cred_quantity_required) using quote-denominated fees.
 public fun get_quantity_out_input_fee<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     base_quantity: u64,
     quote_quantity: u64,
     clock: &Clock,
+    ctx: &TxContext,
 ): (u64, u64) {
     let self_inner = self.load_inner();
-    let params = self_inner.state.governance().trade_params();
-    let trade_specific_taker_fee = params.taker_fee();
+    let (_tier, taker_fee, _maker_fee) = policy.resolve(self_inner.fee_class, 0, ctx.epoch());
     self_inner
         .book
         .get_quantity_out(
             base_quantity,
             quote_quantity,
-            trade_specific_taker_fee,
+            taker_fee,
             clock.timestamp_ms(),
         )
 }
@@ -893,6 +919,7 @@ public fun get_quantity_out_input_fee<QuoteAsset>(
 /// than the entry rung. See `pool::get_quantity_out_for_account`.
 public fun get_quantity_out_for_account<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &BalanceManager,
     base_quantity: u64,
     quote_quantity: u64,
@@ -900,9 +927,11 @@ public fun get_quantity_out_for_account<QuoteAsset>(
     ctx: &TxContext,
 ): (u64, u64) {
     let self_inner = self.load_inner();
-    let (_tier, taker_fee, _maker_fee) = self_inner
-        .state
-        .account_tier_rates(balance_manager.id(), ctx);
+    let (_tier, taker_fee, _maker_fee) = policy.resolve(
+        self_inner.fee_class,
+        self_inner.account_turnover_int(balance_manager, ctx),
+        ctx.epoch(),
+    );
     self_inner
         .book
         .get_quantity_out(
@@ -1059,34 +1088,40 @@ public fun locked_balance<QuoteAsset>(
     (base_quantity, quote_quantity, cred_quantity)
 }
 
-/// Returns the (taker_fee, maker_fee) trade params for the pool.
-public fun pool_trade_params<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): (u64, u64) {
-    let pool_inner = self.load_inner();
-    let trade_params = pool_inner.state.governance().trade_params();
-
-    (trade_params.taker_fee(), trade_params.maker_fee())
+/// The pricing class this pool belongs to in the shared `FeePolicy`.
+public fun pool_fee_class<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u16 {
+    self.load_inner().fee_class
 }
 
-/// Returns the (taker_fee, maker_fee) trade params for the next epoch.
-public fun pool_trade_params_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): (u64, u64) {
+/// Returns the (taker_fee, maker_fee) entry rung for the pool — what an
+/// account with no turnover pays.
+public fun pool_trade_params<QuoteAsset>(
+    self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
+    ctx: &TxContext,
+): (u64, u64) {
     let pool_inner = self.load_inner();
-    let trade_params = pool_inner.state.governance().next_trade_params();
+    let (_tier, taker_fee, maker_fee) = policy.resolve(pool_inner.fee_class, 0, ctx.epoch());
 
-    (trade_params.taker_fee(), trade_params.maker_fee())
+    (taker_fee, maker_fee)
 }
 
-/// Returns the pool's current tier ladder.
-public fun pool_fee_schedule<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): FeeSchedule {
-    let pool_inner = self.load_inner();
-
-    *pool_inner.state.fee_schedule()
+/// Returns the ladder pricing this pool's trades right now.
+public fun pool_fee_schedule<QuoteAsset>(
+    self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
+    ctx: &TxContext,
+): FeeSchedule {
+    policy.active_schedule(self.load_inner().fee_class, ctx.epoch())
 }
 
-/// Returns the tier ladder taking effect next epoch.
-public fun pool_fee_schedule_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): FeeSchedule {
-    let pool_inner = self.load_inner();
-
-    *pool_inner.state.next_fee_schedule()
+/// Returns the ladder staged to take over, and the epoch it does. Equal to
+/// the active one when nothing is pending.
+public fun pool_fee_schedule_next<QuoteAsset>(
+    self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
+): (FeeSchedule, u64) {
+    policy.next_schedule(self.load_inner().fee_class)
 }
 
 /// Returns the (taker_fee, maker_fee) this balance manager currently trades at.
@@ -1094,13 +1129,16 @@ public fun pool_fee_schedule_next<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>):
 /// turnover pays; this reports what *this* account pays.
 public fun trade_params_for_account<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &BalanceManager,
     ctx: &TxContext,
 ): (u64, u64) {
     let pool_inner = self.load_inner();
-    let (_tier, taker_fee, maker_fee) = pool_inner
-        .state
-        .account_tier_rates(balance_manager.id(), ctx);
+    let (_tier, taker_fee, maker_fee) = policy.resolve(
+        pool_inner.fee_class,
+        pool_inner.account_turnover_int(balance_manager, ctx),
+        ctx.epoch(),
+    );
 
     (taker_fee, maker_fee)
 }
@@ -1108,24 +1146,30 @@ public fun trade_params_for_account<QuoteAsset>(
 /// The tier index this balance manager currently occupies.
 public fun account_fee_tier<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &BalanceManager,
     ctx: &TxContext,
 ): u64 {
     let pool_inner = self.load_inner();
+    let (tier, _taker_fee, _maker_fee) = policy.resolve(
+        pool_inner.fee_class,
+        pool_inner.account_turnover_int(balance_manager, ctx),
+        ctx.epoch(),
+    );
 
-    pool_inner.state.account_fee_tier(balance_manager.id(), ctx)
+    tier
 }
 
-/// Fees this balance manager has paid across the trailing window — the metric
-/// tiers resolve against.
+/// Fees this balance manager has paid across the trailing window in this
+/// pool's quote — the metric tiers resolve against. Exchange-wide: the ring
+/// on the manager counts every pool sharing this quote, plus this pool's
+/// still-pending maker credits.
 public fun account_fee_turnover<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
     balance_manager: &BalanceManager,
     ctx: &TxContext,
 ): u128 {
-    let pool_inner = self.load_inner();
-
-    pool_inner.state.account_fee_turnover(balance_manager.id(), ctx)
+    self.load_inner().account_turnover_int(balance_manager, ctx)
 }
 
 public fun account<QuoteAsset>(
@@ -1150,6 +1194,18 @@ public(package) fun asks<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &ve
     self.book.asks()
 }
 
+/// Trailing turnover the next trade on this pool resolves against: the
+/// exchange-wide ring on the manager plus this pool's still-pending maker
+/// credits, both as of the current epoch.
+fun account_turnover_int<QuoteAsset>(
+    self: &MultiCoinPoolInner<QuoteAsset>,
+    balance_manager: &BalanceManager,
+    ctx: &TxContext,
+): u128 {
+    balance_manager.fee_turnover<QuoteAsset>(ctx) +
+    self.state.pending_turnover_total(balance_manager.id(), ctx)
+}
+
 public(package) fun load_inner<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
 ): &MultiCoinPoolInner<QuoteAsset> {
@@ -1172,6 +1228,7 @@ public(package) fun load_inner_mut<QuoteAsset>(
 
 fun place_order_int<QuoteAsset>(
     self: &mut MultiCoinPool<QuoteAsset>,
+    policy: &FeePolicy,
     balance_manager: &mut BalanceManager,
     trade_proof: &TradeProof,
     order_type: u8,
@@ -1188,18 +1245,17 @@ fun place_order_int<QuoteAsset>(
         let pool_inner = self.load_inner_mut();
 
         // Resolve this trader's tier rates before the order is built, so the
-        // maker rate snapshotted onto it is the one they actually pay. This
-        // rolls governance into the current epoch as a side effect, which is
-        // what makes an order placed on an epoch-boundary transaction use the
-        // freshly promoted schedule rather than last epoch's.
-        let (taker_fee_rate, maker_fee_rate) = pool_inner
-            .state
-            .resolve_trade_rates(balance_manager.id(), ctx);
-        let cancel_retention_bps = pool_inner
-            .state
-            .governance_mut(ctx)
-            .trade_params()
-            .cancel_retention_bps();
+        // maker rate snapshotted onto it is the one they actually pay. The
+        // fold lands this pool's pending maker credits in the trader's ring
+        // first, and only then is the turnover read — see the twin in `pool`.
+        let pending = pool_inner.state.take_pending_turnover(balance_manager.id(), ctx);
+        let turnover = balance_manager.fold_fee_turnover<QuoteAsset>(pending, ctx);
+        let (_tier, taker_fee_rate, maker_fee_rate) = policy.resolve(
+            pool_inner.fee_class,
+            turnover,
+            ctx.epoch(),
+        );
+        let cancel_retention_bps = policy.cancel_retention_bps(pool_inner.fee_class);
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),
@@ -1289,6 +1345,11 @@ fun place_order_int<QuoteAsset>(
         // Escrow these fills earned out, plus the share retained from any
         // expiries, is revenue now and sweepable.
         pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
+        // The taker fee is revenue the moment it is charged, so it counts
+        // toward this trader's tier — credited into the exchange-wide ring on
+        // their own manager, after pricing, so the order never discounts
+        // itself.
+        balance_manager.record_fee_turnover<QuoteAsset>(order_info.paid_fees(), ctx);
         order_info.emit_order_info();
         order_info.emit_orders_filled(clock.timestamp_ms());
         order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());

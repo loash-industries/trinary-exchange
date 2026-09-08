@@ -14,11 +14,12 @@ use sui::{
     bag::{Self, Bag},
     balance::{Self, Balance},
     coin::Coin,
+    dynamic_field as df,
     dynamic_object_field as dof,
     event,
     vec_set::{Self, VecSet}
 };
-use triexbook::registry::Registry;
+use triexbook::{fee_turnover::{Self, EpochAmount, FeeTurnover}, registry::Registry};
 
 // use fun df::borrow as UID.borrow;
 // use fun df::exists_ as UID.exists_;
@@ -121,6 +122,21 @@ public struct WithdrawCap has key, store {
 public struct TradeProof has drop {
     balance_manager_id: ID,
     trader: address,
+}
+
+/// Key for the trailing fee-turnover ring this manager keeps per quote asset.
+///
+/// The `BalanceManager` is the trader's exchange-wide identity — the same
+/// object enters every pool they trade on — so hosting the ring here is what
+/// makes tier progress exchange-wide: taker fees on any pool raise the
+/// trader's tier on every pool sharing that quote. One ring per quote asset,
+/// because turnover is a quote-unit sum and summing across quotes would be
+/// meaningless; the registry's quote-approval gate keeps the ring count small.
+///
+/// The ring travels with the manager. A transferred manager carries its tier —
+/// deliberate: tier status is an asset of the manager, not the address.
+public struct TurnoverKey has copy, drop, store {
+    quote: TypeName,
 }
 
 // === Public-Mutative Functions ===
@@ -538,6 +554,74 @@ public fun id(balance_manager: &BalanceManager): ID {
 // }
 
 // === Public-Package Functions ===
+/// Fold pending maker-fee credits into this manager's ring for `QuoteAsset`
+/// and return the trailing turnover total. Every trade calls this before
+/// pricing, so the total it returns is exactly what the tier resolves against.
+///
+/// Rolls the ring to the current epoch first, then lands each entry in the
+/// bucket of the epoch it was earned in — folding is exact, not approximate.
+/// Entries that already aged out of the window are dropped inside `record_at`.
+public(package) fun fold_fee_turnover<QuoteAsset>(
+    balance_manager: &mut BalanceManager,
+    pending: vector<EpochAmount>,
+    ctx: &TxContext,
+): u128 {
+    let ring = balance_manager.turnover_ring_mut<QuoteAsset>(ctx);
+    ring.roll(ctx.epoch());
+    pending.do_ref!(|entry| ring.record_at(entry.entry_epoch(), entry.entry_amount()));
+
+    ring.total()
+}
+
+/// Credit taker fees the moment they are recognized — the taker's own
+/// transaction carries this manager, so no pending step is needed. Called
+/// after pricing, which is what keeps an order from discounting itself.
+public(package) fun record_fee_turnover<QuoteAsset>(
+    balance_manager: &mut BalanceManager,
+    amount: u64,
+    ctx: &TxContext,
+) {
+    if (amount == 0) return;
+
+    let ring = balance_manager.turnover_ring_mut<QuoteAsset>(ctx);
+    ring.roll(ctx.epoch());
+    ring.record(amount);
+}
+
+/// Trailing turnover in `QuoteAsset` units as of the current epoch, without
+/// mutating. A manager that has never been credited has none. Read-only
+/// callers get the aged view via `total_at`, so a dormant manager is not
+/// reported holding a tier that has already rolled off.
+public fun fee_turnover<QuoteAsset>(balance_manager: &BalanceManager, ctx: &TxContext): u128 {
+    let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
+    if (!df::exists_(&balance_manager.id, key)) return 0;
+
+    let ring: &FeeTurnover = df::borrow(&balance_manager.id, key);
+    ring.total_at(ctx.epoch())
+}
+
+/// Detach the ring for `QuoteAsset`, for the manager-less swap path: the
+/// temporary manager it mints is deleted at the end of the transaction, and a
+/// dynamic field left attached would leak.
+public(package) fun remove_fee_turnover<QuoteAsset>(balance_manager: &mut BalanceManager) {
+    let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
+    if (df::exists_(&balance_manager.id, key)) {
+        let _ring: FeeTurnover = df::remove(&mut balance_manager.id, key);
+    };
+}
+
+fun turnover_ring_mut<QuoteAsset>(
+    balance_manager: &mut BalanceManager,
+    ctx: &TxContext,
+): &mut FeeTurnover {
+    let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
+    if (!df::exists_(&balance_manager.id, key)) {
+        df::add(&mut balance_manager.id, key, fee_turnover::empty(ctx.epoch()));
+    };
+
+    df::borrow_mut(&mut balance_manager.id, key)
+}
+
 // #feat:refer
 // /// Mint a `TriexBookReferral` and share it.
 // public(package) fun mint_referral(ctx: &mut TxContext): ID {

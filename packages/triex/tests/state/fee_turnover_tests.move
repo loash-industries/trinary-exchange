@@ -315,6 +315,87 @@ fun large_values_do_not_break_the_rolling_sum() {
     assert_invariant(&turnover);
 }
 
+// === record_at: folding pending credits into past epochs ===
+
+#[test]
+fun record_at_credits_the_bucket_of_the_earning_epoch() {
+    let mut turnover = fee_turnover::empty(0);
+    turnover.record(100);
+    turnover.roll(2);
+
+    // Fold credits earned in epochs behind the head: each lands exactly where
+    // per-epoch tracking would have put it, just later.
+    turnover.record_at(1, 40);
+    turnover.record_at(2, 5);
+
+    assert_eq!(turnover.total(), 145);
+    assert_eq!(turnover.bucket_at(0), 100);
+    assert_eq!(turnover.bucket_at(1), 40);
+    assert_eq!(turnover.bucket_at(2), 5);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun record_at_credits_age_out_on_their_own_schedule() {
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+    turnover.record(100);
+    turnover.roll(2);
+    turnover.record_at(1, 40);
+    turnover.record_at(2, 5);
+
+    // Rolling to epoch `window` evicts only epoch 0: a late-folded credit
+    // expires when its earning epoch does, not later.
+    turnover.roll(window);
+
+    assert_eq!(turnover.total(), 45);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun record_at_drops_credits_older_than_the_window() {
+    let window = constants::turnover_window_epochs();
+    let mut turnover = fee_turnover::empty(0);
+    turnover.roll(window);
+
+    // Exactly one window behind is already out of scope and silently dropped;
+    // one epoch inside still lands.
+    turnover.record_at(0, 100);
+    assert_eq!(turnover.total(), 0);
+    turnover.record_at(1, 25);
+    assert_eq!(turnover.total(), 25);
+    assert_invariant(&turnover);
+}
+
+#[test]
+fun record_at_zero_is_a_noop() {
+    let mut turnover = fee_turnover::empty(5);
+    turnover.record_at(3, 0);
+
+    assert_eq!(turnover.total(), 0);
+    assert_invariant(&turnover);
+}
+
+#[test, expected_failure(abort_code = fee_turnover::EEpochAhead)]
+fun record_at_ahead_of_the_ring_aborts() {
+    // Pending credits are earned at fill time, so one postdating a ring rolled
+    // to the current epoch means the caller forgot to roll — never valid.
+    let mut turnover = fee_turnover::empty(3);
+    turnover.record_at(4, 10);
+}
+
+// === EpochAmount ===
+
+#[test]
+fun epoch_amount_round_trips_and_accumulates() {
+    let mut entry = fee_turnover::new_epoch_amount(7, 100);
+    assert_eq!(entry.entry_epoch(), 7);
+    assert_eq!(entry.entry_amount(), 100);
+
+    entry.add_to_entry(50);
+    assert_eq!(entry.entry_amount(), 150);
+}
+
 // === total_at agrees with rolling ===
 
 #[test]

@@ -61,13 +61,6 @@ public fun maker_fee(self: &FeeTier): u64 {
 }
 
 // === Public-Package Functions ===
-/// A one-rung ladder, which prices exactly like the flat rate it replaces.
-/// `set_next_epoch_fee` builds one of these, so flat fees and tiered fees share
-/// a single resolution path rather than branching at fill time.
-public(package) fun flat(taker_fee: u64, maker_fee: u64): FeeSchedule {
-    FeeSchedule { tiers: vector[FeeTier { min_turnover: 0, taker_fee, maker_fee }] }
-}
-
 /// Build a schedule from parallel vectors. Entry functions cannot take Move
 /// structs as arguments, so an admin transaction supplies the columns and the
 /// package assembles them.
@@ -127,12 +120,12 @@ public(package) fun base_maker_fee(self: &FeeSchedule): u64 {
     self.tiers[0].maker_fee
 }
 
-/// Validate a schedule against the pool's hard bounds.
+/// Validate a schedule against the exchange's hard bounds.
 ///
-/// Bounds are passed in rather than read from `governance` so this module stays
-/// a leaf; `governance::set_next_fee_schedule` supplies its own constants.
-/// Maker rates deliberately have no floor — zero is a legitimate rate — while
-/// takers keep theirs.
+/// Bounds are passed in rather than read from `fee_policy` so this module
+/// stays a leaf; `fee_policy` supplies its own constants. Maker rates
+/// deliberately have no floor — zero is a legitimate rate — while takers keep
+/// theirs.
 public(package) fun validate(
     self: &FeeSchedule,
     min_taker_fee: u64,

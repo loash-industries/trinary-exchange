@@ -72,7 +72,7 @@ const MAX_FAN_OUT: u64 = 64;
 const PHASE_OUT_EPOCHS: u64 = 28;
 
 // Length of the trailing window, in epochs, over which an account's paid fees
-// are summed to resolve its fee tier. Fixed rather than governance-settable so
+// are summed to resolve its fee tier. Fixed rather than policy-settable so
 // the tracker can maintain its rolling sum as an O(1) invariant instead of
 // re-summing the window on every rate resolution; a shorter effective window is
 // reachable by raising the schedule's thresholds.
@@ -302,10 +302,9 @@ public fun bidder_fee(): u64 {
 /// Legacy fee fixture, kept because ~60 test call sites are pinned to these
 /// exact numbers. Two things about it no longer describe the protocol:
 ///
-/// - 2% was `MAX_TAKER_VOLATILE`, a bound that no longer exists. The live
-///   defaults are `DEFAULT_TAKER_FEE` 2.2% and `DEFAULT_MAKER_FEE` 1.8%
-///   (`governance.move`), and rates are now per-account anyway, resolved from
-///   trailing turnover rather than read off a constant.
+/// - 2% was `MAX_TAKER_VOLATILE`, a bound that no longer exists. Rates now
+///   live per class in the shared `FeePolicy` object and are per-account
+///   anyway, resolved from trailing turnover rather than read off a constant.
 /// - Returning 0 for asks encodes the pre-dual-sided-fee rule that only bids
 ///   paid. Asks now pay a taker fee out of their quote proceeds, so any test
 ///   passing this as the taker rate is exercising the zero-fee path, not the

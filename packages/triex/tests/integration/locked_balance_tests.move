@@ -4,16 +4,15 @@
 #[test_only]
 module triexbook::integration_locked_balance_tests;
 
-use sui::{sui::SUI, test_scenario::{begin, end, return_shared}, test_utils::destroy};
+use sui::{sui::SUI, test_scenario::{begin, end}};
 use token::cred::CRED;
 use triexbook::{
     balance_manager_tests::{Self as balance_manager_tests, USDC},
     constants,
     integration_test_utils as utils,
     math,
-    pool::Pool,
-    pool_tests,
-    registry
+    pool_test_utils,
+    pool_tests
 };
 
 #[test]
@@ -240,15 +239,15 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     );
     assert!(quote_locked == quote + fee_at_default_rate, 0);
 
-    // Admin lowers the rates for the next epoch: taker 1%, maker 0.5%.
-    test.next_tx(utils::owner());
-    {
-        let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
-        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool1_id);
-        pool.set_next_epoch_fee(10_000_000, 5_000_000, 2000, &admin_cap);
-        return_shared(pool);
-        destroy(admin_cap);
-    };
+    // Admin lowers the rates for the next epoch: taker 1%, maker 0.5%. The
+    // pool was born into the standard USDC class, so restaging that class on
+    // the shared policy is what re-prices it.
+    pool_test_utils::set_next_epoch_fee_for_testing<USDC>(
+        10_000_000,
+        5_000_000,
+        2000,
+        &mut test,
+    );
     test.next_epoch(utils::owner());
 
     // The resting order still reports its snapshotted 1.8% rate.
