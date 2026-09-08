@@ -8,7 +8,7 @@ on-chain Move packages that power the exchange and CRED, its native fee currency
 
 | Package | Path | Description |
 | --- | --- | --- |
-| `triexbook` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), balance manager, multi-coin pool, and admin controls. |
+| `triexbook` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), trading account, multi-coin pool, and admin controls. |
 | `token` | [`packages/token/`](packages/token/) | The `CRED` token (`cred.move`) — a neutral trading currency used to pay trading fees. It is not a governance token and confers no voting or staking rights. |
 
 `triexbook` depends on `token` via a local path (`token = { local = "../token" }`),
@@ -24,9 +24,9 @@ A `Pool` is composed of three distinct parts that define the flow for every acti
 2. **State** — maintains per-user data, volumes, historic volumes, and trade parameters.
 3. **Vault** — settles user funds after an action executes.
 
-The `BalanceManager` is a shared object holding all balances for a single account.
+The `TradingAccount` is a shared object holding all balances for a single account.
 It has one owner and up to 1000 traders, and is required as an input to (almost) all
-interactions with the exchange. A single `BalanceManager` can be used across all pools.
+interactions with the exchange. A single `TradingAccount` can be used across all pools.
 
 See [`packages/triex/README.md`](packages/triex/README.md) for the full protocol
 description, and [`CAPABILITIES.md`](CAPABILITIES.md) for the trust model and the full list
