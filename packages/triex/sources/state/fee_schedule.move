@@ -64,10 +64,6 @@ public fun maker_fee(self: &FeeTier): u64 {
 }
 
 // === Public-Package Functions ===
-public(package) fun new_tier(min_turnover: u128, taker_fee: u64, maker_fee: u64): FeeTier {
-    FeeTier { min_turnover, taker_fee, maker_fee }
-}
-
 /// A one-rung ladder, which prices exactly like the flat rate it replaces.
 /// `set_next_epoch_fee` builds one of these, so flat fees and tiered fees share
 /// a single resolution path rather than branching at fill time.

@@ -35,10 +35,8 @@ fun calculate_partial_fill_balances_ok() {
         maker_fee,
     );
 
-    let maker_fee_bps = quote_fee::scaled_to_bps(maker_fee);
-    let mut maker_fee_info = quote_fee::new(maker_fee_bps);
     let locked_quote = math::mul(quantity, price);
-    let expected_maker_fee_quote = maker_fee_info.calculate_maker_fee(locked_quote);
+    let expected_maker_fee_quote = quote_fee::fee_from_scaled_rate(maker_fee, locked_quote);
 
     assert_eq!(settled, balances::new(0, 0, 0));
     assert_eq!(owed, balances::new(0, locked_quote + expected_maker_fee_quote, 0));
@@ -69,10 +67,8 @@ fun calculate_partial_fill_balances_precision_ok() {
         maker_fee,
     );
 
-    let maker_fee_bps = quote_fee::scaled_to_bps(maker_fee);
-    let mut maker_fee_info = quote_fee::new(maker_fee_bps);
     let locked_quote = math::mul(quantity, price);
-    let expected_maker_fee_quote = maker_fee_info.calculate_maker_fee(locked_quote);
+    let expected_maker_fee_quote = quote_fee::fee_from_scaled_rate(maker_fee, locked_quote);
 
     assert_eq!(settled, balances::new(0, 0, 0));
     assert_eq!(owed, balances::new(0, locked_quote + expected_maker_fee_quote, 0));
@@ -101,10 +97,8 @@ fun calculate_partial_fill_balances_precision2_ok() {
         maker_fee,
     );
 
-    let maker_fee_bps = quote_fee::scaled_to_bps(maker_fee);
-    let mut maker_fee_info = quote_fee::new(maker_fee_bps);
     let locked_quote = math::mul(quantity, price);
-    let expected_fee = maker_fee_info.calculate_maker_fee(locked_quote);
+    let expected_fee = quote_fee::fee_from_scaled_rate(maker_fee, locked_quote);
 
     assert_eq!(settled, balances::new(0, 0, 0));
     // USDC owed = price * quantity + maker fee (quote-denominated)

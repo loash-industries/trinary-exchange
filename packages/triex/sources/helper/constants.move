@@ -299,9 +299,23 @@ public fun bidder_fee(): u64 {
     BASE_FEE
 }
 #[test_only]
+/// Legacy fee fixture, kept because ~60 test call sites are pinned to these
+/// exact numbers. Two things about it no longer describe the protocol:
+///
+/// - 2% was `MAX_TAKER_VOLATILE`, a bound that no longer exists. The live
+///   defaults are `DEFAULT_TAKER_FEE` 2.2% and `DEFAULT_MAKER_FEE` 1.8%
+///   (`governance.move`), and rates are now per-account anyway, resolved from
+///   trailing turnover rather than read off a constant.
+/// - Returning 0 for asks encodes the pre-dual-sided-fee rule that only bids
+///   paid. Asks now pay a taker fee out of their quote proceeds, so any test
+///   passing this as the taker rate is exercising the zero-fee path, not the
+///   real one.
+///
+/// Prefer resolving rates from the pool (`trade_params_for_account`) or pricing
+/// through `quote_fee::fee_from_scaled_rate` in new tests.
 public fun maybe_apply_fee(is_bid: bool): u64 {
     if (is_bid) {
-        20_000_000 // MAX_TAKER_VOLATILE - default fee for volatile pools (2%)
+        20_000_000 // 2%
     } else {
         0
     }
