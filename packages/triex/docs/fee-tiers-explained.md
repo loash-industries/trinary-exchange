@@ -89,7 +89,7 @@ CRED pools" is another, and a single negotiated market-maker deal is just a clas
 with one pool in it. Re-pricing a class re-prices every pool in it, in one
 transaction.
 
-The exchange's admin (holding `TriexbookAdminCap`) configures classes. Built-in
+The exchange's admin (holding `TriexAdminCap`) configures classes. Built-in
 guardrails, enforced no matter what the admin sets:
 
 - **Up to 16 levels** per class.

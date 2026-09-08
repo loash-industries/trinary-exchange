@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_pool_swap_quantity_tests {
+module triex::integration_multicoin_pool_swap_quantity_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -11,9 +8,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -22,7 +17,9 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC
     };
 
     // Test addresses
@@ -317,7 +314,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EMinimumQuantityOutNotMet)]
     fun test_multicoin_pool_swap_exact_quote_for_base_min_not_met_e() {
         let mut test = begin(OWNER);
 

@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Order module defines the order struct and its methods.
 /// All order matching happens in this module.
-module triexbook::order {
+module triex::order {
     use sui::event;
-    use triexbook::{balances::{Self, Balances}, constants, fill::{Self, Fill}, math, quote_fee};
+    use triex::{balances::{Self, Balances}, constants, fill::{Self, Fill}, math, quote_fee};
 
     // === Errors ===
     const EInvalidNewQuantity: u64 = 0;

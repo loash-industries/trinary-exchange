@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_pool_advanced_tests {
+module triex::integration_multicoin_pool_advanced_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -12,9 +9,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -26,6 +21,8 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         pool_test_utils,
         quote_fee,
         registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC,
         vault
     };
 
@@ -1742,12 +1739,12 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         multicoin_test_swap_exact_not_fully_filled(false, true, false, false, false);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EMinimumQuantityOutNotMet)]
     fun test_multicoin_pool_swap_exact_not_fully_filled_bid_min_e() {
         multicoin_test_swap_exact_not_fully_filled(true, false, true, false, false);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EMinimumQuantityOutNotMet)]
     fun test_multicoin_pool_swap_exact_not_fully_filled_ask_min_e() {
         multicoin_test_swap_exact_not_fully_filled(false, false, true, false, false);
     }
@@ -1779,12 +1776,12 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         multicoin_test_swap_exact_not_fully_filled(false, true, false, false, true);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EMinimumQuantityOutNotMet)]
     fun test_multicoin_pool_swap_exact_not_fully_filled_bid_with_trading_account_min_e() {
         multicoin_test_swap_exact_not_fully_filled(true, false, true, false, true);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EMinimumQuantityOutNotMet)]
     fun test_multicoin_pool_swap_exact_not_fully_filled_ask_with_trading_account_min_e() {
         multicoin_test_swap_exact_not_fully_filled(false, false, true, false, true);
     }
@@ -1842,12 +1839,12 @@ module triexbook::integration_multicoin_pool_advanced_tests {
 
     // === Price Sentinel Tests ===
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EOrderInvalidPrice)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EOrderInvalidPrice)]
     fun test_multicoin_pool_place_order_with_maxu64_as_price_e() {
         multicoin_test_place_order_edge_price(constants::max_u64());
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EOrderInvalidPrice)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EOrderInvalidPrice)]
     fun test_multicoin_pool_place_order_with_zero_as_price_e() {
         multicoin_test_place_order_edge_price(0);
     }
@@ -1905,7 +1902,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EEmptyOrderbook)]
+    #[test, expected_failure(abort_code = ::triex::book::EEmptyOrderbook)]
     fun test_multicoin_pool_mid_price_empty_orderbook_e() {
         let mut test = begin(OWNER);
 
@@ -1958,7 +1955,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EPoolNotRegistered)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EPoolNotRegistered)]
     fun test_multicoin_pool_unregister_pool_admin_twice_e() {
         let mut test = begin(OWNER);
 
@@ -1987,7 +1984,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EInvalidFee)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EInvalidFee)]
     fun test_multicoin_permissionless_pool_invalid_fee_e() {
         let mut test = begin(OWNER);
 
@@ -2087,7 +2084,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
 
     // === Order Modification Tests ===
 
-    #[test, expected_failure(abort_code = ::triexbook::book::ENewQuantityMustBeLessThanOriginal)]
+    #[test, expected_failure(abort_code = ::triex::book::ENewQuantityMustBeLessThanOriginal)]
     fun test_multicoin_pool_modify_order_increase_bid_e() {
         multicoin_test_modify_order(
             2,
@@ -2097,7 +2094,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::ENewQuantityMustBeLessThanOriginal)]
+    #[test, expected_failure(abort_code = ::triex::book::ENewQuantityMustBeLessThanOriginal)]
     fun test_multicoin_pool_modify_order_increase_ask_e() {
         multicoin_test_modify_order(
             2,
@@ -2107,7 +2104,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order::EInvalidNewQuantity)]
+    #[test, expected_failure(abort_code = ::triex::order::EInvalidNewQuantity)]
     fun test_multicoin_pool_modify_order_invalid_new_quantity_bid_e() {
         multicoin_test_modify_order(
             3,
@@ -2117,7 +2114,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order::EInvalidNewQuantity)]
+    #[test, expected_failure(abort_code = ::triex::order::EInvalidNewQuantity)]
     fun test_multicoin_pool_modify_order_invalid_new_quantity_ask_e() {
         multicoin_test_modify_order(
             3,
@@ -2147,7 +2144,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::ENewQuantityMustBeLessThanOriginal)]
+    #[test, expected_failure(abort_code = ::triex::book::ENewQuantityMustBeLessThanOriginal)]
     fun test_multicoin_pool_modify_order_increase_bid_input_e() {
         multicoin_test_modify_order(
             2,
@@ -2157,7 +2154,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::ENewQuantityMustBeLessThanOriginal)]
+    #[test, expected_failure(abort_code = ::triex::book::ENewQuantityMustBeLessThanOriginal)]
     fun test_multicoin_pool_modify_order_increase_ask_input_e() {
         multicoin_test_modify_order(
             2,
@@ -2167,7 +2164,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order::EInvalidNewQuantity)]
+    #[test, expected_failure(abort_code = ::triex::order::EInvalidNewQuantity)]
     fun test_multicoin_pool_modify_order_invalid_new_quantity_bid_input_e() {
         multicoin_test_modify_order(
             3,
@@ -2177,7 +2174,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         );
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order::EInvalidNewQuantity)]
+    #[test, expected_failure(abort_code = ::triex::order::EInvalidNewQuantity)]
     fun test_multicoin_pool_modify_order_invalid_new_quantity_ask_input_e() {
         multicoin_test_modify_order(
             3,
@@ -2250,7 +2247,7 @@ module triexbook::integration_multicoin_pool_advanced_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::multicoin_pool::EQuoteNotApproved)]
+    #[test, expected_failure(abort_code = ::triex::multicoin_pool::EQuoteNotApproved)]
     fun test_multicoin_create_pool_unapproved_quote_e() {
         let mut test = begin(OWNER);
 

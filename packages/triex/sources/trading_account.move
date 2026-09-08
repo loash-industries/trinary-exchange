@@ -1,12 +1,9 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// The TradingAccount is a shared object that holds all of the balances for different assets. A combination of `TradingAccount` and
 /// `TradeProof` are passed into a pool to perform trades. A `TradeProof` can be generated in two ways: by the
 /// owner directly, or by any `TradeCap` owner. The owner can generate a `TradeProof` without the risk of
 /// equivocation. The `TradeCap` owner, due to it being an owned object, risks equivocation when generating
 /// a `TradeProof`. Generally, a high frequency trading engine will trade as the default owner.
-module triexbook::trading_account {
+module triex::trading_account {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
     use std::type_name::{Self, TypeName};
     use sui::{
@@ -18,7 +15,7 @@ module triexbook::trading_account {
         event,
         vec_set::{Self, VecSet}
     };
-    use triexbook::{fee_turnover::{Self, EpochAmount, FeeTurnover}, registry::Registry};
+    use triex::{fee_turnover::{Self, EpochAmount, FeeTurnover}, registry::Registry};
 
     // use fun df::borrow as UID.borrow;
     // use fun df::exists_ as UID.exists_;
@@ -99,25 +96,25 @@ module triexbook::trading_account {
     }
 
     // #feat:refer
-    // public struct TriexBookReferral has key, store {
+    // public struct TriexReferral has key, store {
     //     id: UID,
     //     owner: address,
     // }
 
     // #feat:refer
-    // public struct TriexBookReferralCreatedEvent has copy, drop {
+    // public struct TriexReferralCreatedEvent has copy, drop {
     //     referral_id: ID,
     //     owner: address,
     // }
 
     // #feat:refer
-    // public struct TriexBookReferralSetEvent has copy, drop {
+    // public struct TriexReferralSetEvent has copy, drop {
     //     referral_id: ID,
     //     trading_account_id: ID,
     // }
 
     /// TradingAccount owner and `TradeCap` owners can generate a `TradeProof`.
-    /// `TradeProof` is used to validate the trading_account when trading on TriexBook.
+    /// `TradeProof` is used to validate the trading_account when trading on Triex.
     public struct TradeProof has drop {
         trading_account_id: ID,
         trader: address,
@@ -196,14 +193,14 @@ module triexbook::trading_account {
     // /// #ref:functions
     // public fun set_referral(
     //     trading_account: &mut TradingAccount,
-    //     referral: &TriexBookReferral,
+    //     referral: &TriexReferral,
     //     trade_cap: &TradeCap,
     // ) {
     //     trading_account.validate_trader(trade_cap);
     //     let _: Option<ID> = trading_account.id.remove_if_exists(constants::referral_df_key());
     //     trading_account.id.add(constants::referral_df_key(), referral.id.to_inner());
 
-    //     event::emit(TriexBookReferralSetEvent {
+    //     event::emit(TriexReferralSetEvent {
     //         referral_id: referral.id.to_inner(),
     //         trading_account_id: trading_account.id.to_inner(),
     //     });
@@ -216,7 +213,7 @@ module triexbook::trading_account {
     //     trading_account.validate_trader(trade_cap);
     //     let _: Option<ID> = trading_account.id.remove_if_exists(constants::referral_df_key());
 
-    //     event::emit(TriexBookReferralSetEvent {
+    //     event::emit(TriexReferralSetEvent {
     //         referral_id: id_from_address(@0x0),
     //         trading_account_id: trading_account.id.to_inner(),
     //     });
@@ -559,7 +556,7 @@ module triexbook::trading_account {
     }
 
     // #feat:refer
-    // public fun referral_owner(referral: &TriexBookReferral): address {
+    // public fun referral_owner(referral: &TriexReferral): address {
     //     referral.owner
     // }
 
@@ -633,16 +630,16 @@ module triexbook::trading_account {
     }
 
     // #feat:refer
-    // /// Mint a `TriexBookReferral` and share it.
+    // /// Mint a `TriexReferral` and share it.
     // public(package) fun mint_referral(ctx: &mut TxContext): ID {
     //     let id = object::new(ctx);
     //     let referral_id = id.to_inner();
-    //     let referral = TriexBookReferral {
+    //     let referral = TriexReferral {
     //         id,
     //         owner: ctx.sender(),
     //     };
 
-    //     event::emit(TriexBookReferralCreatedEvent {
+    //     event::emit(TriexReferralCreatedEvent {
     //         referral_id,
     //         owner: ctx.sender(),
     //     });
@@ -665,7 +662,7 @@ module triexbook::trading_account {
     // }
 
     // #feat:refer
-    // public(package) fun assert_referral_owner(referral: &TriexBookReferral, ctx: &TxContext) {
+    // public(package) fun assert_referral_owner(referral: &TriexReferral, ctx: &TxContext) {
     //     assert!(ctx.sender() == referral.owner, EInvalidReferralOwner);
     // }
 

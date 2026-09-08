@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::trading_account_tests {
+module triex::trading_account_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test::destroy;
     use sui::{
@@ -11,7 +8,7 @@ module triexbook::trading_account_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap};
+    use triex::trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap};
 
     public struct SPAM has store {}
     public struct USDC has store {}
@@ -566,9 +563,9 @@ module triexbook::trading_account_tests {
 
     //     test.next_tx(alice);
     //     {
-    //         let referral1 = test.take_shared_by_id<TriexBookReferral>(referral_id1);
+    //         let referral1 = test.take_shared_by_id<TriexReferral>(referral_id1);
     //         assert!(referral1.referral_owner() == alice, 0);
-    //         let referral2 = test.take_shared_by_id<TriexBookReferral>(referral_id2);
+    //         let referral2 = test.take_shared_by_id<TriexReferral>(referral_id2);
     //         assert!(referral2.referral_owner() == alice, 0);
 
     //         let mut trading_account = trading_account::new(test.ctx());

@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_basic_tests {
+module triex::pool_basic_tests {
     use std::unit_test::destroy;
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared, Scenario}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{create_acct_and_share_with_funds, SPAM, USDC, USDT},
+    use triex::{
         constants,
         pool::{Self, Pool},
         pool_test_utils,
-        registry::Registry
+        registry::Registry,
+        trading_account_tests::{create_acct_and_share_with_funds, SPAM, USDC, USDT}
     };
 
     const OWNER: address = @0x1;
@@ -632,7 +629,7 @@ module triexbook::pool_basic_tests {
         place_cancel_pool_case();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool::EQuoteNotApproved)]
+    #[test, expected_failure(abort_code = ::triex::pool::EQuoteNotApproved)]
     fun test_create_pool_unapproved_quote_e() {
         create_pool_unapproved_quote_case();
     }
@@ -647,7 +644,7 @@ module triexbook::pool_basic_tests {
         unregister_pool_case(true);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::registry::EPoolAlreadyExists)]
+    #[test, expected_failure(abort_code = ::triex::registry::EPoolAlreadyExists)]
     fun test_duplicate_pool_e() {
         unregister_pool_case(false);
     }
@@ -662,17 +659,17 @@ module triexbook::pool_basic_tests {
         permissionless_pools_case();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EInvalidOrderType)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EInvalidOrderType)]
     fun test_place_order_max_restrictions_e() {
         place_order_max_restrictions_case();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_place_and_cancel_order_empty_e() {
         place_and_cancel_order_empty_case();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EInvalidExpireTimestamp)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EInvalidExpireTimestamp)]
     fun test_place_order_expired_order_skipped() {
         place_order_expired_order_skipped_case();
     }

@@ -1,20 +1,21 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::order_query_tests {
+module triex::order_query_tests {
     use std::unit_test::destroy;
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{
-            USDC,
-            create_acct_and_share_with_funds as create_acct_and_share_with_funds
-        },
+    use triex::{
         constants,
         order_query::iter_orders,
         pool::Pool,
-        pool_tests::{setup_test, setup_pool_with_default_fees_and_reference_pool, place_limit_order}
+        pool_tests::{
+            setup_test,
+            setup_pool_with_default_fees_and_reference_pool,
+            place_limit_order
+        },
+        trading_account_tests::{
+            USDC,
+            create_acct_and_share_with_funds as create_acct_and_share_with_funds
+        }
     };
 
     const OWNER: address = @0x1;

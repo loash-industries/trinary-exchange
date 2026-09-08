@@ -1,7 +1,4 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
-module triexbook::constants {
+module triex::constants {
     const CURRENT_VERSION: u64 = 4; // Update version during upgrades
     const POOL_CREATION_FEE: u64 = 500 * 1_000_000; // 500 CRED
     const FLOAT_SCALING: u64 = 1_000_000_000;

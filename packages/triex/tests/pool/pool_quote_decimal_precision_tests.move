@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// End-to-end fee-precision tests for Pool<SUI, Qn> across quote currencies
 /// of varying decimal precision.
 ///
@@ -24,7 +21,7 @@
 /// Each test places a maker ask then a crossing taker bid, then validates
 /// both OrderInfo.paid_fees() and the vault's quote_fee_reserve_balance().
 #[test_only]
-module triexbook::pool_quote_decimal_precision_tests {
+module triex::pool_quote_decimal_precision_tests {
     use std::unit_test::destroy;
     use sui::{
         clock::{Self, Clock},
@@ -32,13 +29,13 @@ module triexbook::pool_quote_decimal_precision_tests {
         sui::SUI,
         test_scenario::{begin, end, return_shared}
     };
-    use triexbook::{
-        trading_account::{Self as trading_account, TradingAccount},
+    use triex::{
         constants,
         fee_policy::{Self, FeePolicy},
         math,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self as trading_account, TradingAccount}
     };
 
     const OWNER: address = @0x1;

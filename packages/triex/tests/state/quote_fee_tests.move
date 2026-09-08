@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::quote_fee_tests {
-    use triexbook::{constants, quote_fee};
+module triex::quote_fee_tests {
+    use triex::{constants, quote_fee};
 
     // === fee_from_scaled_rate ===
     // The single helper every quote fee prices through: order placement, fill

@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_registry_trading_account_tests {
+module triex::integration_multicoin_registry_trading_account_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -11,8 +8,7 @@ module triexbook::integration_multicoin_registry_trading_account_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+    use triex::{
         constants,
         fill::Fill,
         integration_multicoin_test_utils as mc_utils,
@@ -20,7 +16,8 @@ module triexbook::integration_multicoin_registry_trading_account_tests {
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap}
     };
 
     // Test addresses

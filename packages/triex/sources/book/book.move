@@ -3,8 +3,8 @@
 
 /// The book module contains the `Book` struct which represents the order book.
 /// All order book operations are defined in this module.
-module triexbook::book {
-    use triexbook::{constants, math, order::Order, order_info::OrderInfo, quote_fee};
+module triex::book {
+    use triex::{constants, math, order::Order, order_info::OrderInfo, quote_fee};
 
     /// === Errors ===
     const EInvalidAmountIn: u64 = 1;

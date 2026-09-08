@@ -1,13 +1,10 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// The vault holds all of the assets for this pool. At the end of all
 /// transaction processing, the vault is used to settle the balances for the user.
-module triexbook::vault {
+module triex::vault {
     use std::type_name::{Self, TypeName};
     use sui::{balance::{Self, Balance}, coin::{Self, Coin}, event};
     use token::cred::CRED;
-    use triexbook::{trading_account::{TradeProof, TradingAccount}, balances::Balances};
+    use triex::{balances::Balances, trading_account::{TradeProof, TradingAccount}};
 
     // === Errors ===
     const EInsufficientFeeReserve: u64 = 0;

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-MODULE_DIR="$PKG_DIR/build/triexbook/bytecode_modules"
+MODULE_DIR="$PKG_DIR/build/triex/bytecode_modules"
 
 MODULES=(
   account

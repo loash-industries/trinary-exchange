@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// End-to-end fee-precision tests for MultiCoinPool<Qn> across quote currencies
 /// of varying decimal precision.
 ///
@@ -29,7 +26,7 @@
 /// then validates both OrderInfo.paid_fees() and vault.quote_fee_reserve_balance().
 /// The buggy value is computed inline to make the contrast explicit.
 #[test_only]
-module triexbook::multicoin_pool_quote_decimal_precision_tests {
+module triex::multicoin_pool_quote_decimal_precision_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test::destroy;
     use sui::{
@@ -37,14 +34,14 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
         coin::mint_for_testing,
         test_scenario::{begin, end, return_shared}
     };
-    use triexbook::{
-        trading_account::{Self as trading_account, TradingAccount},
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         math,
         multicoin_pool::{Self, MultiCoinPool},
         pool_test_utils,
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self as trading_account, TradingAccount}
     };
 
     /// Fresh class id for each test's bespoke quote type — clear of the ids the

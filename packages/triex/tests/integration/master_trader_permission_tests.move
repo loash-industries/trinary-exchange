@@ -1,16 +1,13 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_master_trader_permission_tests {
+module triex::integration_master_trader_permission_tests {
     use sui::{sui::SUI, test_scenario::{begin, end}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{Self as trading_account_tests, USDC},
+    use triex::{
         constants,
         integration_test_utils::{Self as utils, ExpectedBalances},
         math,
-        pool_tests
+        pool_tests,
+        trading_account_tests::{Self as trading_account_tests, USDC}
     };
 
     const NoError: u64 = 0;
@@ -37,17 +34,17 @@ module triexbook::integration_master_trader_permission_tests {
         test_trader_permission_and_modify_returned(NoErrorCredAsBase)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidOwner)]
+    #[test, expected_failure(abort_code = ::triex::trading_account::EInvalidOwner)]
     fun test_trader_permission_and_modify_returned_invalid_owner_e() {
         test_trader_permission_and_modify_returned(EInvalidOwner)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::trading_account::ECapNotInList)]
+    #[test, expected_failure(abort_code = ::triex::trading_account::ECapNotInList)]
     fun test_trader_permission_and_modify_trader_not_in_list_e() {
         test_trader_permission_and_modify_returned(ECapNotInListAbort)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidTrader)]
+    #[test, expected_failure(abort_code = ::triex::trading_account::EInvalidTrader)]
     fun test_trader_permission_invalid_trader_e() {
         test_trader_permission_and_modify_returned(EInvalidTraderAbort)
     }

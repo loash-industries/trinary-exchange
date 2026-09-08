@@ -1,20 +1,15 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Integration tests that pin the price_scaling = 1 fix for multicoin pools.
 ///
 /// These tests would have failed with the pre-fix code (math::mul divides by
 /// FLOAT_SCALING, silently producing quotes 1e9× too small for 0-decimal bases).
 /// They prove the fix is wired end-to-end through OrderInfo and process_modify.
 #[test_only]
-module triexbook::integration_multicoin_pool_price_scaling_tests {
+module triex::integration_multicoin_pool_price_scaling_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{clock::{Self, Clock}, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         integration_multicoin_test_utils as mc_utils,
@@ -22,7 +17,9 @@ module triexbook::integration_multicoin_pool_price_scaling_tests {
         multicoin_pool::{Self, MultiCoinPool},
         pool_test_utils,
         quote_fee,
-        registry::{Self as registry, Registry}
+        registry::{Self as registry, Registry},
+        trading_account::{Self, TradingAccount},
+        trading_account_tests::USDC
     };
 
     const OWNER: address = @0x1;

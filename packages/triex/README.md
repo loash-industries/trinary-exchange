@@ -11,7 +11,7 @@ The package ships two parallel pool implementations:
 
 | | Standard pool | MultiCoin pool |
 | --- | --- | --- |
-| Module | `triexbook::pool` | `triexbook::multicoin_pool` |
+| Module | `triex::pool` | `triex::multicoin_pool` |
 | Pool type | `Pool<BaseAsset, QuoteAsset>` | `MultiCoinPool<QuoteAsset>` |
 | Base asset | A Sui `Coin<BaseAsset>` type | A [multicoin](https://github.com/Algorithmic-Warfare/multicoin) balance identified at runtime by `(collection_id, asset_id)` |
 | Vault storage | `Balance<BaseAsset>` + `Balance<QuoteAsset>` | Dual storage: quote/CRED in Sui `Balance`s, base in a dynamic object field keyed by `(collection_id, asset_id)` |
@@ -40,7 +40,7 @@ Two shared objects sit alongside the pools:
 - **`Registry`** (`sources/registry.move`) — singleton created at publish
   time. Tracks all pools (preventing duplicates per asset pair), the treasury
   address, allowed package versions, approved quote coins, and the
-  `TriexbookAdminCap` capability that gates all admin functions.
+  `TriexAdminCap` capability that gates all admin functions.
 - **`TradingAccount`** (`sources/trading_account.move`) — holds all of one
   account's balances (both regular coins and multicoin assets) and is passed
   into nearly every exchange interaction; one account works across all pools.
@@ -51,8 +51,8 @@ Two shared objects sit alongside the pools:
 
 ## Trading interface
 
-The public entry points live in `triexbook::pool` and
-`triexbook::multicoin_pool` (mirrored signatures):
+The public entry points live in `triex::pool` and
+`triex::multicoin_pool` (mirrored signatures):
 
 - **Pool creation** — `create_permissionless_pool` (burns a CRED creation
   fee), plus admin-gated `create_pool_admin` / `unregister_pool_admin`.
@@ -70,7 +70,7 @@ The public entry points live in `triexbook::pool` and
 - **Queries** — `mid_price`, `get_quantity_out`, `get_level2_range`,
   `get_level2_ticks_from_mid`, `account_open_orders`, `locked_balance`,
   `vault_balances`, and paginated order iteration via
-  `triexbook::order_query` (`OrderPage`).
+  `triex::order_query` (`OrderPage`).
 
 ### Fees
 
@@ -82,7 +82,7 @@ Pools support two fee modes:
   used only to pay fees and confers no voting or staking rights.
 - **Quote fees** — the `..._with_quote_fees` order variants accrue fees in
   the pool's quote currency into a `quote_fee_reserve`
-  (`triexbook::quote_fee`), which the admin sweeps with
+  (`triex::quote_fee`), which the admin sweeps with
   `withdraw_pool_fees`. A bid maker's fee is *escrow*, not revenue, until
   their order resolves: `locked_maker_fees` tracks it and the sweep is capped
   at `withdrawable_pool_fees` (reserve minus escrow), so an admin can never
@@ -107,7 +107,7 @@ time. The original
 DeepBook stake/proposal/vote system, flash loans, and referral system are
 present in the source but disabled (commented out) — none of them are part of
 this protocol. An optional
-EWMA state (`triexbook::ewma`) tracks smoothed reference gas price mean and
+EWMA state (`triex::ewma`) tracks smoothed reference gas price mean and
 variance and can add a taker-fee penalty when the current gas price's z-score
 signals congestion.
 
@@ -125,7 +125,7 @@ sources/
 ├── pool.move             # Public trading interface (standard pools)
 ├── multicoin_pool.move   # Public trading interface (multicoin pools)
 ├── trading_account.move  # TradingAccount + TradeCap/DepositCap/WithdrawCap
-├── registry.move         # Pool registry, TriexbookAdminCap, versioning
+├── registry.move         # Pool registry, TriexAdminCap, versioning
 ├── order_query.move      # Paginated order iteration (OrderPage)
 ├── book/                 # Order book: book, order, order_info, fill
 ├── state/                # state, account, history, governance, trade_params,
@@ -240,7 +240,7 @@ and license headers are retained in the source files.
 
 **Notice of changes** (per Apache-2.0 §4(b)): the Move sources in this package
 have been modified from the original DeepBook v3 code. Notable changes include
-renaming the package and modules to `triexbook`, replacing the DEEP token with
+renaming the package and modules to `triex`, replacing the DEEP token with
 the `CRED` token, adding the MultiCoin pool/vault variants
 (`multicoin_pool`, `multicoin_vault`) with runtime-identified base assets and
 adjusted price scaling, adding quote-denominated fee collection

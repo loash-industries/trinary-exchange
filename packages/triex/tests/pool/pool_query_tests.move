@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_query_tests {
-    use triexbook::pool_test_utils;
+module triex::pool_query_tests {
+    use triex::pool_test_utils;
 
     #[test]
     fun test_get_order() {

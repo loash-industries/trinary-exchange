@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_master_flow_tests {
+module triex::integration_master_flow_tests {
     use sui::{sui::SUI, test_scenario::{begin, end}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
+    use triex::{
         balances,
         constants,
         integration_test_utils::{Self as utils, ExpectedBalances},
         math,
-        pool_tests
+        pool_tests,
+        trading_account_tests::{Self as trading_account_tests, SPAM, USDC}
     };
 
     const NoError: u64 = 0;
@@ -24,17 +21,12 @@ module triexbook::integration_master_flow_tests {
         test_master(NoError)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::registry::EPoolAlreadyExists)]
+    #[test, expected_failure(abort_code = ::triex::registry::EPoolAlreadyExists)]
     fun test_master_duplicate_pool_e() {
         test_master(EDuplicatePool)
     }
 
-    #[
-        test,
-        expected_failure(
-            abort_code = ::triexbook::trading_account::ETradingAccountBalanceTooLow,
-        ),
-    ]
+    #[test, expected_failure(abort_code = ::triex::trading_account::ETradingAccountBalanceTooLow)]
     fun test_master_not_enough_funds_e() {
         test_master(ENotEnoughFunds)
     }

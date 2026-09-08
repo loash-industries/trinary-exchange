@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_pool_order_management_tests {
+module triex::integration_multicoin_pool_order_management_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -11,9 +8,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -22,7 +17,9 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC
     };
 
     // Test addresses
@@ -287,7 +284,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::ENewQuantityMustBeLessThanOriginal)]
+    #[test, expected_failure(abort_code = ::triex::book::ENewQuantityMustBeLessThanOriginal)]
     fun test_multicoin_pool_modify_order_increase_e() {
         let mut test = begin(OWNER);
 
@@ -1196,7 +1193,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
 
     // === High Priority: Expired Order Removal ===
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_expired_order_removed_bid_e() {
         let mut test = begin(OWNER);
 
@@ -1322,7 +1319,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_expired_order_removed_ask_e() {
         let mut test = begin(OWNER);
 
@@ -2122,7 +2119,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
 
     // === High Priority: Price Validation ===
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EOrderInvalidPrice)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EOrderInvalidPrice)]
     fun test_multicoin_pool_price_above_max_e() {
         let mut test = begin(OWNER);
 
@@ -2169,7 +2166,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EOrderInvalidPrice)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EOrderInvalidPrice)]
     fun test_multicoin_pool_price_below_min_e() {
         let mut test = begin(OWNER);
 
@@ -2683,7 +2680,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_get_order_not_found_e() {
         let mut test = begin(OWNER);
 
@@ -2857,7 +2854,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order::EInvalidNewQuantity)]
+    #[test, expected_failure(abort_code = ::triex::order::EInvalidNewQuantity)]
     fun test_multicoin_pool_modify_order_after_partial_fill_below_filled_e() {
         let mut test = begin(OWNER);
 
@@ -3196,7 +3193,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
 
     // === Medium Priority: Invalid Operations ===
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_cancel_already_canceled_e() {
         let mut test = begin(OWNER);
 
@@ -3250,7 +3247,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_cancel_nonexistent_order_e() {
         let mut test = begin(OWNER);
 
@@ -3284,7 +3281,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EInvalidOrderType)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EInvalidOrderType)]
     fun test_multicoin_pool_invalid_order_type_e() {
         let mut test = begin(OWNER);
 
@@ -3331,7 +3328,7 @@ module triexbook::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_modify_nonexistent_order_e() {
         let mut test = begin(OWNER);
 

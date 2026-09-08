@@ -1,15 +1,12 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// MultiCoinVault implements the Dual Storage pattern for MultiCoin/Coin pools.
 /// - Base assets: MultiCoin Balance objects stored via dynamic object fields
 /// - Quote assets: Traditional Sui Balance<QuoteAsset>
 /// - CRED: Traditional Sui Balance<CRED> for fee payments
-module triexbook::multicoin_vault {
+module triex::multicoin_vault {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
     use sui::{balance::{Self, Balance}, coin::{Self, Coin}, dynamic_object_field as dof};
     use token::cred::CRED;
-    use triexbook::{trading_account::{TradeProof, TradingAccount}, balances::Balances, vault};
+    use triex::{balances::Balances, trading_account::{TradeProof, TradingAccount}, vault};
 
     // === Errors ===
     const EInsufficientBaseBalance: u64 = 1;

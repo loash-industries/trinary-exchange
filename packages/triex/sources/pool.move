@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Public-facing interface for the package.
-module triexbook::pool {
+module triex::pool {
     use std::type_name;
     use sui::{
         clock::Clock,
@@ -12,17 +9,17 @@ module triexbook::pool {
         versioned::{Self, Versioned}
     };
     use token::cred::{CRED, ProtectedTreasury};
-    use triexbook::{
+    use triex::{
         account::Account,
-        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
         order::Order,
         order_info::{Self, OrderInfo},
-        registry::{TriexbookAdminCap, Registry},
+        registry::{TriexAdminCap, Registry},
         state::{Self, State},
+        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         vault::{Self, Vault}
     };
 
@@ -806,7 +803,7 @@ module triexbook::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         policy: &FeePolicy,
         fee_class: u16,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         policy.assert_class_matches_quote(
             fee_class,
@@ -892,7 +889,7 @@ module triexbook::pool {
     }
 
     // #feat:refer
-    // /// Mint a TriexBookReferral and set the additional bps for the referral.
+    // /// Mint a TriexReferral and set the additional bps for the referral.
     // public fun mint_referral<BaseAsset, QuoteAsset>(
     //     self: &mut Pool<BaseAsset, QuoteAsset>,
     //     multiplier: u64,
@@ -921,7 +918,7 @@ module triexbook::pool {
     // /// Update the multiplier for the referral.
     // public fun update_referral_multiplier<BaseAsset, QuoteAsset>(
     //     self: &mut Pool<BaseAsset, QuoteAsset>,
-    //     referral: &TriexBookReferral,
+    //     referral: &TriexReferral,
     //     multiplier: u64,
     //     ctx: &TxContext,
     // ) {
@@ -940,7 +937,7 @@ module triexbook::pool {
     // /// Claim the rewards for the referral.
     // public fun claim_referral_rewards<BaseAsset, QuoteAsset>(
     //     self: &mut Pool<BaseAsset, QuoteAsset>,
-    //     referral: &TriexBookReferral,
+    //     referral: &TriexReferral,
     //     ctx: &mut TxContext,
     // ): (Coin<BaseAsset>, Coin<QuoteAsset>, Coin<CRED>) {
     //     let _ = self.load_inner();
@@ -973,7 +970,7 @@ module triexbook::pool {
     public fun create_pool_admin<BaseAsset, QuoteAsset>(
         registry: &mut Registry,
         policy: &FeePolicy,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         ctx: &mut TxContext,
     ): ID {
         let creation_fee = coin::zero(ctx);
@@ -989,7 +986,7 @@ module triexbook::pool {
     public fun unregister_pool_admin<BaseAsset, QuoteAsset>(
         self: &mut Pool<BaseAsset, QuoteAsset>,
         registry: &mut Registry,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let self = self.load_inner_mut();
         assert!(self.registered_pool, EPoolNotRegistered);
@@ -1003,7 +1000,7 @@ module triexbook::pool {
     public fun update_allowed_versions<BaseAsset, QuoteAsset>(
         self: &mut Pool<BaseAsset, QuoteAsset>,
         registry: &Registry,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let allowed_versions = registry.allowed_versions();
         let inner: &mut PoolInner<BaseAsset, QuoteAsset> = self.inner.load_value_mut();
@@ -1025,7 +1022,7 @@ module triexbook::pool {
     /// Withdraw accumulated quote fees into a Coin for treasury custody
     public fun withdraw_pool_fees<BaseAsset, QuoteAsset>(
         self: &mut Pool<BaseAsset, QuoteAsset>,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         amount: u64,
         clock: &Clock,
         ctx: &mut TxContext,
@@ -1045,7 +1042,7 @@ module triexbook::pool {
     // /// the EWMA state for volatility calculations and additional taker fees.
     // public fun enable_ewma_state<BaseAsset, QuoteAsset>(
     //     self: &mut Pool<BaseAsset, QuoteAsset>,
-    //     _cap: &TriexbookAdminCap,
+    //     _cap: &TriexAdminCap,
     //     enable: bool,
     //     clock: &Clock,
     //     ctx: &mut TxContext,
@@ -1064,7 +1061,7 @@ module triexbook::pool {
     // /// Only admin can set the parameters.
     // public fun set_ewma_params<BaseAsset, QuoteAsset>(
     //     self: &mut Pool<BaseAsset, QuoteAsset>,
-    //     _cap: &TriexbookAdminCap,
+    //     _cap: &TriexAdminCap,
     //     alpha: u64,
     //     z_score_threshold: u64,
     //     additional_taker_fee: u64,
@@ -1503,7 +1500,7 @@ module triexbook::pool {
     // #feat:refer
     // public fun get_referral_balances<BaseAsset, QuoteAsset>(
     //     self: &Pool<BaseAsset, QuoteAsset>,
-    //     referral: &TriexBookReferral,
+    //     referral: &TriexReferral,
     // ): (u64, u64, u64) {
     //     let referral_id = object::id(referral);
     //     let referral_rewards: &ReferralRewards<BaseAsset, QuoteAsset> = self.id.borrow(referral_id);

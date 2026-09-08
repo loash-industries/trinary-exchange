@@ -4,10 +4,10 @@
 /// the rates a trader actually meets on day one — rather than the resolution
 /// machinery, which `fee_schedule_tests` already covers.
 #[test_only]
-module triexbook::fee_policy_bootstrap_tests {
+module triex::fee_policy_bootstrap_tests {
     use std::{type_name, unit_test::{assert_eq, destroy}};
     use sui::test_scenario::{begin, end};
-    use triexbook::{fee_policy::{Self, FeePolicy}, registry};
+    use triex::{fee_policy::{Self, FeePolicy}, registry};
 
     public struct CRED has store {}
     public struct NINE_DP has store {}
@@ -306,7 +306,7 @@ module triexbook::fee_policy_bootstrap_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = triexbook::fee_policy::EDuplicateGenesisClass)]
+    #[test, expected_failure(abort_code = triex::fee_policy::EDuplicateGenesisClass)]
     fun bootstrap_rejects_identical_class_ids() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
@@ -322,7 +322,7 @@ module triexbook::fee_policy_bootstrap_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = triexbook::fee_policy::EInvalidQuoteUnit)]
+    #[test, expected_failure(abort_code = triex::fee_policy::EInvalidQuoteUnit)]
     fun bootstrap_rejects_zero_quote_unit() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());

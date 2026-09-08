@@ -1,7 +1,7 @@
 #[test_only]
-module triexbook::fee_schedule_tests {
+module triex::fee_schedule_tests {
     use std::unit_test::assert_eq;
-    use triexbook::fee_schedule;
+    use triex::fee_schedule;
 
     // Mirrors the bounds `fee_policy` passes in. Kept local because `validate`
     // takes them as arguments precisely so this module stays a leaf.

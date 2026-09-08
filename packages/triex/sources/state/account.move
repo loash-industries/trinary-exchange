@@ -1,10 +1,7 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Account module manages the account data for each user.
-module triexbook::account {
+module triex::account {
     use sui::vec_set::{Self, VecSet};
-    use triexbook::{
+    use triex::{
         balances::{Self, Balances},
         constants,
         fee_turnover::{Self, EpochAmount},

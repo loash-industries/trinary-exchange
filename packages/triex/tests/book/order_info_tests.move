@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::order_info_tests {
+module triex::order_info_tests {
     use std::unit_test::assert_eq;
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triexbook::{balances, constants, math, order_info::{Self, OrderInfo}, quote_fee};
+    use triex::{balances, constants, math, order_info::{Self, OrderInfo}, quote_fee};
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;

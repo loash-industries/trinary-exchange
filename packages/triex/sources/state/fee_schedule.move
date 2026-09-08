@@ -9,8 +9,8 @@
 /// turnover (`fee_turnover`), which counts only fees recognized as protocol
 /// revenue at fill. Escrow a maker can still cancel out of is deliberately not
 /// in it, so resting orders buy no tier progress.
-module triexbook::fee_schedule {
-    use triexbook::constants;
+module triex::fee_schedule {
+    use triex::constants;
 
     // === Errors ===
     const EEmptySchedule: u64 = 0;

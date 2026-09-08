@@ -14,10 +14,10 @@
 /// `effective_epoch = now + 1`, and reads pick `next` once its epoch arrives.
 /// A pricing change is therefore pre-announced and never re-prices a trade
 /// mid-epoch, with no per-pool promotion machinery.
-module triexbook::fee_policy {
+module triex::fee_policy {
     use std::type_name::{Self, TypeName};
     use sui::{event, table::{Self, Table}};
-    use triexbook::{fee_schedule::{Self, FeeSchedule}, registry::TriexbookAdminCap};
+    use triex::{fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
 
     // === Errors ===
     const EClassAlreadyExists: u64 = 0;
@@ -212,7 +212,7 @@ module triexbook::fee_policy {
         coin_class_id: u16,
         multicoin_class_id: u16,
         quote_unit: u128,
-        cap: &TriexbookAdminCap,
+        cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
         assert!(coin_class_id != multicoin_class_id, EDuplicateGenesisClass);
@@ -253,7 +253,7 @@ module triexbook::fee_policy {
         taker_fees: vector<u64>,
         maker_fees: vector<u64>,
         cancel_retention_bps: u64,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
         assert!(!self.classes.contains(class_id), EClassAlreadyExists);
@@ -292,7 +292,7 @@ module triexbook::fee_policy {
         taker_fees: vector<u64>,
         maker_fees: vector<u64>,
         cancel_retention_bps: u64,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
         assert!(self.classes.contains(class_id), EClassDoesNotExist);
@@ -323,7 +323,7 @@ module triexbook::fee_policy {
     public fun set_default_class<QuoteAsset>(
         self: &mut FeePolicy,
         class_id: u16,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let quote = type_name::with_defining_ids<QuoteAsset>();
         self.assert_class_matches_quote(class_id, quote);
@@ -337,7 +337,7 @@ module triexbook::fee_policy {
     public fun set_multicoin_default_class<QuoteAsset>(
         self: &mut FeePolicy,
         class_id: u16,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let quote = type_name::with_defining_ids<QuoteAsset>();
         self.assert_class_matches_quote(class_id, quote);

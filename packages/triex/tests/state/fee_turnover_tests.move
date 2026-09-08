@@ -1,7 +1,7 @@
 #[test_only]
-module triexbook::fee_turnover_tests {
+module triex::fee_turnover_tests {
     use std::unit_test::assert_eq;
-    use triexbook::{constants, fee_turnover};
+    use triex::{constants, fee_turnover};
 
     /// Assert the invariant the whole design rests on: the maintained rolling sum
     /// always equals what the buckets actually hold. If this ever drifts, tiers

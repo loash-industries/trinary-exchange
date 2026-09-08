@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Order module defines the order struct and its methods.
 /// All order matching happens in this module.
-module triexbook::order_info {
+module triex::order_info {
     use sui::event;
-    use triexbook::{
+    use triex::{
         balances::{Self, Balances},
         constants,
         fill::Fill,

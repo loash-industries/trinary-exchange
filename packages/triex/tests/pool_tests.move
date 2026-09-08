@@ -1,18 +1,15 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Legacy compatibility shim.
 ///
 /// The original monolithic `tests/pool_tests.move` module was migrated:
-/// - Shared helpers live in `triexbook::pool_test_utils` (still in tests/).
+/// - Shared helpers live in `triex::pool_test_utils` (still in tests/).
 /// - Test entrypoints live under `tests/pool/`.
 ///
-/// This module preserves the `triexbook::pool_tests` API used by other tests
+/// This module preserves the `triex::pool_tests` API used by other tests
 /// (notably the integration suite).
 #[test_only]
-module triexbook::pool_tests {
+module triex::pool_tests {
     use sui::{object::ID, test_scenario::Scenario};
-    use triexbook::{order_info::OrderInfo, pool_test_utils};
+    use triex::{order_info::OrderInfo, pool_test_utils};
 
     public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, ReferenceQuoteAsset>(
         test: &mut Scenario,

@@ -1,10 +1,7 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::book_tests {
+module triex::book_tests {
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triexbook::{book, constants, order::{Self, Order}};
+    use triex::{book, constants, order::{Self, Order}};
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;

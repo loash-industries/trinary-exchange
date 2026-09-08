@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_test_utils {
+module triex::integration_test_utils {
     use sui::{clock::Clock, sui::SUI, test_scenario::{Scenario, return_shared}};
     use token::cred::{Self as cred, ProtectedTreasury};
-    use triexbook::{
-        trading_account::{Self as trading_account, TradingAccount},
-        trading_account_tests::{SPAM, USDC},
+    use triex::{
         balances::Balances,
         constants,
         pool::{Self as pool, Pool},
-        pool_tests
+        pool_tests,
+        trading_account::{Self as trading_account, TradingAccount},
+        trading_account_tests::{SPAM, USDC}
     };
 
     public struct ExpectedBalances has drop {

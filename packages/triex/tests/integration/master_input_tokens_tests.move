@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_master_input_tokens_tests {
+module triex::integration_master_input_tokens_tests {
     use sui::{sui::SUI, test_scenario::{begin, end}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
+    use triex::{
         balances,
         constants,
         integration_test_utils::{Self as utils, ExpectedBalances},
         math,
-        pool_tests
+        pool_tests,
+        trading_account_tests::{Self as trading_account_tests, SPAM, USDC}
     };
 
     const NoError: u64 = 0;

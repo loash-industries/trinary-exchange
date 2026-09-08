@@ -1,15 +1,12 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_master_withdraw_permissionless_tests {
+module triex::integration_master_withdraw_permissionless_tests {
     use sui::{sui::SUI, test_scenario::{Scenario, begin, end, return_shared}};
-    use triexbook::{
-        trading_account::{Self, TradingAccount},
-        trading_account_tests::{Self as trading_account_tests, USDC},
+    use triex::{
         constants,
         pool::{Self, Pool},
-        pool_tests
+        pool_tests,
+        trading_account::{Self, TradingAccount},
+        trading_account_tests::{Self as trading_account_tests, USDC}
     };
 
     // Test addresses
@@ -112,7 +109,7 @@ module triexbook::integration_master_withdraw_permissionless_tests {
         test.end();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::vault::ENoBalanceToSettle)]
+    #[test, expected_failure(abort_code = ::triex::vault::ENoBalanceToSettle)]
     fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
         let mut test = begin(OWNER);
         let registry_id = pool_tests::setup_test(OWNER, &mut test);

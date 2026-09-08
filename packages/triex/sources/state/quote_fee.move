@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Quote fee module encapsulates quote-denominated fee calculations.
 /// Used when pools operate in quote-fee mode instead of CRED-fee mode.
 ///
@@ -8,8 +5,8 @@
 /// and what an order snapshots. `FEE_PRECISION` below is basis points and is
 /// used only for the cancel-retention split, which the fee policy also expresses in
 /// bps — the two scales are deliberate, not interchangeable.
-module triexbook::quote_fee {
-    use triexbook::constants;
+module triex::quote_fee {
+    use triex::constants;
 
     // === Constants ===
     const FEE_PRECISION: u64 = 10000; // 100.00% = 10000 basis points

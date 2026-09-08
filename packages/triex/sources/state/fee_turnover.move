@@ -13,8 +13,8 @@
 /// The window is a fixed-size ring of per-epoch buckets. `rolling_sum` is
 /// maintained as an invariant rather than recomputed, so resolving a tier is
 /// O(1) and only the epoch rollover pays for eviction.
-module triexbook::fee_turnover {
-    use triexbook::constants;
+module triex::fee_turnover {
+    use triex::constants;
 
     // === Errors ===
     const EEpochAhead: u64 = 0;

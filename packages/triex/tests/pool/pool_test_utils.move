@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_test_utils {
+module triex::pool_test_utils {
     use std::unit_test::{assert_eq, destroy};
     use sui::{
         clock::{Self, Clock},
@@ -12,7 +9,17 @@ module triexbook::pool_test_utils {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
+    use triex::{
+        book,
+        constants,
+        fee_policy::{Self, FeePolicy},
+        fill::Fill,
+        math,
+        order::{Self, Order},
+        order_info::{Self, OrderInfo},
+        pool::{Self, Pool},
+        quote_fee,
+        registry::{Self, Registry, TriexAdminCap},
         trading_account::{TradingAccount, DepositCap, TradeCap, WithdrawCap},
         trading_account_tests::{
             SPAM,
@@ -23,16 +30,6 @@ module triexbook::pool_test_utils {
             create_acct_and_share_with_funds_typed,
             create_caps
         },
-        book,
-        constants,
-        fee_policy::{Self, FeePolicy},
-        fill::Fill,
-        math,
-        order::{Self, Order},
-        order_info::{Self, OrderInfo},
-        pool::{Self, Pool},
-        quote_fee,
-        registry::{Self, Registry, TriexbookAdminCap},
         vault
     };
 
@@ -113,7 +110,7 @@ module triexbook::pool_test_utils {
     #[test_only]
     fun seed_quote_classes<QuoteAsset>(
         policy: &mut FeePolicy,
-        admin_cap: &TriexbookAdminCap,
+        admin_cap: &TriexAdminCap,
         test: &mut Scenario,
     ) {
         policy.create_class<QuoteAsset>(
@@ -557,7 +554,7 @@ module triexbook::pool_test_utils {
             let account = pool.account(&trading_account);
             assert_eq!(
                 account.settled_balances(),
-                triexbook::balances::new(0, 1982 * constants::float_scaling() / 10, 0),
+                triex::balances::new(0, 1982 * constants::float_scaling() / 10, 0),
             );
             return_shared(trading_account);
             return_shared(pool);
@@ -632,7 +629,7 @@ module triexbook::pool_test_utils {
             );
             assert_eq!(
                 pool.account(&trading_account).settled_balances(),
-                triexbook::balances::new(0, settled_quote, 0),
+                triex::balances::new(0, settled_quote, 0),
             );
             assert!(pool.quote_fee_reserve_balance() == 4 * constants::float_scaling(), 0);
             return_shared(trading_account);
@@ -667,7 +664,7 @@ module triexbook::pool_test_utils {
             // Her settled proceeds were paid out net of what she owed
             assert_eq!(
                 pool.account(&trading_account).settled_balances(),
-                triexbook::balances::new(0, 0, 0),
+                triex::balances::new(0, 0, 0),
             );
             return_shared(trading_account);
             return_shared(pool);
@@ -3273,7 +3270,10 @@ module triexbook::pool_test_utils {
         let (base_out, quote_out, cred_out) = if (is_bid) {
             if (with_trading_account) {
                 let cred_out = coin::zero(test.ctx());
-                let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<SUI, USDC>(
+                let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<
+                    SUI,
+                    USDC,
+                >(
                     pool_id,
                     BOB,
                     bob_trading_account_id,
@@ -3296,7 +3296,10 @@ module triexbook::pool_test_utils {
         } else {
             if (with_trading_account) {
                 let cred_out = coin::zero(test.ctx());
-                let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<SUI, USDC>(
+                let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<
+                    SUI,
+                    USDC,
+                >(
                     pool_id,
                     BOB,
                     bob_trading_account_id,
@@ -3898,7 +3901,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.get_referral_balances(&referral);
     //         assert!(base == 0, 0);
     //         assert!(quote == 0, 0);
@@ -3911,7 +3914,7 @@ module triexbook::pool_test_utils {
     // }
 
     // #feat:refer
-    // #[test, expected_failure(abort_code = ::triexbook::pool::EInvalidReferralMultiplier)]
+    // #[test, expected_failure(abort_code = ::triex::pool::EInvalidReferralMultiplier)]
     // fun mint_referral_max_multiplier_e() {
     //     let mut test = begin(OWNER);
     //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3925,7 +3928,7 @@ module triexbook::pool_test_utils {
     // }
 
     // #feat:refer
-    // #[test, expected_failure(abort_code = ::triexbook::pool::EInvalidReferralMultiplier)]
+    // #[test, expected_failure(abort_code = ::triex::pool::EInvalidReferralMultiplier)]
     // fun mint_referral_not_multiple_of_multiplier_e() {
     //     let mut test = begin(OWNER);
     //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3939,7 +3942,7 @@ module triexbook::pool_test_utils {
     // }
 
     // #feat:refer
-    // #[test, expected_failure(abort_code = ::triexbook::pool::EInvalidReferralMultiplier)]
+    // #[test, expected_failure(abort_code = ::triex::pool::EInvalidReferralMultiplier)]
     // fun test_update_referral_multiplier_e() {
     //     let mut test = begin(OWNER);
     //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3954,7 +3957,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         pool.update_referral_multiplier(&referral, 2_100_000_000, test.ctx());
     //     };
 
@@ -3962,7 +3965,7 @@ module triexbook::pool_test_utils {
     // }
 
     // #feat:refer
-    // #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidReferralOwner)]
+    // #[test, expected_failure(abort_code = ::triex::trading_account::EInvalidReferralOwner)]
     // fun test_update_referral_multiplier_wrong_owner() {
     //     let mut test = begin(OWNER);
     //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3978,7 +3981,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(BOB);
     //     {
     //         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         pool.update_referral_multiplier(&referral, 200_000_000, test.ctx());
     //     };
 
@@ -3986,7 +3989,7 @@ module triexbook::pool_test_utils {
     // }
 
     // #feat:refer
-    // #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidReferralOwner)]
+    // #[test, expected_failure(abort_code = ::triex::trading_account::EInvalidReferralOwner)]
     // fun test_claim_referral_rewards_wrong_owner() {
     //     let mut test = begin(OWNER);
     //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -4002,7 +4005,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(BOB);
     //     {
     //         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.claim_referral_rewards(&referral, test.ctx());
     //         destroy(base);
     //         destroy(quote);
@@ -4039,7 +4042,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id_alice);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let trade_cap = trading_account.mint_trade_cap(test.ctx());
     //         trading_account.set_referral(&referral, &trade_cap);
     //         return_shared(trading_account);
@@ -4067,7 +4070,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.get_referral_balances(&referral);
     //         assert_eq!(base, 0);
     //         assert_eq!(quote, 0);
@@ -4081,7 +4084,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         pool.update_referral_multiplier(&referral, 2_000_000_000, test.ctx());
     //         return_shared(pool);
     //         return_shared(referral);
@@ -4107,7 +4110,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.get_referral_balances(&referral);
     //         assert_eq!(base, 0);
     //         assert_eq!(quote, 0);
@@ -4141,7 +4144,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.get_referral_balances(&referral);
     //         assert_eq!(base, 0);
     //         // fees paid in USDC = 3_750_000 with 2x multiple = 7_500_000
@@ -4172,7 +4175,7 @@ module triexbook::pool_test_utils {
     //     test.next_tx(ALICE);
     //     {
     //         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-    //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
+    //         let referral = test.take_shared_by_id<TriexReferral>(referral_id);
     //         let (base, quote, cred) = pool.get_referral_balances(&referral);
     //         // ASK orders don't pay fees in new model, so no base fees
     //         assert_eq!(base, 0);
@@ -4411,7 +4414,10 @@ module triexbook::pool_test_utils {
         let (base_out, quote_out, cred_out) = if (is_bid) {
             if (with_trading_account) {
                 let cred_out = coin::zero(test.ctx());
-                let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<SUI, USDC>(
+                let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<
+                    SUI,
+                    USDC,
+                >(
                     pool_id,
                     BOB,
                     bob_trading_account_id,
@@ -4434,7 +4440,10 @@ module triexbook::pool_test_utils {
         } else {
             if (with_trading_account) {
                 let cred_out = coin::zero(test.ctx());
-                let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<SUI, USDC>(
+                let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<
+                    SUI,
+                    USDC,
+                >(
                     pool_id,
                     BOB,
                     bob_trading_account_id,
@@ -9702,7 +9711,11 @@ module triexbook::pool_test_utils {
         ];
 
         // Baseline after all setup, so pool-creation costs sit outside the window.
-        let (base_before, quote_before) = system_totals<SUI, USDC>(pool_id, trading_accounts, &mut test);
+        let (base_before, quote_before) = system_totals<SUI, USDC>(
+            pool_id,
+            trading_accounts,
+            &mut test,
+        );
 
         // Three makers rest bids at three prices, none of which divide evenly into
         // their fees. The taker will cross all of them in one order.
@@ -9847,7 +9860,11 @@ module triexbook::pool_test_utils {
         );
         let trading_accounts = vector[trading_account_id_alice, trading_account_id_bob];
 
-        let (base_before, quote_before) = system_totals<SUI, USDC>(pool_id, trading_accounts, &mut test);
+        let (base_before, quote_before) = system_totals<SUI, USDC>(
+            pool_id,
+            trading_accounts,
+            &mut test,
+        );
 
         // A price with a raw-unit tail, so neither the notional nor the 0.9% fee
         // on any bite lands on a whole number.

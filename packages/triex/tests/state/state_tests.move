@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::state_tests {
+module triex::state_tests {
     use std::unit_test::{assert_eq, destroy};
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triexbook::{
+    use triex::{
         balances,
         constants,
         ewma_tests::test_init_ewma_state,

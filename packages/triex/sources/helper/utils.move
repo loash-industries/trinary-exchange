@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// CredBook utility functions.
-module triexbook::utils {
+module triex::utils {
 
 }
 

@@ -1,14 +1,11 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_cancel_tests {
+module triex::pool_cancel_tests {
     use sui::{sui::SUI, test_scenario::{begin, end, Scenario}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{create_acct_and_share_with_funds, USDC},
+    use triex::{
         constants,
-        pool_test_utils
+        pool_test_utils,
+        trading_account_tests::{create_acct_and_share_with_funds, USDC}
     };
 
     const OWNER: address = @0x1;
@@ -183,12 +180,12 @@ module triexbook::pool_cancel_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
     fun test_cancel_all_orders_bid_e() {
         cancel_all_orders_case(true, true);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
     fun test_cancel_all_orders_ask_e() {
         cancel_all_orders_case(false, true);
     }
@@ -203,12 +200,12 @@ module triexbook::pool_cancel_tests {
         cancel_all_orders_case(false, false);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
     fun test_cancel_orders_bid() {
         cancel_orders_case(true);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
     fun test_cancel_orders_ask() {
         cancel_orders_case(false);
     }

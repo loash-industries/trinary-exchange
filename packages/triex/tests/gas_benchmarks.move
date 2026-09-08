@@ -8,8 +8,8 @@
 /// They pass under a normal `sui move test` run, so they cost a few seconds on
 /// every suite run and otherwise assert nothing.
 #[test_only]
-module triexbook::gas_benchmarks {
-    use triexbook::pool_test_utils;
+module triex::gas_benchmarks {
+    use triex::pool_test_utils;
 
     #[test]
     fun bench_baseline() { pool_test_utils::bench_baseline() }

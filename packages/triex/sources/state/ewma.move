@@ -1,14 +1,11 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
-/// The Exponentially Weighted Moving Average (EWMA) state for TriexBook
+/// The Exponentially Weighted Moving Average (EWMA) state for Triex
 /// This state is used to calculate the smoothed mean and variance of gas prices
 /// and apply a penalty to taker fees based on the Z-score of the current gas price
 /// relative to the smoothed mean and variance.
 /// The state is enabled by default and can be configured with different parameters.
-module triexbook::ewma {
+module triex::ewma {
     use sui::clock::Clock;
-    use triexbook::{constants, math};
+    use triex::{constants, math};
 
     /// The EWMA state structure
     /// It contains the smoothed mean, variance, alpha, Z-score threshold,

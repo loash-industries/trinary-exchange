@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Rounding-direction tests for the fixed-point helpers every fee, fill and
 /// escrow amount is computed through.
 ///
@@ -11,8 +8,8 @@
 /// floor that silently becomes a ceiling pays out a raw unit the vault never
 /// took in, once per fill, forever.
 #[test_only]
-module triexbook::math_tests {
-    use triexbook::math;
+module triex::math_tests {
+    use triex::math;
 
     const FLOAT_SCALING: u64 = 1_000_000_000;
 
@@ -105,7 +102,7 @@ module triexbook::math_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::math::EOverflow)]
+    #[expected_failure(abort_code = triex::math::EOverflow)]
     fun test_qty_to_quote_multicoin_overflow_aborts() {
         // 2^32 × 2^32 is 2^64, exactly one past what a u64 can hold. The
         // undivided multicoin branch is the only place a product this large can

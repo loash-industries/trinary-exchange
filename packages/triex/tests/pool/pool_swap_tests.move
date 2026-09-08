@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_swap_tests {
-    use triexbook::pool_test_utils;
+module triex::pool_swap_tests {
+    use triex::pool_test_utils;
 
     #[test]
     fun test_mid_price_ok() {
@@ -80,22 +77,22 @@ module triexbook::pool_swap_tests {
         pool_test_utils::test_swap_exact_not_fully_filled_ask_with_trading_account_low_qty_ok();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::pool::EMinimumQuantityOutNotMet)]
     fun test_swap_exact_not_fully_filled_bid_min_e() {
         pool_test_utils::test_swap_exact_not_fully_filled_bid_min_e();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::pool::EMinimumQuantityOutNotMet)]
     fun test_swap_exact_not_fully_filled_bid_with_trading_account_min_e() {
         pool_test_utils::test_swap_exact_not_fully_filled_bid_with_trading_account_min_e();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::pool::EMinimumQuantityOutNotMet)]
     fun test_swap_exact_not_fully_filled_ask_min_e() {
         pool_test_utils::test_swap_exact_not_fully_filled_ask_min_e();
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
+    #[test, expected_failure(abort_code = ::triex::pool::EMinimumQuantityOutNotMet)]
     fun test_swap_exact_not_fully_filled_ask_with_trading_account_min_e() {
         pool_test_utils::test_swap_exact_not_fully_filled_ask_with_trading_account_min_e();
     }

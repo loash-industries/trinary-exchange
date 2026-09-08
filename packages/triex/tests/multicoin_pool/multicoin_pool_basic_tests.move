@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_pool_basic_tests {
+module triex::integration_multicoin_pool_basic_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -11,9 +8,7 @@ module triexbook::integration_multicoin_pool_basic_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -22,7 +17,9 @@ module triexbook::integration_multicoin_pool_basic_tests {
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC
     };
 
     // Test addresses
@@ -182,7 +179,7 @@ module triexbook::integration_multicoin_pool_basic_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::trading_account::EMultiCoinBalanceTooLow)]
+    #[test, expected_failure(abort_code = ::triex::trading_account::EMultiCoinBalanceTooLow)]
     fun test_multicoin_pool_place_order_wrong_asset_id_e() {
         let mut test = begin(OWNER);
 

@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Shared helpers for MultiCoin pool integration tests.
 #[test_only]
-module triexbook::integration_multicoin_test_utils {
+module triex::integration_multicoin_test_utils {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -12,15 +9,15 @@ module triexbook::integration_multicoin_test_utils {
         test_scenario::{Scenario, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self as trading_account, TradingAccount, TradeCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         multicoin_pool as multicoin_pool,
         pool::{Self as pool, Pool},
         pool_test_utils,
-        registry::{Self as registry, Registry}
+        registry::{Self as registry, Registry},
+        trading_account::{Self as trading_account, TradingAccount, TradeCap},
+        trading_account_tests::USDC
     };
 
     // Test addresses

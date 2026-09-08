@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// History module tracks the volume data for the current epoch and past epochs.
 /// The historic median is used to calculate rebates and burns.
 ///
@@ -8,9 +5,9 @@
 /// shared `FeePolicy` object, whose `FeeClassUpdated` events are the schedule
 /// history, and orders carry their own maker rate.
 /// #feat:rebate
-module triexbook::history {
+module triex::history {
     use sui::{event, table::{Self, Table}};
-    use triexbook::{balances::{Self, Balances}, constants, math};
+    use triex::{balances::{Self, Balances}, constants, math};
 
     // === Errors ===
     // Referenced by the disabled #feat:rebate code path.

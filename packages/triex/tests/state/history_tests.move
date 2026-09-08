@@ -1,14 +1,11 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::history_tests {
+module triex::history_tests {
 
 }
 
 // #feat:rebate - DISABLED - All imports unused since all tests are disabled
 // use sui::{test_scenario::{begin, end}, test_utils};
-// use triexbook::{balances, constants, history, trade_params};
+// use triex::{balances, constants, history, trade_params};
 
 // #feat:rebate - DISABLED
 // const EWrongRebateAmount: u64 = 0;

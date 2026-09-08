@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::pool_fee_tests {
-    use triexbook::pool_test_utils;
+module triex::pool_fee_tests {
+    use triex::pool_test_utils;
 
     #[test]
     fun test_bid_with_quote_fees_updates_vault_reserve() {
@@ -31,7 +28,7 @@ module triexbook::pool_fee_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::vault::EFeesLocked)]
+    #[expected_failure(abort_code = triex::vault::EFeesLocked)]
     fun test_admin_sweep_above_unlocked_portion_aborts() {
         pool_test_utils::test_admin_sweep_above_unlocked_portion_aborts();
     }
@@ -47,7 +44,7 @@ module triexbook::pool_fee_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::vault::EFeesLocked)]
+    #[expected_failure(abort_code = triex::vault::EFeesLocked)]
     fun test_admin_cannot_sweep_locked_maker_fees() {
         pool_test_utils::test_admin_cannot_sweep_locked_maker_fees();
     }
@@ -247,19 +244,19 @@ module triexbook::pool_fee_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::fee_policy::EInvalidCancelRetention)]
+    #[expected_failure(abort_code = triex::fee_policy::EInvalidCancelRetention)]
     fun test_schedule_setter_rejects_retention_above_full() {
         pool_test_utils::test_schedule_setter_rejects_retention_above_full();
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::fee_schedule::EThresholdsNotAscending)]
+    #[expected_failure(abort_code = triex::fee_schedule::EThresholdsNotAscending)]
     fun test_schedule_setter_rejects_descending_thresholds() {
         pool_test_utils::test_schedule_setter_rejects_descending_thresholds();
     }
 
     #[test]
-    #[expected_failure(abort_code = triexbook::fee_schedule::ETakerRateNotMonotone)]
+    #[expected_failure(abort_code = triex::fee_schedule::ETakerRateNotMonotone)]
     fun test_schedule_setter_rejects_rising_taker_rate() {
         pool_test_utils::test_schedule_setter_rejects_rising_taker_rate();
     }

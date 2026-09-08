@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// This module defines the OrderPage struct and its methods to iterate over orders in a pool.
-module triexbook::order_query {
-    use triexbook::{order::Order, pool::Pool};
+module triex::order_query {
+    use triex::{order::Order, pool::Pool};
 
     /// === Structs ===
     public struct OrderPage has drop {

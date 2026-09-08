@@ -1,12 +1,9 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// MultiCoinPool implements trading pools where:
 /// - Base asset: MultiCoin Balance identified by (collection_id, asset_id)
 /// - Quote asset: Traditional Sui Coin<QuoteAsset>
 ///
 /// This is the MultiCoin equivalent of Pool<BaseAsset, QuoteAsset>.
-module triexbook::multicoin_pool {
+module triex::multicoin_pool {
     use multicoin::multicoin::{Self, Collection};
     use std::type_name::{Self, TypeName};
     use sui::{
@@ -17,9 +14,8 @@ module triexbook::multicoin_pool {
         versioned::{Self, Versioned}
     };
     use token::cred::{CRED, ProtectedTreasury};
-    use triexbook::{
+    use triex::{
         account::Account,
-        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
@@ -27,8 +23,9 @@ module triexbook::multicoin_pool {
         multicoin_vault::{Self, MultiCoinVault},
         order::Order,
         order_info::{Self, OrderInfo},
-        registry::{TriexbookAdminCap, Registry},
+        registry::{TriexAdminCap, Registry},
         state::{Self, State},
+        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         vault
     };
 
@@ -176,7 +173,7 @@ module triexbook::multicoin_pool {
         policy: &FeePolicy,
         collection: &Collection,
         asset_id: u64,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         ctx: &mut TxContext,
     ): ID {
         let creation_fee = coin::zero(ctx);
@@ -792,7 +789,7 @@ module triexbook::multicoin_pool {
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
         fee_class: u16,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         policy.assert_class_matches_quote(
             fee_class,
@@ -806,7 +803,7 @@ module triexbook::multicoin_pool {
     public fun unregister_pool_admin<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         registry: &mut Registry,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let pool_inner = self.load_inner_mut();
         assert!(pool_inner.registered_pool, EPoolNotRegistered);
@@ -820,7 +817,7 @@ module triexbook::multicoin_pool {
     public fun update_allowed_versions<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         registry: &Registry,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let allowed_versions = registry.allowed_versions();
         let inner: &mut MultiCoinPoolInner<QuoteAsset> = self.inner.load_value_mut();
@@ -840,7 +837,7 @@ module triexbook::multicoin_pool {
     /// Withdraw accumulated quote fees into a Coin for treasury custody
     public fun withdraw_pool_fees<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         amount: u64,
         clock: &Clock,
         ctx: &mut TxContext,

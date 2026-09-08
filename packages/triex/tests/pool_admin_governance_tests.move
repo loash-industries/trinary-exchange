@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 // Pool-level integration tests for admin governance are commented out
 // because they require test helper functions that don't exist.
 // The admin governance functionality is tested at the governance module level
@@ -8,18 +5,18 @@
 
 /* 
 #[test_only]
-module triexbook::pool_admin_governance_tests;
+module triex::pool_admin_governance_tests;
 
 use sui::{
     coin,
     test_scenario::{begin, end, next_tx},
     unit_test::destroy
 };
-use triexbook::{
+use triex::{
     trading_account::{Self, TradingAccount},
     constants,
     pool::{Self, Pool},
-    registry::{Self, Registry, TriexbookAdminCap}
+    registry::{Self, Registry, TriexAdminCap}
 };
 
 const OWNER: address = @0xF;
@@ -37,7 +34,7 @@ fun admin_changes_pool_fee_ok() {
     test.next_tx(OWNER);
     
     let mut registry = test.take_shared<Registry>();
-    let admin_cap = test.take_from_sender<TriexbookAdminCap>();
+    let admin_cap = test.take_from_sender<TriexAdminCap>();
     
     // Create a pool
     let mut pool = pool::create_pool_for_testing<SPAM, USDC>(
@@ -80,7 +77,7 @@ fun admin_changes_pool_fee_multiple_times_ok() {
     test.next_tx(OWNER);
     
     let mut registry = test.take_shared<Registry>();
-    let admin_cap = test.take_from_sender<TriexbookAdminCap>();
+    let admin_cap = test.take_from_sender<TriexAdminCap>();
     
     let mut pool = pool::create_pool_for_testing<SPAM, USDC>(
         &mut registry,
@@ -121,7 +118,7 @@ fun admin_changes_stable_pool_fee_ok() {
     test.next_tx(OWNER);
     
     let mut registry = test.take_shared<Registry>();
-    let admin_cap = test.take_from_sender<TriexbookAdminCap>();
+    let admin_cap = test.take_from_sender<TriexAdminCap>();
     
     // Create a stable pool
     let mut pool = pool::create_pool_for_testing<SPAM, USDC>(
@@ -158,7 +155,7 @@ fun admin_fee_change_affects_trades_ok() {
     test.next_tx(OWNER);
     
     let mut registry = test.take_shared<Registry>();
-    let admin_cap = test.take_from_sender<TriexbookAdminCap>();
+    let admin_cap = test.take_from_sender<TriexAdminCap>();
     
     let mut pool = pool::create_pool_for_testing<SPAM, USDC>(
         &mut registry,
@@ -210,7 +207,7 @@ fun non_admin_cannot_change_fee_e() {
     test.next_tx(OWNER);
     
     let mut registry = test.take_shared<Registry>();
-    let admin_cap = test.take_from_sender<TriexbookAdminCap>();
+    let admin_cap = test.take_from_sender<TriexAdminCap>();
     
     let mut pool = pool::create_pool_for_testing<SPAM, USDC>(
         &mut registry,

@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::multicoin_vault_tests {
+module triex::multicoin_vault_tests {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance, Collection, CollectionCap};
     use std::unit_test::destroy;
     use sui::{
@@ -10,12 +7,12 @@ module triexbook::multicoin_vault_tests {
         test_scenario::{Scenario, next_tx, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount},
-        trading_account_tests::USDC,
+    use triex::{
         balances,
         constants,
-        multicoin_vault
+        multicoin_vault,
+        trading_account::{Self, TradingAccount},
+        trading_account_tests::USDC
     };
 
     const OWNER: address = @0xF;

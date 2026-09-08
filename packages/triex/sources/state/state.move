@@ -1,13 +1,10 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// State module represents the current state of the pool. It maintains all
 /// the accounts and history, and processes all the transactions that update
 /// them. Fee policy lives outside the pool entirely, in the shared
 /// `FeePolicy` object — the pool passes already-resolved rates in.
-module triexbook::state {
+module triex::state {
     use sui::table::{Self, Table};
-    use triexbook::{
+    use triex::{
         account::{Self, Account},
         balances::{Self, Balances},
         constants,

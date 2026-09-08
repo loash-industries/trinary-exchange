@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::ewma_tests {
+module triex::ewma_tests {
     use std::unit_test::{assert_eq, destroy};
     use sui::{clock, test_scenario::{begin, end, Scenario}};
-    use triexbook::{constants, ewma::{Self, EWMAState}};
+    use triex::{constants, ewma::{Self, EWMAState}};
 
     #[test_only]
     public fun test_init_ewma_state(ctx: &TxContext): EWMAState {

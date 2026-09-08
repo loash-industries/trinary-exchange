@@ -1,15 +1,12 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::vault_tests {
+module triex::vault_tests {
     use std::unit_test::destroy;
     use sui::{balance, object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triexbook::{
-        trading_account::{Self, TradingAccount},
-        trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds},
+    use triex::{
         balances,
         constants,
+        trading_account::{Self, TradingAccount},
+        trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds},
         vault
     };
 

@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Registry holds all created pools.
-module triexbook::registry {
+module triex::registry {
     use std::type_name::{Self, TypeName};
     use sui::{
         bag::{Self, Bag},
@@ -12,7 +9,7 @@ module triexbook::registry {
         vec_set::{Self, VecSet},
         versioned::{Self, Versioned}
     };
-    use triexbook::constants;
+    use triex::constants;
 
     // === Errors ===
     const EPoolAlreadyExists: u64 = 1;
@@ -31,8 +28,8 @@ module triexbook::registry {
     const MIN_QUOTE_DECIMALS: u8 = 3;
 
     // === Structs ===
-    /// TriexbookAdminCap is used to call admin functions.
-    public struct TriexbookAdminCap has key, store {
+    /// TriexAdminCap is used to call admin functions.
+    public struct TriexAdminCap has key, store {
         id: UID,
     }
 
@@ -80,17 +77,17 @@ module triexbook::registry {
         };
         transfer::share_object(registry);
 
-        let admin = TriexbookAdminCap { id: object::new(ctx) };
+        let admin = TriexAdminCap { id: object::new(ctx) };
         transfer::public_transfer(admin, ctx.sender());
     }
 
     // === Public Admin Functions ===
     /// Sets the treasury address where the pool creation fees are sent
-    /// By default, the treasury address is the publisher of the triexbook package
+    /// By default, the treasury address is the publisher of the triex package
     public fun set_treasury_address(
         self: &mut Registry,
         treasury_address: address,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         let self = self.load_inner_mut();
         self.treasury_address = treasury_address;
@@ -99,7 +96,7 @@ module triexbook::registry {
     /// Enables a package version
     /// Only Admin can enable a package version
     /// This function does not have version restrictions
-    public fun enable_version(self: &mut Registry, version: u64, _cap: &TriexbookAdminCap) {
+    public fun enable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
         let self: &mut RegistryInner = self.inner.load_value_mut();
         assert!(!self.allowed_versions.contains(&version), EVersionAlreadyEnabled);
         self.allowed_versions.insert(version);
@@ -108,7 +105,7 @@ module triexbook::registry {
     /// Disables a package version
     /// Only Admin can disable a package version
     /// This function does not have version restrictions
-    public fun disable_version(self: &mut Registry, version: u64, _cap: &TriexbookAdminCap) {
+    public fun disable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
         let self: &mut RegistryInner = self.inner.load_value_mut();
         assert!(version != constants::current_version(), ECannotDisableCurrentVersion);
         assert!(self.allowed_versions.contains(&version), EVersionNotEnabled);
@@ -122,7 +119,7 @@ module triexbook::registry {
     public fun add_approved_quote<QuoteCoin>(
         self: &mut Registry,
         metadata: &coin::CoinMetadata<QuoteCoin>,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
     ) {
         assert!(coin::get_decimals(metadata) >= MIN_QUOTE_DECIMALS, EQuoteInsufficientDecimals);
         self.add_approved_quote_internal<QuoteCoin>();
@@ -132,10 +129,7 @@ module triexbook::registry {
     /// the test token is a plain struct with no CoinMetadata, or to grandfather in
     /// low-decimal tokens under admin discretion.
     #[test_only]
-    public fun add_approved_quote_unchecked<QuoteCoin>(
-        self: &mut Registry,
-        _cap: &TriexbookAdminCap,
-    ) {
+    public fun add_approved_quote_unchecked<QuoteCoin>(self: &mut Registry, _cap: &TriexAdminCap) {
         self.add_approved_quote_internal<QuoteCoin>();
     }
 
@@ -165,7 +159,7 @@ module triexbook::registry {
 
     /// Removes a quote currency from the approved list
     /// Only Admin can remove approved quote currency
-    public fun remove_approved_quote<QuoteCoin>(self: &mut Registry, _cap: &TriexbookAdminCap) {
+    public fun remove_approved_quote<QuoteCoin>(self: &mut Registry, _cap: &TriexAdminCap) {
         let _: &mut RegistryInner = self.load_inner_mut();
         let quote_type = type_name::with_defining_ids<QuoteCoin>();
         assert!(
@@ -186,7 +180,7 @@ module triexbook::registry {
     /// Adds the TradingAccountKey dynamic field to the registry
     public fun init_trading_account_map(
         self: &mut Registry,
-        _cap: &TriexbookAdminCap,
+        _cap: &TriexAdminCap,
         ctx: &mut TxContext,
     ) {
         let _: &mut RegistryInner = self.load_inner_mut();
@@ -333,7 +327,11 @@ module triexbook::registry {
     }
 
     /// Adds a trading_account to the registry
-    public(package) fun add_trading_account(self: &mut Registry, owner: address, trading_account_id: ID) {
+    public(package) fun add_trading_account(
+        self: &mut Registry,
+        owner: address,
+        trading_account_id: ID,
+    ) {
         let _: &mut RegistryInner = self.load_inner_mut();
         let trading_account_map: &mut Table<address, VecSet<ID>> = dynamic_field::borrow_mut(
             &mut self.id,
@@ -439,7 +437,7 @@ module triexbook::registry {
     }
 
     #[test_only]
-    public fun get_admin_cap_for_testing(ctx: &mut TxContext): TriexbookAdminCap {
-        TriexbookAdminCap { id: object::new(ctx) }
+    public fun get_admin_cap_for_testing(ctx: &mut TxContext): TriexAdminCap {
+        TriexAdminCap { id: object::new(ctx) }
     }
 }

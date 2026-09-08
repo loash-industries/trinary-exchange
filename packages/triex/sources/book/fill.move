@@ -1,9 +1,6 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// `Fill` struct represents the results of a match between two orders.
-module triexbook::fill {
-    use triexbook::{balances::{Self, Balances}, quote_fee};
+module triex::fill {
+    use triex::{balances::{Self, Balances}, quote_fee};
 
     // === Structs ===
     /// Fill struct represents the results of a match between two orders.

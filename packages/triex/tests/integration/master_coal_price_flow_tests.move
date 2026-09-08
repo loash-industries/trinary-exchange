@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_master_cred_price_flow_tests {
+module triex::integration_master_cred_price_flow_tests {
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self as trading_account, TradingAccount},
-        trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
+    use triex::{
         constants,
         integration_test_utils as utils,
         math,
-        pool_tests
+        pool_tests,
+        trading_account::{Self as trading_account, TradingAccount},
+        trading_account_tests::{Self as trading_account_tests, SPAM, USDC}
     };
 
     const NoError: u64 = 0;

@@ -1,11 +1,8 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::account_tests {
+module triex::account_tests {
     use std::unit_test::assert_eq;
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triexbook::{account, balances, constants, fill};
+    use triex::{account, balances, constants, fill};
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;

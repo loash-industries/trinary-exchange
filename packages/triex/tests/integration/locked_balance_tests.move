@@ -1,17 +1,14 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_locked_balance_tests {
+module triex::integration_locked_balance_tests {
     use sui::{sui::SUI, test_scenario::{begin, end}};
     use token::cred::CRED;
-    use triexbook::{
-        trading_account_tests::{Self as trading_account_tests, USDC},
+    use triex::{
         constants,
         integration_test_utils as utils,
         math,
         pool_test_utils,
-        pool_tests
+        pool_tests,
+        trading_account_tests::{Self as trading_account_tests, USDC}
     };
 
     #[test]

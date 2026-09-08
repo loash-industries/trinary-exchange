@@ -1,8 +1,5 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 #[test_only]
-module triexbook::integration_multicoin_pool_order_types_tests {
+module triex::integration_multicoin_pool_order_types_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
     use sui::{
@@ -11,9 +8,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triexbook::{
-        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
-        trading_account_tests::USDC,
+    use triex::{
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -22,7 +17,9 @@ module triexbook::integration_multicoin_pool_order_types_tests {
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
         pool::{Self, Pool},
-        registry::{Self, Registry}
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC
     };
 
     // Test addresses
@@ -754,7 +751,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EFOKOrderCannotBeFullyFilled)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EFOKOrderCannotBeFullyFilled)]
     fun test_multicoin_pool_fok_order_insufficient_liquidity_e() {
         let mut test = begin(OWNER);
 
@@ -924,7 +921,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::EPOSTOrderCrossesOrderbook)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EPOSTOrderCrossesOrderbook)]
     fun test_multicoin_pool_post_only_crosses_e() {
         let mut test = begin(OWNER);
 
@@ -1288,7 +1285,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
 
     // === High Priority: Self-Matching ===
 
-    #[test, expected_failure(abort_code = ::triexbook::order_info::ESelfMatchingCancelTaker)]
+    #[test, expected_failure(abort_code = ::triex::order_info::ESelfMatchingCancelTaker)]
     fun test_multicoin_pool_self_matching_cancel_taker_e() {
         let mut test = begin(OWNER);
 
@@ -1394,7 +1391,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
 
     // === Self-Matching Cancel Maker Tests ===
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_self_matching_cancel_maker_bid_e() {
         let mut test = begin(OWNER);
 
@@ -1506,7 +1503,7 @@ module triexbook::integration_multicoin_pool_order_types_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
     fun test_multicoin_pool_self_matching_cancel_maker_ask_e() {
         let mut test = begin(OWNER);
 
