@@ -71,8 +71,6 @@ deployments are on Sui testnet.
 ```
 trinary-exchange/
 ├── CAPABILITIES.md       # Trust model & admin capability reference
-├── tooling/
-│   └── error-codes/      # Abort-code catalog generator + transaction error decoder
 └── packages/
     ├── token/            # CRED token package
     │   ├── Move.toml
@@ -89,18 +87,22 @@ trinary-exchange/
 
 ## Error codes
 
-A failed transaction's `effects.status.error` contains only the raw `u64` abort code, so
-[`tooling/error-codes/`](tooling/error-codes/) generates a `(module, code) -> label`
-catalog from the Move sources and decodes that string against it:
+Abort constants are keyed by `(module, code)` — an abort always carries its module,
+so `EInvalidFee = 1` in `pool` and in `multicoin_pool` do not collide, and the codes
+stay small and readable. Codes must be unique *within* a module.
+
+Client-facing labels are not maintained here: [`@trinaryex/sdk`][sdk] generates its
+abort catalog from these sources. After adding, removing or renumbering an error
+constant, regenerate it there:
 
 ```bash
-node tooling/error-codes/generate.mjs                # regenerate the catalog
-node tooling/error-codes/generate.mjs --check        # CI: fail if stale
-node tooling/error-codes/bin/decode-abort.mjs --digest <digest>
+npm run generate:error-codes -- --contracts <path to this repo>
 ```
 
-Regenerate whenever an error constant is added, removed or renumbered. See
-[`tooling/error-codes/README.md`](tooling/error-codes/README.md).
+Renaming or deleting a constant that the SDK has curated text for is a compile error
+in the SDK, so it will not silently stop matching.
+
+[sdk]: https://github.com/loash-industries/sdk
 
 ## Security
 
