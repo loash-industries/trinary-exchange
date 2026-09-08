@@ -31,17 +31,17 @@ public struct State has store {
 }
 
 /// A quote fee taken out of trade proceeds rather than paid in with the order,
-/// tagged with the balance manager that was charged. Ask takers and ask makers
+/// tagged with the trading account that was charged. Ask takers and ask makers
 /// both pay this way, and one transaction can charge several makers, so the
 /// portions stay separate: each reaches the fee reserve attributed to the
 /// account that actually paid it.
 public struct ProceedsFee has copy, drop, store {
-    balance_manager_id: ID,
+    trading_account_id: ID,
     amount: u64,
 }
 
-public(package) fun balance_manager_id(self: &ProceedsFee): ID {
-    self.balance_manager_id
+public(package) fun trading_account_id(self: &ProceedsFee): ID {
+    self.trading_account_id
 }
 
 public(package) fun amount(self: &ProceedsFee): u64 {
@@ -69,7 +69,7 @@ public struct FeeFlows has copy, drop, store {
 /// the vault event can be tied back to the `OrderExpired` for that order.
 public struct RefundedFee has copy, drop, store {
     order_id: u64,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     amount: u64,
 }
 
@@ -77,8 +77,8 @@ public(package) fun refund_order_id(self: &RefundedFee): u64 {
     self.order_id
 }
 
-public(package) fun refund_balance_manager_id(self: &RefundedFee): ID {
-    self.balance_manager_id
+public(package) fun refund_trading_account_id(self: &RefundedFee): ID {
+    self.trading_account_id
 }
 
 public(package) fun refund_amount(self: &RefundedFee): u64 {
@@ -116,7 +116,7 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // #feat:stake - DISABLED
 // public struct StakeEvent has copy, drop {
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     epoch: u64,
 //     amount: u64,
 //     stake: bool,
@@ -125,7 +125,7 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // #feat:gov - DISABLED
 // public struct ProposalEvent has copy, drop {
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     epoch: u64,
 //     // taker_fee: u64,
 //     // maker_fee: u64,
@@ -136,7 +136,7 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // #feat:gov - DISABLED
 // public struct VoteEvent has copy, drop {
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     epoch: u64,
 //     from_proposal_id: Option<ID>,
 //     to_proposal_id: ID,
@@ -146,7 +146,7 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // #feat:rebate
 // public struct RebateEventV2 has copy, drop {
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     epoch: u64,
 //     claim_amount: Balances,
 // }
@@ -154,7 +154,7 @@ public(package) fun release_retained(self: &FeeRelease): u64 {
 // #feat:rebate
 // public struct RebateEvent has copy, drop {
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     epoch: u64,
 //     claim_amount: u64,
 // }
@@ -198,8 +198,8 @@ public(package) fun process_create(
     let fills = order_info.fills_ref();
     let mut fee_flows = self.process_fills(fills, ctx);
 
-    self.update_account(order_info.balance_manager_id(), ctx);
-    let account = &mut self.accounts[order_info.balance_manager_id()];
+    self.update_account(order_info.trading_account_id(), ctx);
+    let account = &mut self.accounts[order_info.trading_account_id()];
     // let account_volume = account.total_volume();
     // let account_stake = account.active_stake();
 
@@ -244,7 +244,7 @@ public(package) fun process_create(
     // moved into the vault's fee reserve by the caller.
     if (!order_info.is_bid() && order_info.paid_fees() > 0) {
         fee_flows.proceeds.push_back(ProceedsFee {
-            balance_manager_id: order_info.balance_manager_id(),
+            trading_account_id: order_info.trading_account_id(),
             amount: order_info.paid_fees(),
         });
     };
@@ -254,10 +254,10 @@ public(package) fun process_create(
 
 public(package) fun withdraw_settled_amounts(
     self: &mut State,
-    balance_manager_id: ID,
+    trading_account_id: ID,
 ): (Balances, Balances) {
-    if (self.accounts.contains(balance_manager_id)) {
-        let account = &mut self.accounts[balance_manager_id];
+    if (self.accounts.contains(trading_account_id)) {
+        let account = &mut self.accounts[trading_account_id];
 
         account.settle()
     } else {
@@ -273,14 +273,14 @@ public(package) fun withdraw_settled_amounts(
 public(package) fun process_cancel(
     self: &mut State,
     order: &mut Order,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     pool_id: ID,
     price_scaling: u64,
     ctx: &TxContext,
 ): (Balances, Balances, FeeRelease) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    self.update_account(balance_manager_id, ctx);
+    self.update_account(trading_account_id, ctx);
     order.set_canceled();
 
     let balances = order.calculate_cancel_refund(
@@ -294,7 +294,7 @@ public(package) fun process_cancel(
         price_scaling,
     );
 
-    let account = &mut self.accounts[balance_manager_id];
+    let account = &mut self.accounts[trading_account_id];
     account.remove_order(order.order_id());
     account.add_settled_balances(balances);
 
@@ -309,7 +309,7 @@ public(package) fun process_cancel(
 /// modify-to-minimum-then-cancel cannot dodge the retention.
 public(package) fun process_modify(
     self: &mut State,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     cancel_quantity: u64,
     order: &Order,
     pool_id: ID,
@@ -318,7 +318,7 @@ public(package) fun process_modify(
 ): (Balances, Balances, FeeRelease) {
     self.governance.update(ctx);
     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    self.update_account(balance_manager_id, ctx);
+    self.update_account(trading_account_id, ctx);
 
     let balances = order.calculate_cancel_refund(
         order.maker_fee_rate(),
@@ -331,9 +331,9 @@ public(package) fun process_modify(
         price_scaling,
     );
 
-    self.accounts[balance_manager_id].add_settled_balances(balances);
+    self.accounts[trading_account_id].add_settled_balances(balances);
 
-    let (settled, owed) = self.accounts[balance_manager_id].settle();
+    let (settled, owed) = self.accounts[trading_account_id].settle();
     self.recognize_retention(retained);
 
     (settled, owed, FeeRelease { refunded, retained })
@@ -344,25 +344,25 @@ public(package) fun process_modify(
 // public(package) fun process_stake(
 //     self: &mut State,
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     new_stake: u64,
 //     ctx: &TxContext,
 // ): (Balances, Balances) {
 //     self.governance.update(ctx);
 //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-//     self.update_account(balance_manager_id, ctx);
+//     self.update_account(trading_account_id, ctx);
 //
-//     let (stake_before, stake_after) = self.accounts[balance_manager_id].add_stake(new_stake);
+//     let (stake_before, stake_after) = self.accounts[trading_account_id].add_stake(new_stake);
 //     self.governance.adjust_voting_power(stake_before, stake_after);
 //     event::emit(StakeEvent {
 //         pool_id,
-//         balance_manager_id,
+//         trading_account_id,
 //         epoch: ctx.epoch(),
 //         amount: new_stake,
 //         stake: true,
 //     });
 //
-//     self.accounts[balance_manager_id].settle()
+//     self.accounts[trading_account_id].settle()
 // }
 
 // Process unstake transaction.
@@ -371,14 +371,14 @@ public(package) fun process_modify(
 // public(package) fun process_unstake(
 //     self: &mut State,
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     ctx: &TxContext,
 // ): (Balances, Balances) {
 //     self.governance.update(ctx);
 //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-//     self.update_account(balance_manager_id, ctx);
+//     self.update_account(trading_account_id, ctx);
 //
-//     let account = &mut self.accounts[balance_manager_id];
+//     let account = &mut self.accounts[trading_account_id];
 //     let active_stake = account.active_stake();
 //     let inactive_stake = account.inactive_stake();
 //     let voted_proposal = account.voted_proposal();
@@ -387,7 +387,7 @@ public(package) fun process_modify(
 //     self.governance.adjust_vote(voted_proposal, option::none(), active_stake);
 //     event::emit(StakeEvent {
 //         pool_id,
-//         balance_manager_id,
+//         trading_account_id,
 //         epoch: ctx.epoch(),
 //         amount: active_stake + inactive_stake,
 //         stake: false,
@@ -401,7 +401,7 @@ public(package) fun process_modify(
 // public(package) fun process_proposal(
 //     self: &mut State,
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     // taker_fee: u64,
 //     // maker_fee: u64,
 //     // stake_required: u64, // #feat:fee_gov
@@ -410,8 +410,8 @@ public(package) fun process_modify(
 // ) {
 //     self.governance.update(ctx);
 //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-//     self.update_account(balance_manager_id, ctx);
-//     let account = &mut self.accounts[balance_manager_id];
+//     self.update_account(trading_account_id, ctx);
+//     let account = &mut self.accounts[trading_account_id];
 //     let stake = account.active_stake();
 //     let proposal_created = account.created_proposal();
 //
@@ -427,13 +427,13 @@ public(package) fun process_modify(
 //             fee,
 //             // stake_required, // #feat:fee_gov
 //             stake,
-//             balance_manager_id,
+//             trading_account_id,
 //         );
-//     self.process_vote(pool_id, balance_manager_id, balance_manager_id, ctx);
+//     self.process_vote(pool_id, trading_account_id, trading_account_id, ctx);
 //
 //     event::emit(ProposalEvent {
 //         pool_id,
-//         balance_manager_id,
+//         trading_account_id,
 //         epoch: ctx.epoch(),
 //         // taker_fee,
 //         // maker_fee,
@@ -447,15 +447,15 @@ public(package) fun process_modify(
 // public(package) fun process_vote(
 //     self: &mut State,
 //     pool_id: ID,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 //     proposal_id: ID,
 //     ctx: &TxContext,
 // ) {
 //     self.governance.update(ctx);
 //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-//     self.update_account(balance_manager_id, ctx);
+//     self.update_account(trading_account_id, ctx);
 //
-//     let account = &mut self.accounts[balance_manager_id];
+//     let account = &mut self.accounts[trading_account_id];
 //     assert!(account.active_stake() > 0, ENoStake);
 //
 //     let prev_proposal = account.set_voted_proposal(option::some(proposal_id));
@@ -469,7 +469,7 @@ public(package) fun process_modify(
 //
 //     event::emit(VoteEvent {
 //         pool_id,
-//         balance_manager_id,
+//         trading_account_id,
 //         epoch: ctx.epoch(),
 //         from_proposal_id: prev_proposal,
 //         to_proposal_id: proposal_id,
@@ -483,33 +483,33 @@ public(package) fun process_modify(
 // public(package) fun process_claim_rebates<BaseAsset, QuoteAsset>(
 //     self: &mut State,
 //     pool_id: ID,
-//     balance_manager: &BalanceManager,
+//     trading_account: &TradingAccount,
 //     ctx: &TxContext,
 // ): (Balances, Balances) {
-//     let balance_manager_id = balance_manager.id();
+//     let trading_account_id = trading_account.id();
 //     self.governance.update(ctx);
 //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-//     self.update_account(balance_manager_id, ctx);
+//     self.update_account(trading_account_id, ctx);
 //
-//     let account = &mut self.accounts[balance_manager_id];
+//     let account = &mut self.accounts[trading_account_id];
 //     let claim_amount = account.claim_rebates();
 //     event::emit(RebateEventV2 {
 //         pool_id,
-//         balance_manager_id,
+//         trading_account_id,
 //         epoch: ctx.epoch(),
 //         claim_amount,
 //     });
-//     balance_manager.emit_balance_event(
+//     trading_account.emit_balance_event(
 //         type_name::with_defining_ids<CRED>(),
 //         claim_amount.cred(),
 //         true,
 //     );
-//     balance_manager.emit_balance_event(
+//     trading_account.emit_balance_event(
 //         type_name::with_defining_ids<BaseAsset>(),
 //         claim_amount.base(),
 //         true,
 //     );
-//     balance_manager.emit_balance_event(
+//     trading_account.emit_balance_event(
 //         type_name::with_defining_ids<QuoteAsset>(),
 //         claim_amount.quote(),
 //         true,
@@ -528,12 +528,12 @@ public(package) fun governance_mut(self: &mut State, ctx: &TxContext): &mut Gove
     &mut self.governance
 }
 
-public(package) fun account_exists(self: &State, balance_manager_id: ID): bool {
-    self.accounts.contains(balance_manager_id)
+public(package) fun account_exists(self: &State, trading_account_id: ID): bool {
+    self.accounts.contains(trading_account_id)
 }
 
-public(package) fun account(self: &State, balance_manager_id: ID): &Account {
-    &self.accounts[balance_manager_id]
+public(package) fun account(self: &State, trading_account_id: ID): &Account {
+    &self.accounts[trading_account_id]
 }
 
 public(package) fun history_mut(self: &mut State): &mut History {
@@ -562,7 +562,7 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
     let num_fills = fills.length();
     while (i < num_fills) {
         let fill = &mut fills[i];
-        let maker = fill.balance_manager_id();
+        let maker = fill.trading_account_id();
         self.update_account(maker, ctx);
 
         if (!fill.expired()) {
@@ -575,7 +575,7 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             if (fill.taker_is_bid()) {
                 if (maker_fee > 0) {
                     ask_maker_fees.push_back(ProceedsFee {
-                        balance_manager_id: maker,
+                        trading_account_id: maker,
                         amount: maker_fee,
                     });
                 };
@@ -598,7 +598,7 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             if (refund > 0) {
                 refunded.push_back(RefundedFee {
                     order_id: fill.maker_order_id(),
-                    balance_manager_id: maker,
+                    trading_account_id: maker,
                     amount: refund,
                 });
             };
@@ -631,12 +631,12 @@ fun recognize_retention(self: &mut State, amount: u64) {
 }
 
 /// If account doesn't exist, create it. Update account volumes and rebates.
-fun update_account(self: &mut State, balance_manager_id: ID, ctx: &TxContext) {
-    if (!self.accounts.contains(balance_manager_id)) {
-        self.accounts.add(balance_manager_id, account::empty(ctx));
+fun update_account(self: &mut State, trading_account_id: ID, ctx: &TxContext) {
+    if (!self.accounts.contains(trading_account_id)) {
+        self.accounts.add(trading_account_id, account::empty(ctx));
     };
     // #feat:rebate
-    // let account = &mut self.accounts[balance_manager_id];
+    // let account = &mut self.accounts[trading_account_id];
     // let (prev_epoch, maker_volume, _active_stake) = account.update(ctx);
     // if (prev_epoch > 0 && maker_volume > 0) {
     //     // #feat:rebate - removed active_stake > 0 requirement

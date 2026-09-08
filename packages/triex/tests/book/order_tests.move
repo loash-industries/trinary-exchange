@@ -208,7 +208,7 @@ fun generate_fill_expired_ok() {
     let quantity = 10 * constants::sui_unit();
     let is_bid = true;
     let order_id = 1;
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let epoch = 1;
     let expire_timestamp = test.ctx().epoch_timestamp_ms();
     let mut order = create_order(
@@ -216,7 +216,7 @@ fun generate_fill_expired_ok() {
         quantity,
         is_bid,
         order_id,
-        balance_manager_id,
+        trading_account_id,
         epoch,
         expire_timestamp,
     );
@@ -253,7 +253,7 @@ fun generate_fill_expired_partial_ok() {
     let quantity = 10 * constants::sui_unit();
     let is_bid = true;
     let order_id = 1;
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let epoch = 1;
     let expire_timestamp = test.ctx().epoch_timestamp_ms();
     let mut order = create_order(
@@ -261,7 +261,7 @@ fun generate_fill_expired_partial_ok() {
         quantity,
         is_bid,
         order_id,
-        balance_manager_id,
+        trading_account_id,
         epoch,
         expire_timestamp,
     );
@@ -412,7 +412,7 @@ fun modify_expired_e() {
     let quantity = 10 * constants::sui_unit();
     let is_bid = true;
     let order_id = 1;
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let epoch = 1;
     let expire_timestamp = test.ctx().epoch_timestamp_ms() + 1000;
     let mut order = create_order(
@@ -420,7 +420,7 @@ fun modify_expired_e() {
         quantity,
         is_bid,
         order_id,
-        balance_manager_id,
+        trading_account_id,
         epoch,
         expire_timestamp,
     );
@@ -434,7 +434,7 @@ fun modify_expired_e() {
 #[test_only]
 public fun create_order_base(price: u64, quantity: u64, is_bid: bool): Order {
     let order_id = 1;
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let epoch = 1;
     let expire_timestamp = constants::max_u64();
 
@@ -443,7 +443,7 @@ public fun create_order_base(price: u64, quantity: u64, is_bid: bool): Order {
         quantity,
         is_bid,
         order_id,
-        balance_manager_id,
+        trading_account_id,
         epoch,
         expire_timestamp,
     )
@@ -455,13 +455,13 @@ public fun create_order(
     quantity: u64,
     is_bid: bool,
     order_id: u64,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     epoch: u64,
     expire_timestamp: u64,
 ): Order {
     order::new(
         order_id,
-        balance_manager_id,
+        trading_account_id,
         price,
         is_bid,
         quantity,

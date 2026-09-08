@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test_only]
-module triexbook::integration_multicoin_registry_balance_manager_tests;
+module triexbook::integration_multicoin_registry_trading_account_tests;
 
 use multicoin::multicoin::{Self, Collection, CollectionCap};
 use std::unit_test;
@@ -13,7 +13,7 @@ use sui::{
 };
 use token::cred::CRED;
 use triexbook::{
-    balance_manager::{Self, BalanceManager, TradeCap, DepositCap, WithdrawCap},
+    trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
     constants,
     fill::Fill,
     integration_multicoin_test_utils::{Self as mc_utils, USDC},
@@ -62,13 +62,13 @@ fun setup_registry_with_multicoin(test: &mut Scenario): (ID, ID, CollectionCap) 
 }
 
 #[test_only]
-fun create_balance_manager_with_funds(
+fun create_trading_account_with_funds(
     sender: address,
     usdc_amount: u64,
     cred_amount: u64,
     test: &mut Scenario,
 ): ID {
-    mc_utils::create_balance_manager_with_funds(sender, usdc_amount, cred_amount, test)
+    mc_utils::create_trading_account_with_funds(sender, usdc_amount, cred_amount, test)
 }
 
 #[test_only]
@@ -92,10 +92,10 @@ fun setup_multicoin_pool(
 fun setup_cred_usdc_reference_pool(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ): ID {
-    mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, balance_manager_id, test)
+    mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
 }
 
 #[test_only]
@@ -104,7 +104,7 @@ fun setup_multicoin_pool_with_cred_pricing(
     registry_id: ID,
     collection_id: ID,
     asset_id: u64,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ): (ID, ID) {
     mc_utils::setup_multicoin_pool_with_cred_pricing(
@@ -112,12 +112,12 @@ fun setup_multicoin_pool_with_cred_pricing(
         registry_id,
         collection_id,
         asset_id,
-        balance_manager_id,
+        trading_account_id,
         test,
     )
 }
 
-// === BalanceManager MultiCoin Tests ===
+// === TradingAccount MultiCoin Tests ===
 
 #[test]
 fun test_deposit_multicoin_ok() {
@@ -126,11 +126,11 @@ fun test_deposit_multicoin_ok() {
     // Setup
     let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Create balance manager
+    // Create trading account
     test.next_tx(ALICE);
-    let mut balance_manager = balance_manager::new(test.ctx());
-    let bm_id = object::id(&balance_manager);
-    transfer::public_share_object(balance_manager);
+    let mut trading_account = trading_account::new(test.ctx());
+    let ta_id = object::id(&trading_account);
+    transfer::public_share_object(trading_account);
 
     // Mint MultiCoin to deposit
     test.next_tx(OWNER);
@@ -145,17 +145,17 @@ fun test_deposit_multicoin_ok() {
     return_shared(collection);
     transfer::public_transfer(multicoin_balance, ALICE);
 
-    // Deposit MultiCoin into balance manager
+    // Deposit MultiCoin into trading account
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
     let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-    balance_manager.deposit_multicoin(multicoin_balance, test.ctx());
+    trading_account.deposit_multicoin(multicoin_balance, test.ctx());
 
     // Verify balance
-    let balance = balance_manager.multicoin_balance(collection_id, ASSET_GOLD);
+    let balance = trading_account.multicoin_balance(collection_id, ASSET_GOLD);
     assert!(balance == 1000, 0);
 
-    return_shared(balance_manager);
+    return_shared(trading_account);
     unit_test::destroy(collection_cap);
 
     end(test);
@@ -168,11 +168,11 @@ fun test_withdraw_multicoin_ok() {
     // Setup
     let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Create balance manager and share immediately
+    // Create trading account and share immediately
     test.next_tx(ALICE);
-    let balance_manager = balance_manager::new(test.ctx());
-    let bm_id = object::id(&balance_manager);
-    transfer::public_share_object(balance_manager);
+    let trading_account = trading_account::new(test.ctx());
+    let ta_id = object::id(&trading_account);
+    transfer::public_share_object(trading_account);
 
     // Mint MultiCoin
     test.next_tx(OWNER);
@@ -189,15 +189,15 @@ fun test_withdraw_multicoin_ok() {
 
     // Deposit MultiCoin
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
     let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-    balance_manager.deposit_multicoin(multicoin_balance, test.ctx());
-    return_shared(balance_manager);
+    trading_account.deposit_multicoin(multicoin_balance, test.ctx());
+    return_shared(trading_account);
 
     // Withdraw some MultiCoin
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
-    let withdrawn = balance_manager.withdraw_multicoin(
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
+    let withdrawn = trading_account.withdraw_multicoin(
         collection_id,
         ASSET_GOLD,
         400,
@@ -206,10 +206,10 @@ fun test_withdraw_multicoin_ok() {
 
     // Verify balances
     assert!(withdrawn.value() == 400, 0);
-    assert!(balance_manager.multicoin_balance(collection_id, ASSET_GOLD) == 600, 0);
+    assert!(trading_account.multicoin_balance(collection_id, ASSET_GOLD) == 600, 0);
 
     transfer::public_transfer(withdrawn, ALICE);
-    return_shared(balance_manager);
+    return_shared(trading_account);
     unit_test::destroy(collection_cap);
 
     end(test);
@@ -222,11 +222,11 @@ fun test_withdraw_all_multicoin_ok() {
     // Setup
     let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Create balance manager and share immediately
+    // Create trading account and share immediately
     test.next_tx(ALICE);
-    let balance_manager = balance_manager::new(test.ctx());
-    let bm_id = object::id(&balance_manager);
-    transfer::public_share_object(balance_manager);
+    let trading_account = trading_account::new(test.ctx());
+    let ta_id = object::id(&trading_account);
+    transfer::public_share_object(trading_account);
 
     // Mint MultiCoin
     test.next_tx(OWNER);
@@ -243,15 +243,15 @@ fun test_withdraw_all_multicoin_ok() {
 
     // Deposit MultiCoin
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
     let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-    balance_manager.deposit_multicoin(multicoin_balance, test.ctx());
-    return_shared(balance_manager);
+    trading_account.deposit_multicoin(multicoin_balance, test.ctx());
+    return_shared(trading_account);
 
     // Withdraw all MultiCoin
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
-    let withdrawn = balance_manager.withdraw_all_multicoin(
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
+    let withdrawn = trading_account.withdraw_all_multicoin(
         collection_id,
         ASSET_GOLD,
         test.ctx(),
@@ -259,10 +259,10 @@ fun test_withdraw_all_multicoin_ok() {
 
     // Verify balances
     assert!(withdrawn.value() == 1000, 0);
-    assert!(balance_manager.multicoin_balance(collection_id, ASSET_GOLD) == 0, 0);
+    assert!(trading_account.multicoin_balance(collection_id, ASSET_GOLD) == 0, 0);
 
     transfer::public_transfer(withdrawn, ALICE);
-    return_shared(balance_manager);
+    return_shared(trading_account);
     unit_test::destroy(collection_cap);
 
     end(test);
@@ -275,11 +275,11 @@ fun test_multiple_multicoin_assets_ok() {
     // Setup
     let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
-    // Create balance manager and share immediately
+    // Create trading account and share immediately
     test.next_tx(ALICE);
-    let balance_manager = balance_manager::new(test.ctx());
-    let bm_id = object::id(&balance_manager);
-    transfer::public_share_object(balance_manager);
+    let trading_account = trading_account::new(test.ctx());
+    let ta_id = object::id(&trading_account);
+    transfer::public_share_object(trading_account);
 
     // Mint multiple assets
     test.next_tx(OWNER);
@@ -312,20 +312,20 @@ fun test_multiple_multicoin_assets_ok() {
 
     // Deposit all assets
     test.next_tx(ALICE);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(bm_id);
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
     let gold = test.take_from_sender<multicoin::Balance>();
     let silver = test.take_from_sender<multicoin::Balance>();
     let iron = test.take_from_sender<multicoin::Balance>();
-    balance_manager.deposit_multicoin(gold, test.ctx());
-    balance_manager.deposit_multicoin(silver, test.ctx());
-    balance_manager.deposit_multicoin(iron, test.ctx());
+    trading_account.deposit_multicoin(gold, test.ctx());
+    trading_account.deposit_multicoin(silver, test.ctx());
+    trading_account.deposit_multicoin(iron, test.ctx());
 
     // Verify balances
-    assert!(balance_manager.multicoin_balance(collection_id, ASSET_GOLD) == 1000, 0);
-    assert!(balance_manager.multicoin_balance(collection_id, ASSET_SILVER) == 500, 1);
-    assert!(balance_manager.multicoin_balance(collection_id, ASSET_IRON) == 2000, 2);
+    assert!(trading_account.multicoin_balance(collection_id, ASSET_GOLD) == 1000, 0);
+    assert!(trading_account.multicoin_balance(collection_id, ASSET_SILVER) == 500, 1);
+    assert!(trading_account.multicoin_balance(collection_id, ASSET_IRON) == 2000, 2);
 
-    return_shared(balance_manager);
+    return_shared(trading_account);
     unit_test::destroy(collection_cap);
 
     end(test);

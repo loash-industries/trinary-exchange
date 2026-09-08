@@ -35,7 +35,7 @@ use multicoin::multicoin::{Self, Collection, CollectionCap};
 use std::unit_test::destroy;
 use sui::{clock::{Self, Clock}, coin::mint_for_testing, test_scenario::{begin, end, return_shared}};
 use triexbook::{
-    balance_manager::{Self as balance_manager, BalanceManager},
+    trading_account::{Self as trading_account, TradingAccount},
     constants,
     math,
     multicoin_pool::{Self, MultiCoinPool},
@@ -126,21 +126,21 @@ fun create_pool_with_quote<QuoteAsset>(
     pool_id
 }
 
-/// Create a BalanceManager funded with the QuoteAsset.
-/// (Bob's BM; he pays QuoteAsset to buy NFTs.)
+/// Create a TradingAccount funded with the QuoteAsset.
+/// (Bob's TA; he pays QuoteAsset to buy NFTs.)
 fun create_quote_funded_bm<QuoteAsset>(
     trader: address,
     test: &mut sui::test_scenario::Scenario,
 ): ID {
     test.next_tx(trader);
-    let mut bm = balance_manager::new(test.ctx());
-    bm.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
-    let id = object::id(&bm);
-    transfer::public_share_object(bm);
+    let mut ta = trading_account::new(test.ctx());
+    ta.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
+    let id = object::id(&ta);
+    transfer::public_share_object(ta);
     id
 }
 
-/// Mint NFTs for Alice and deposit into her BalanceManager.
+/// Mint NFTs for Alice and deposit into her TradingAccount.
 fun mint_and_deposit_nfts(
     alice_bm_id: ID,
     nft_qty: u64,
@@ -163,7 +163,7 @@ fun mint_and_deposit_nfts(
 
     test.next_tx(ALICE);
     {
-        let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+        let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let nfts = test.take_from_sender<multicoin::Balance>();
         alice_bm.deposit_multicoin(nfts, test.ctx());
         return_shared(alice_bm);
@@ -184,10 +184,10 @@ fun fill_and_get_fees<QuoteAsset>(
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
-        let proof = bm.generate_proof_as_owner(test.ctx());
+        let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut bm,
+            &mut ta,
             &proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -200,7 +200,7 @@ fun fill_and_get_fees<QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(bm);
+        return_shared(ta);
     };
 
     // Bob: crossing bid (buy NFTs with QuoteAsset, taker pays 2% fee)
@@ -208,10 +208,10 @@ fun fill_and_get_fees<QuoteAsset>(
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
-        let proof = bm.generate_proof_as_owner(test.ctx());
+        let mut ta = test.take_shared_by_id<TradingAccount>(bob_bm_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
         let order_info = pool.place_limit_order(
-            &mut bm,
+            &mut ta,
             &proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -226,7 +226,7 @@ fun fill_and_get_fees<QuoteAsset>(
         let vault_reserve = pool.quote_fee_reserve_balance();
         return_shared(pool);
         return_shared(clock);
-        return_shared(bm);
+        return_shared(ta);
         (paid_fees, vault_reserve)
     }
 }
@@ -245,13 +245,13 @@ fun test_mq9_fee_correct_not_1e9_undercharged() {
     let (registry_id, _collection_id, collection_cap) = setup_base(&mut test);
     let pool_id = create_pool_with_quote<MQ9>(registry_id, &mut test);
 
-    // Alice BM (needs MQ9 for potential bids, but really just needs NFTs for ask)
+    // Alice TA (needs MQ9 for potential bids, but really just needs NFTs for ask)
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ9>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ9>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ9>(BOB, &mut test);
@@ -305,10 +305,10 @@ fun test_mq6_fee_nonzero_not_truncated_to_zero() {
 
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ6>(BOB, &mut test);
@@ -355,10 +355,10 @@ fun test_mq6_multi_item_fee_captured() {
 
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ6>(BOB, &mut test);
@@ -404,10 +404,10 @@ fun test_mq2_fee_nonzero_not_truncated_to_zero() {
 
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ2>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ2>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ2>(BOB, &mut test);
@@ -457,10 +457,10 @@ fun test_mq1_fee_nonzero_not_truncated_to_zero() {
 
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ1>(BOB, &mut test);
@@ -508,10 +508,10 @@ fun test_mq1_precision_floor_and_threshold() {
 
     test.next_tx(ALICE);
     let alice_bm_id = {
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     };
     let bob_bm_id = create_quote_funded_bm<MQ1>(BOB, &mut test);

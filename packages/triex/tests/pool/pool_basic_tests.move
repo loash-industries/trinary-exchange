@@ -8,7 +8,7 @@ use std::unit_test::destroy;
 use sui::{sui::SUI, test_scenario::{begin, end, return_shared, Scenario}};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests::{create_acct_and_share_with_funds, SPAM, USDC, USDT},
+    trading_account_tests::{create_acct_and_share_with_funds, SPAM, USDC, USDT},
     constants,
     pool::{Self, Pool},
     pool_test_utils,
@@ -22,7 +22,7 @@ const ALICE: address = @0xAAAA;
 fun place_order_case(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -35,14 +35,14 @@ fun place_order_case(is_bid: bool) {
     >(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
     pool_test_utils::validate_open_orders<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         0,
         &mut test,
     );
@@ -60,7 +60,7 @@ fun place_order_case(is_bid: bool) {
     let order_info = pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -96,7 +96,7 @@ fun place_order_case(is_bid: bool) {
     pool_test_utils::validate_open_orders<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         1,
         &mut test,
     );
@@ -107,7 +107,7 @@ fun place_order_case(is_bid: bool) {
 fun place_and_cancel_order_case(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -120,7 +120,7 @@ fun place_and_cancel_order_case(is_bid: bool) {
     >(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -137,7 +137,7 @@ fun place_and_cancel_order_case(is_bid: bool) {
     let order_info = pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -161,7 +161,7 @@ fun place_and_cancel_order_case(is_bid: bool) {
     pool_test_utils::cancel_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info.order_id(),
         &mut test,
     );
@@ -173,7 +173,7 @@ fun place_and_cancel_order_case(is_bid: bool) {
 fun update_pool_book_params_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -192,7 +192,7 @@ fun update_pool_book_params_case() {
     pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -207,7 +207,7 @@ fun update_pool_book_params_case() {
     pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -220,7 +220,7 @@ fun update_pool_book_params_case() {
     pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price + 100,
@@ -243,7 +243,7 @@ fun place_cancel_pool_case() {
         registry_id,
         &mut test,
     );
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -252,7 +252,7 @@ fun place_cancel_pool_case() {
     let order_info_1 = pool_test_utils::place_limit_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -265,7 +265,7 @@ fun place_cancel_pool_case() {
     pool_test_utils::cancel_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info_1.order_id(),
         &mut test,
     );
@@ -273,7 +273,7 @@ fun place_cancel_pool_case() {
     let order_info_2 = pool_test_utils::place_limit_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -286,7 +286,7 @@ fun place_cancel_pool_case() {
     pool_test_utils::cancel_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info_2.order_id(),
         &mut test,
     );
@@ -294,7 +294,7 @@ fun place_cancel_pool_case() {
     let order_info_3 = pool_test_utils::place_limit_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -307,7 +307,7 @@ fun place_cancel_pool_case() {
     pool_test_utils::cancel_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info_3.order_id(),
         &mut test,
     );
@@ -315,7 +315,7 @@ fun place_cancel_pool_case() {
     let order_info_4 = pool_test_utils::place_limit_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -328,7 +328,7 @@ fun place_cancel_pool_case() {
     pool_test_utils::cancel_order<SUI, CRED>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info_4.order_id(),
         &mut test,
     );
@@ -468,7 +468,7 @@ fun assert_pool_registered<BaseAsset, QuoteAsset>(pool_id: ID, test: &mut Scenar
 fun place_order_max_restrictions_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -481,7 +481,7 @@ fun place_order_max_restrictions_case() {
     >(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
     let order_type = constants::max_restriction() + 1;
@@ -492,7 +492,7 @@ fun place_order_max_restrictions_case() {
     pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -508,7 +508,7 @@ fun place_order_max_restrictions_case() {
 fun place_and_cancel_order_empty_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -521,7 +521,7 @@ fun place_and_cancel_order_empty_case() {
     >(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -534,7 +534,7 @@ fun place_and_cancel_order_empty_case() {
     let placed_order_id = pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -546,14 +546,14 @@ fun place_and_cancel_order_empty_case() {
     pool_test_utils::cancel_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         placed_order_id,
         &mut test,
     );
     pool_test_utils::cancel_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         placed_order_id,
         &mut test,
     );
@@ -564,7 +564,7 @@ fun place_and_cancel_order_empty_case() {
 fun place_order_expired_order_skipped_case() {
     let mut test = begin(OWNER);
     let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1_000_000 * constants::float_scaling(),
         &mut test,
@@ -577,7 +577,7 @@ fun place_order_expired_order_skipped_case() {
     >(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
     pool_test_utils::set_time(100, &mut test);
@@ -591,7 +591,7 @@ fun place_order_expired_order_skipped_case() {
     pool_test_utils::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,

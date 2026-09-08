@@ -7,7 +7,7 @@ module triexbook::integration_master_conversion_tests;
 use sui::{sui::SUI, test_scenario::{begin, end}};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests::{Self as balance_manager_tests, SPAM},
+    trading_account_tests::{Self as trading_account_tests, SPAM},
     constants,
     integration_test_utils::{Self as utils, ExpectedBalances},
     math,
@@ -32,7 +32,7 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::owner(),
         starting_balance,
         &mut test,
@@ -44,7 +44,7 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
         pool_tests::setup_reference_pool_cred_as_base<CRED, SUI>(
             utils::owner(),
             registry_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             constants::cred_multiplier(),
             &mut test,
         )
@@ -52,7 +52,7 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
         pool_tests::setup_reference_pool<SUI, CRED>(
             utils::owner(),
             registry_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             constants::cred_multiplier(),
             &mut test,
         )
@@ -60,7 +60,7 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
     let _pool2_reference_id = pool_tests::setup_reference_pool<SPAM, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         95 * constants::float_scaling(),
         &mut test,
     );
@@ -74,12 +74,12 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
 
     pool_tests::set_time(100_000, &mut test);
 
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::alice(),
         starting_balance,
         &mut test,
     );
-    let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::bob(),
         starting_balance,
         &mut test,
@@ -97,8 +97,8 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
     // Since both price points are available, SPAM (quote) conversion should be used.
     utils::execute_cross_trading<SUI, SPAM>(
         pool1_id,
-        alice_balance_manager_id,
-        bob_balance_manager_id,
+        alice_trading_account_id,
+        bob_trading_account_id,
         order_type,
         price,
         quantity,
@@ -129,8 +129,8 @@ fun test_master_both_conversion_available(cred_is_base: bool) {
     );
     utils::sub_cred(&mut alice_balance, maker_fee + taker_fee);
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     end(test);
 }

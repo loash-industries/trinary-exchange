@@ -10,7 +10,7 @@ module triexbook::multicoin_vault;
 use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
 use sui::{balance::{Self, Balance}, coin::{Self, Coin}, dynamic_object_field as dof};
 use token::cred::CRED;
-use triexbook::{balance_manager::{TradeProof, BalanceManager}, balances::Balances, vault};
+use triexbook::{trading_account::{TradeProof, TradingAccount}, balances::Balances, vault};
 
 // === Errors ===
 const EInsufficientBaseBalance: u64 = 1;
@@ -133,18 +133,18 @@ public(package) fun asset_id<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64
     self.asset_id
 }
 
-/// Transfer any settled amounts for the `balance_manager`.
+/// Transfer any settled amounts for the `trading_account`.
 /// Uses Balances struct for accounting (base/quote/cred as u64 deltas).
-public(package) fun settle_balance_manager<QuoteAsset>(
+public(package) fun settle_trading_account<QuoteAsset>(
     self: &mut MultiCoinVault<QuoteAsset>,
     balances_out: Balances,
     balances_in: Balances,
-    balance_manager: &mut BalanceManager,
+    trading_account: &mut TradingAccount,
     trade_proof: &TradeProof,
     quote_fee_deposit: Option<vault::QuoteFeeDeposit>,
     ctx: &mut TxContext,
 ) {
-    balance_manager.validate_proof(trade_proof);
+    trading_account.validate_proof(trade_proof);
 
     let key = MultiCoinBaseKey {
         collection_id: self.collection_id,
@@ -153,17 +153,17 @@ public(package) fun settle_balance_manager<QuoteAsset>(
 
     // === BASE (MultiCoin) settlements ===
     if (balances_out.base() > balances_in.base()) {
-        // Vault owes user base tokens: split from vault, deposit to balance_manager
+        // Vault owes user base tokens: split from vault, deposit to trading_account
         let amount = balances_out.base() - balances_in.base();
         let vault_base: &mut MultiCoinBalance = dof::borrow_mut(&mut self.id, key);
         assert!(vault_base.value() >= amount, EInsufficientBaseBalance);
         let to_deposit = vault_base.split(amount, ctx);
-        balance_manager.deposit_multicoin_with_proof(trade_proof, to_deposit, ctx);
+        trading_account.deposit_multicoin_with_proof(trade_proof, to_deposit, ctx);
     };
     if (balances_in.base() > balances_out.base()) {
-        // User owes vault base tokens: withdraw from balance_manager, join to vault
+        // User owes vault base tokens: withdraw from trading_account, join to vault
         let amount = balances_in.base() - balances_out.base();
-        let withdrawn = balance_manager.withdraw_multicoin_with_proof(
+        let withdrawn = trading_account.withdraw_multicoin_with_proof(
             trade_proof,
             self.collection_id,
             self.asset_id,
@@ -180,11 +180,11 @@ public(package) fun settle_balance_manager<QuoteAsset>(
         let amount = balances_out.quote() - balances_in.quote();
         assert!(self.quote_balance.value() >= amount, EInsufficientQuoteBalance);
         let to_deposit = self.quote_balance.split(amount);
-        balance_manager.deposit_with_proof(trade_proof, to_deposit);
+        trading_account.deposit_with_proof(trade_proof, to_deposit);
     };
     if (balances_in.quote() > balances_out.quote()) {
         let amount = balances_in.quote() - balances_out.quote();
-        let withdrawn: Balance<QuoteAsset> = balance_manager.withdraw_with_proof(
+        let withdrawn: Balance<QuoteAsset> = trading_account.withdraw_with_proof(
             trade_proof,
             amount,
             false,
@@ -193,7 +193,7 @@ public(package) fun settle_balance_manager<QuoteAsset>(
     };
     // Fee escrow is carved out of the pool's quote balance rather than out of
     // the marginal withdrawal above. The quote a user owes (fees included) is
-    // retained by the pool either way — withdrawn from their balance manager,
+    // retained by the pool either way — withdrawn from their trading account,
     // or netted against settled balances the pool therefore never paid out —
     // so the fee is covered even when prior settled balances cover the order
     // outright and nothing is withdrawn at all.
@@ -201,14 +201,14 @@ public(package) fun settle_balance_manager<QuoteAsset>(
         let deposit = quote_fee_deposit.destroy_some();
         let (
             pool_id,
-            balance_manager_id,
+            trading_account_id,
             taker_fee_amount,
             maker_fee_amount,
             timestamp,
         ) = vault::quote_fee_deposit_into_parts(deposit);
         self.move_quote_to_fee_reserve(
             pool_id,
-            balance_manager_id,
+            trading_account_id,
             taker_fee_amount + maker_fee_amount,
             timestamp,
         );
@@ -224,11 +224,11 @@ public(package) fun settle_balance_manager<QuoteAsset>(
         let amount = balances_out.cred() - balances_in.cred();
         assert!(self.cred_balance.value() >= amount, EInsufficientCredBalance);
         let to_deposit = self.cred_balance.split(amount);
-        balance_manager.deposit_with_proof(trade_proof, to_deposit);
+        trading_account.deposit_with_proof(trade_proof, to_deposit);
     };
     if (balances_in.cred() > balances_out.cred()) {
         let amount = balances_in.cred() - balances_out.cred();
-        let withdrawn: Balance<CRED> = balance_manager.withdraw_with_proof(
+        let withdrawn: Balance<CRED> = trading_account.withdraw_with_proof(
             trade_proof,
             amount,
             false,
@@ -237,12 +237,12 @@ public(package) fun settle_balance_manager<QuoteAsset>(
     };
 }
 
-/// Transfer any settled amounts for the `balance_manager`.
-public(package) fun settle_balance_manager_permissionless<QuoteAsset>(
+/// Transfer any settled amounts for the `trading_account`.
+public(package) fun settle_trading_account_permissionless<QuoteAsset>(
     self: &mut MultiCoinVault<QuoteAsset>,
     balances_out: Balances,
     balances_in: Balances,
-    balance_manager: &mut BalanceManager,
+    trading_account: &mut TradingAccount,
     ctx: &mut TxContext,
 ) {
     assert!(
@@ -264,19 +264,19 @@ public(package) fun settle_balance_manager_permissionless<QuoteAsset>(
         let vault_base: &mut MultiCoinBalance = dof::borrow_mut(&mut self.id, key);
         assert!(vault_base.value() >= amount, EInsufficientBaseBalance);
         let to_deposit = vault_base.split(amount, ctx);
-        balance_manager.deposit_multicoin_permissionless(to_deposit, ctx);
+        trading_account.deposit_multicoin_permissionless(to_deposit, ctx);
     };
     if (balances_out.quote() > 0) {
         let amount = balances_out.quote();
         assert!(self.quote_balance.value() >= amount, EInsufficientQuoteBalance);
         let balance = self.quote_balance.split(amount);
-        balance_manager.deposit_permissionless(balance);
+        trading_account.deposit_permissionless(balance);
     };
     if (balances_out.cred() > 0) {
         let amount = balances_out.cred();
         assert!(self.cred_balance.value() >= amount, EInsufficientCredBalance);
         let balance = self.cred_balance.split(amount);
-        balance_manager.deposit_permissionless(balance);
+        trading_account.deposit_permissionless(balance);
     };
 }
 
@@ -319,7 +319,7 @@ public(package) fun deposit_quote<QuoteAsset>(
 public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
     self: &mut MultiCoinVault<QuoteAsset>,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     amount: u64,
     timestamp: u64,
 ) {
@@ -329,7 +329,7 @@ public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
     vault::emit_pool_fees_deposited<QuoteAsset>(
         pool_id,
         amount,
-        balance_manager_id,
+        trading_account_id,
         timestamp,
     );
 }
@@ -348,7 +348,7 @@ public(package) fun unlock_quote_fees<QuoteAsset>(
     self: &mut MultiCoinVault<QuoteAsset>,
     pool_id: ID,
     order_id: u64,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     amount: u64,
     timestamp: u64,
 ) {
@@ -362,7 +362,7 @@ public(package) fun unlock_quote_fees<QuoteAsset>(
         pool_id,
         order_id,
         amount,
-        balance_manager_id,
+        trading_account_id,
         timestamp,
     );
 }

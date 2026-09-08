@@ -53,7 +53,7 @@ public(package) fun new(fee_rate: u64): QuoteFeeInfo {
 }
 
 /// Calculate and record maker fee for a limit order
-/// Returns the fee amount to be locked from balance manager
+/// Returns the fee amount to be locked from trading account
 public(package) fun calculate_maker_fee(self: &mut QuoteFeeInfo, quote_quantity: u64): u64 {
     let fee = ((quote_quantity as u128) * (self.fee_rate as u128) / (FEE_PRECISION as u128)) as u64;
     self.maker_fee_locked = fee;

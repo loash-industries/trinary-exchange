@@ -14,8 +14,8 @@ use sui::{
 };
 use token::cred::CRED;
 use triexbook::{
-    balance_manager::{BalanceManager, DepositCap, TradeCap, WithdrawCap},
-    balance_manager_tests::{
+    trading_account::{TradingAccount, DepositCap, TradeCap, WithdrawCap},
+    trading_account_tests::{
         SPAM,
         USDC,
         USDT,
@@ -47,7 +47,7 @@ public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, Reference
     test: &mut Scenario,
 ): ID {
     let registry_id = setup_test(OWNER, test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds_typed<
+    let trading_account_id_alice = create_acct_and_share_with_funds_typed<
         BaseAsset,
         QuoteAsset,
         ReferenceBaseAsset,
@@ -61,7 +61,7 @@ public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, Reference
         QuoteAsset,
         ReferenceBaseAsset,
         ReferenceQuoteAsset,
-    >(ALICE, registry_id, balance_manager_id_alice, test);
+    >(ALICE, registry_id, trading_account_id_alice, test);
 
     let order_type = constants::no_restriction();
     let price = 2 * constants::float_scaling();
@@ -70,7 +70,7 @@ public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, Reference
     place_limit_order<BaseAsset, QuoteAsset>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -84,7 +84,7 @@ public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, Reference
     place_limit_order<BaseAsset, QuoteAsset>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -144,7 +144,7 @@ public(package) fun test_place_then_ioc_ask_bid() {
 public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -152,10 +152,10 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -164,7 +164,7 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         2 * constants::float_scaling(),
@@ -178,14 +178,14 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         let reserve_before = pool.quote_fee_reserve_balance();
         let order_info = pool.place_limit_order_with_quote_fees(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -205,7 +205,7 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
         assert!(reserve_after >= reserve_before, 0);
         assert!(reserve_after - reserve_before == expected_fee, 0);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -220,7 +220,7 @@ public(package) fun test_bid_with_quote_fees_updates_vault_reserve() {
 public(package) fun test_ask_taker_fee_conservation() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -228,10 +228,10 @@ public(package) fun test_ask_taker_fee_conservation() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -247,7 +247,7 @@ public(package) fun test_ask_taker_fee_conservation() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -261,17 +261,17 @@ public(package) fun test_ask_taker_fee_conservation() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         // Alice's locked maker fee reached the reserve at placement
         let reserve_before = pool.quote_fee_reserve_balance();
         assert!(reserve_before == locked_maker_fee, 0);
 
         let order_info = pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -297,7 +297,7 @@ public(package) fun test_ask_taker_fee_conservation() {
         assert!(base_balance == quantity, 4);
         assert!(reserve_after == locked_maker_fee + taker_fee, 5);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -311,7 +311,7 @@ public(package) fun test_ask_taker_fee_conservation() {
 public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -319,10 +319,10 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -334,7 +334,7 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -359,14 +359,14 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         let reserve_before = pool.quote_fee_reserve_balance();
         let order_info = pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -387,7 +387,7 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
         let reserve_after = pool.quote_fee_reserve_balance();
         assert!(reserve_after - reserve_before == bob_taker_fee + alice_maker_fee, 1);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -396,15 +396,15 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let account = pool.account(&balance_manager);
+        let account = pool.account(&trading_account);
         assert_eq!(
             account.settled_balances(),
             triexbook::balances::new(0, 1964 * constants::float_scaling() / 10, 0),
         );
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(pool);
     };
 
@@ -413,14 +413,14 @@ public(package) fun test_ask_maker_fill_fee_uses_snapshotted_rate() {
 
 /// Regression: a bid's fee escrow must reach the reserve even when the
 /// placer's own pending settled quote covers the whole order, so the vault
-/// withdraws nothing from their balance manager. The fee is carved out of the
+/// withdraws nothing from their trading account. The fee is carved out of the
 /// quote the pool retains by netting, not out of a withdrawal that never
 /// happens — previously the deposit was silently dropped and the fee stayed
 /// in the vault's free quote balance, unsweepable.
 public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -428,10 +428,10 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -446,7 +446,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -458,7 +458,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -472,26 +472,26 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
         assert_eq!(
-            pool.account(&balance_manager).settled_balances(),
+            pool.account(&trading_account).settled_balances(),
             triexbook::balances::new(0, settled_quote, 0),
         );
         assert!(pool.quote_fee_reserve_balance() == 8 * constants::float_scaling(), 0);
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(pool);
     };
 
     // Alice now rests a bid for 50 @ 2: 100 quote of principal plus a 1.8
     // maker fee. Owed (101.8) is below her settled 196.4, so the vault nets
     // the two and hands her the difference without touching her balance
-    // manager — the fee still has to land in the reserve.
+    // trading_account — the fee still has to land in the reserve.
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -504,17 +504,17 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
         // 8 from the fill plus Alice's newly locked 1.8
         assert!(pool.quote_fee_reserve_balance() == 98 * constants::float_scaling() / 10, 1);
         // Her settled proceeds were paid out net of what she owed
         assert_eq!(
-            pool.account(&balance_manager).settled_balances(),
+            pool.account(&trading_account).settled_balances(),
             triexbook::balances::new(0, 0, 0),
         );
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(pool);
     };
 
@@ -528,7 +528,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_covers_owed() {
 public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_owed() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -536,10 +536,10 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_o
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -551,7 +551,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_o
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -563,7 +563,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_o
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -579,7 +579,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_o
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -608,7 +608,7 @@ public(package) fun test_bid_fee_reaches_reserve_when_settled_partially_covers_o
 public(package) fun test_fractional_basis_point_fees_are_charged_as_configured() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -616,10 +616,10 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -648,7 +648,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -673,13 +673,13 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         let order_info = pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -694,7 +694,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
         assert!(order_info.paid_fees() == taker_fee, 2);
         assert!(order_info.cumulative_quote_quantity() - order_info.paid_fees() == quote_out, 3);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -709,7 +709,7 @@ public(package) fun test_fractional_basis_point_fees_are_charged_as_configured()
 public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -717,10 +717,10 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -743,7 +743,7 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -768,7 +768,7 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -796,12 +796,12 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, alice_order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, alice_order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -828,7 +828,7 @@ public(package) fun test_locked_fee_escrow_tracks_open_orders() {
 public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -836,10 +836,10 @@ public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -852,7 +852,7 @@ public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         2 * constants::float_scaling(),
@@ -868,7 +868,7 @@ public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
         let order_info = place_limit_order<SUI, USDC>(
             BOB,
             pool_id,
-            balance_manager_id_bob,
+            trading_account_id_bob,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             3 * constants::float_scaling(),
@@ -892,12 +892,12 @@ public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, bob_order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, bob_order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -920,7 +920,7 @@ public(package) fun test_ask_cancel_leaves_bid_escrow_intact() {
 public(package) fun test_modify_down_releases_escrow_proportionally() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -928,7 +928,7 @@ public(package) fun test_modify_down_releases_escrow_proportionally() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -947,7 +947,7 @@ public(package) fun test_modify_down_releases_escrow_proportionally() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -963,19 +963,19 @@ public(package) fun test_modify_down_releases_escrow_proportionally() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.modify_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             order_id,
             40 * constants::float_scaling(),
             &clock,
             test.ctx(),
         );
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -1056,7 +1056,7 @@ public(package) fun test_admin_sweep_above_unlocked_portion_aborts() {
 public(package) fun test_expired_bid_maker_releases_escrow() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1064,10 +1064,10 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1083,7 +1083,7 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1106,7 +1106,7 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1134,7 +1134,7 @@ public(package) fun test_expired_bid_maker_releases_escrow() {
 /// reserve ends at 5.8 with 1.8 still locked.
 fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
     let registry_id = setup_test(OWNER, test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         test,
@@ -1142,10 +1142,10 @@ fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         test,
@@ -1157,7 +1157,7 @@ fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1169,7 +1169,7 @@ fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1179,7 +1179,7 @@ fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
         test,
     );
 
-    (pool_id, balance_manager_id_alice, balance_manager_id_bob)
+    (pool_id, trading_account_id_alice, trading_account_id_bob)
 }
 
 /// Acceptance: the reserve distinguishes earned fees from a bid maker's
@@ -1189,7 +1189,7 @@ fun setup_pool_with_half_filled_bid(test: &mut Scenario): (ID, ID, ID) {
 public(package) fun test_admin_cannot_sweep_locked_maker_fees() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1197,7 +1197,7 @@ public(package) fun test_admin_cannot_sweep_locked_maker_fees() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -1206,7 +1206,7 @@ public(package) fun test_admin_cannot_sweep_locked_maker_fees() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         2 * constants::float_scaling(),
@@ -1246,7 +1246,7 @@ public(package) fun test_admin_cannot_sweep_locked_maker_fees() {
 public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1254,10 +1254,10 @@ public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1272,7 +1272,7 @@ public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1293,7 +1293,7 @@ public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -1330,7 +1330,7 @@ public(package) fun test_admin_can_sweep_maker_fees_once_filled() {
 public(package) fun test_admin_withdraws_quote_fee_reserve() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1338,10 +1338,10 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1350,7 +1350,7 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         2 * constants::float_scaling(),
@@ -1364,13 +1364,13 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         let order_info = pool.place_limit_order_with_quote_fees(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -1383,7 +1383,7 @@ public(package) fun test_admin_withdraws_quote_fee_reserve() {
         );
         assert!(order_info.paid_fees() + order_info.maker_fees() > 0, 0);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -1571,11 +1571,11 @@ public(package) fun test_swap_exact_amount_ask_bid() {
     test_swap_exact_amount(false, false);
 }
 
-public(package) fun test_swap_exact_amount_bid_ask_with_manager() {
+public(package) fun test_swap_exact_amount_bid_ask_with_trading_account() {
     test_swap_exact_amount(true, true);
 }
 
-public(package) fun test_swap_exact_amount_ask_bid_with_manager() {
+public(package) fun test_swap_exact_amount_ask_bid_with_trading_account() {
     test_swap_exact_amount(false, true);
 }
 
@@ -1655,7 +1655,7 @@ public(package) fun test_swap_exact_not_fully_filled_bid_ok() {
     test_swap_exact_not_fully_filled(true, false, false, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_bid_with_manager_ok() {
+public(package) fun test_swap_exact_not_fully_filled_bid_with_trading_account_ok() {
     test_swap_exact_not_fully_filled(true, false, false, false, true);
 }
 
@@ -1663,7 +1663,7 @@ public(package) fun test_swap_exact_not_fully_filled_ask_ok() {
     test_swap_exact_not_fully_filled(false, false, false, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_ask_with_manager_ok() {
+public(package) fun test_swap_exact_not_fully_filled_ask_with_trading_account_ok() {
     test_swap_exact_not_fully_filled(false, false, false, false, true);
 }
 
@@ -1671,7 +1671,7 @@ public(package) fun test_swap_exact_not_fully_filled_bid_low_qty_ok() {
     test_swap_exact_not_fully_filled(true, true, false, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_bid_with_manager_low_qty_ok() {
+public(package) fun test_swap_exact_not_fully_filled_bid_with_trading_account_low_qty_ok() {
     test_swap_exact_not_fully_filled(true, true, false, false, true);
 }
 
@@ -1679,7 +1679,7 @@ public(package) fun test_swap_exact_not_fully_filled_ask_low_qty_ok() {
     test_swap_exact_not_fully_filled(false, true, false, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_ask_with_manager_low_qty_ok() {
+public(package) fun test_swap_exact_not_fully_filled_ask_with_trading_account_low_qty_ok() {
     test_swap_exact_not_fully_filled(false, true, false, false, true);
 }
 
@@ -1687,7 +1687,7 @@ public(package) fun test_swap_exact_not_fully_filled_bid_min_e() {
     test_swap_exact_not_fully_filled(true, false, true, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_bid_with_manager_min_e() {
+public(package) fun test_swap_exact_not_fully_filled_bid_with_trading_account_min_e() {
     test_swap_exact_not_fully_filled(true, false, true, false, true);
 }
 
@@ -1695,7 +1695,7 @@ public(package) fun test_swap_exact_not_fully_filled_ask_min_e() {
     test_swap_exact_not_fully_filled(false, false, true, false, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_ask_with_manager_min_e() {
+public(package) fun test_swap_exact_not_fully_filled_ask_with_trading_account_min_e() {
     test_swap_exact_not_fully_filled(false, false, true, false, true);
 }
 
@@ -1703,7 +1703,7 @@ public(package) fun test_swap_exact_not_fully_filled_maker_partial_bid_ok() {
     test_swap_exact_not_fully_filled(true, false, false, true, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_maker_partial_bid_with_manager_ok() {
+public(package) fun test_swap_exact_not_fully_filled_maker_partial_bid_with_trading_account_ok() {
     test_swap_exact_not_fully_filled(true, false, false, true, true);
 }
 
@@ -1711,7 +1711,7 @@ public(package) fun test_swap_exact_not_fully_filled_maker_partial_ask_ok() {
     test_swap_exact_not_fully_filled(false, false, false, true, false);
 }
 
-public(package) fun test_swap_exact_not_fully_filled_maker_partial_ask_with_manager_ok() {
+public(package) fun test_swap_exact_not_fully_filled_maker_partial_ask_with_trading_account_ok() {
     test_swap_exact_not_fully_filled(false, false, false, true, true);
 }
 
@@ -1877,7 +1877,7 @@ public(package) fun test_order_limit_ask_ok() {
 public(package) fun test_get_order() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1885,13 +1885,13 @@ public(package) fun test_get_order() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -1902,7 +1902,7 @@ public(package) fun test_get_order() {
     );
     let order = get_order(pool_id, order_info.order_id(), &mut test);
     assert!(order.order_id() == order_info.order_id(), 0);
-    assert!(order.balance_manager_id() == balance_manager_id_alice, 0);
+    assert!(order.trading_account_id() == trading_account_id_alice, 0);
     assert!(order.quantity() == 1 * constants::float_scaling(), 0);
     assert!(order.filled_quantity() == 0, 0);
     assert!(order.epoch() == 0, 0);
@@ -1917,7 +1917,7 @@ public(package) fun test_get_order() {
 public(package) fun test_get_orders() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -1925,13 +1925,13 @@ public(package) fun test_get_orders() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
     let order_info_1 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -1943,7 +1943,7 @@ public(package) fun test_get_orders() {
     let order_info_2 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         constants::cred_multiplier(),
@@ -1961,7 +1961,7 @@ public(package) fun test_get_orders() {
     while (i < 2) {
         let order = &orders[i];
         assert!(order.order_id() == order_ids[i], 0);
-        assert!(order.balance_manager_id() == balance_manager_id_alice, 0);
+        assert!(order.trading_account_id() == trading_account_id_alice, 0);
         assert!(order.quantity() == 1 * constants::float_scaling(), 0);
         assert!(order.filled_quantity() == 0, 0);
         assert!(order.epoch() == 0, 0);
@@ -2037,7 +2037,7 @@ fun add_approved_quote_currencies(owner: address, registry_id: ID, test: &mut Sc
 public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     cred_multiplier: u64,
     test: &mut Scenario,
 ): ID {
@@ -2053,7 +2053,7 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     place_limit_order<BaseAsset, QuoteAsset>(
         sender,
         reference_pool_id,
-        balance_manager_id,
+        trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         bid_price,
@@ -2066,7 +2066,7 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     place_limit_order<BaseAsset, QuoteAsset>(
         sender,
         reference_pool_id,
-        balance_manager_id,
+        trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         ask_price,
@@ -2084,7 +2084,7 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
 public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     cred_multiplier: u64,
     test: &mut Scenario,
 ): ID {
@@ -2097,7 +2097,7 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     place_limit_order<BaseAsset, QuoteAsset>(
         sender,
         reference_pool_id,
-        balance_manager_id,
+        trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         math::div(constants::float_scaling(), cred_multiplier) - 10_000,
@@ -2110,7 +2110,7 @@ public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     place_limit_order<BaseAsset, QuoteAsset>(
         sender,
         reference_pool_id,
-        balance_manager_id,
+        trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         math::div(constants::float_scaling(), cred_multiplier) + 10_000,
@@ -2168,7 +2168,7 @@ public(package) fun setup_default_permissionless_pool<BaseAsset, QuoteAsset>(
 public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
     trader: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_type: u8,
     self_matching_option: u8,
     price: u64,
@@ -2183,18 +2183,18 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         let trade_proof;
 
-        let is_owner = balance_manager.owner() == trader;
+        let is_owner = trading_account.owner() == trader;
         if (is_owner) {
-            trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+            trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         } else {
             let trade_cap = test.take_from_sender<TradeCap>();
             trade_proof =
-                balance_manager.generate_proof_as_trader(
+                trading_account.generate_proof_as_trader(
                     &trade_cap,
                     test.ctx(),
                 );
@@ -2203,7 +2203,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
 
         // Place order in pool
         let order_info = pool.place_limit_order<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             order_type,
             self_matching_option,
@@ -2216,7 +2216,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
 
         order_info
     }
@@ -2227,7 +2227,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
 public(package) fun place_market_order<BaseAsset, QuoteAsset>(
     trader: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     self_matching_option: u8,
     quantity: u64,
     is_bid: bool,
@@ -2239,20 +2239,20 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         // Top up quote balance to cover quote-denominated fees in the unified model
         let extra_quote = mint_for_testing<QuoteAsset>(
             1_000_000_000 * constants::float_scaling(),
             test.ctx(),
         );
-        balance_manager.deposit(extra_quote, test.ctx());
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        trading_account.deposit(extra_quote, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         // Place order in pool
         let order_info = pool.place_market_order<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             self_matching_option,
             quantity,
@@ -2262,7 +2262,7 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
 
         order_info
     }
@@ -2273,7 +2273,7 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
 public(package) fun cancel_order<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_id: u64,
     test: &mut Scenario,
 ) {
@@ -2283,19 +2283,19 @@ public(package) fun cancel_order<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         // Top up quote balance to cover quote-denominated maker fees during cancel
         let extra_quote = mint_for_testing<QuoteAsset>(
             1_000_000_000 * constants::float_scaling(),
             test.ctx(),
         );
-        balance_manager.deposit(extra_quote, test.ctx());
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        trading_account.deposit(extra_quote, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         pool.cancel_order<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             order_id,
             &clock,
@@ -2303,7 +2303,7 @@ public(package) fun cancel_order<BaseAsset, QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
     }
 }
 
@@ -2322,7 +2322,7 @@ public(package) fun set_time(current_time: u64, test: &mut Scenario) {
 public(package) fun modify_order<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_id: u64,
     new_quantity: u64,
     test: &mut Scenario,
@@ -2332,18 +2332,18 @@ public(package) fun modify_order<BaseAsset, QuoteAsset>(
         let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
             pool_id,
         );
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         let trade_cap = test.take_from_sender<TradeCap>();
-        let trade_proof = balance_manager.generate_proof_as_trader(
+        let trade_proof = trading_account.generate_proof_as_trader(
             &trade_cap,
             test.ctx(),
         );
         let clock = test.take_shared<Clock>();
 
         pool.modify_order<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             order_id,
             new_quantity,
@@ -2353,7 +2353,7 @@ public(package) fun modify_order<BaseAsset, QuoteAsset>(
 
         test.return_to_sender(trade_cap);
         return_shared(pool);
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
     }
 }
@@ -2371,7 +2371,7 @@ fun test_place_order_edge_price(quantity: u64, price: u64) {
     } else {
         base_funding
     };
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         funding_amount,
         &mut test,
@@ -2379,7 +2379,7 @@ fun test_place_order_edge_price(quantity: u64, price: u64) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -2388,7 +2388,7 @@ fun test_place_order_edge_price(quantity: u64, price: u64) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2418,25 +2418,25 @@ public(package) fun get_time(test: &mut Scenario): u64 {
 public(package) fun validate_open_orders<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     expected_open_orders: u64,
     test: &mut Scenario,
 ) {
     test.next_tx(sender);
     {
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
 
         assert!(
-            pool.account_open_orders(&balance_manager).length() ==
+            pool.account_open_orders(&trading_account).length() ==
             expected_open_orders,
             1,
         );
 
         return_shared(pool);
-        return_shared(balance_manager);
+        return_shared(trading_account);
     }
 }
 
@@ -2448,7 +2448,7 @@ public(package) fun validate_open_orders<BaseAsset, QuoteAsset>(
 fun test_queue_priority(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -2456,7 +2456,7 @@ fun test_queue_priority(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -2472,7 +2472,7 @@ fun test_queue_priority(is_bid: bool) {
     let order_info_worse = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         worse_price,
@@ -2485,7 +2485,7 @@ fun test_queue_priority(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2498,7 +2498,7 @@ fun test_queue_priority(is_bid: bool) {
     let order_info_2 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2511,7 +2511,7 @@ fun test_queue_priority(is_bid: bool) {
     let order_info_3 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2525,7 +2525,7 @@ fun test_queue_priority(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         worse_price,
@@ -2575,7 +2575,7 @@ fun test_queue_priority(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2608,7 +2608,7 @@ fun test_modify_order(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -2616,7 +2616,7 @@ fun test_modify_order(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -2626,7 +2626,7 @@ fun test_modify_order(
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         base_price,
@@ -2640,7 +2640,7 @@ fun test_modify_order(
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             base_price,
@@ -2654,7 +2654,7 @@ fun test_modify_order(
     modify_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_info.order_id(),
         new_quantity,
         &mut test,
@@ -2678,12 +2678,12 @@ fun test_modify_order(
 fun test_order_limit(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -2691,7 +2691,7 @@ fun test_order_limit(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -2704,7 +2704,7 @@ fun test_order_limit(is_bid: bool) {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -2731,7 +2731,7 @@ fun test_order_limit(is_bid: bool) {
         place_limit_order<SUI, USDC>(
             BOB,
             pool_id,
-            balance_manager_id_bob,
+            trading_account_id_bob,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -2777,7 +2777,7 @@ fun test_order_limit(is_bid: bool) {
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2826,7 +2826,7 @@ fun test_order_limit(is_bid: bool) {
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -2887,7 +2887,7 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
 >(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ): ID {
     let target_pool_id = setup_pool_with_default_fees<BaseAsset, QuoteAsset>(
@@ -2898,7 +2898,7 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
     let _reference_pool_id = setup_reference_pool<ReferenceBaseAsset, ReferenceQuoteAsset>(
         sender,
         registry_id,
-        balance_manager_id,
+        trading_account_id,
         constants::cred_multiplier(),
         test,
     );
@@ -2915,11 +2915,11 @@ fun test_swap_exact_not_fully_filled(
     low_quantity: bool,
     minimum_enforced: bool,
     partially_filled_maker: bool,
-    with_manager: bool,
+    with_trading_account: bool,
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -2927,7 +2927,7 @@ fun test_swap_exact_not_fully_filled(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -2943,7 +2943,7 @@ fun test_swap_exact_not_fully_filled(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -2957,7 +2957,7 @@ fun test_swap_exact_not_fully_filled(
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             alice_price,
@@ -2971,7 +2971,7 @@ fun test_swap_exact_not_fully_filled(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         expired_price,
@@ -3031,23 +3031,23 @@ fun test_swap_exact_not_fully_filled(
     };
 
     let initial_bob_balances = 1000000 * constants::float_scaling();
-    let bob_balance_manager_id = create_acct_and_share_with_funds(
+    let bob_trading_account_id = create_acct_and_share_with_funds(
         BOB,
         initial_bob_balances,
         &mut test,
     );
-    create_caps(BOB, bob_balance_manager_id, &mut test);
-    let _bob_sui_balance_before = asset_balance<SUI>(BOB, bob_balance_manager_id, &mut test);
-    let _bob_usdc_balance_before = asset_balance<USDC>(BOB, bob_balance_manager_id, &mut test);
-    let _bob_cred_balance_before = asset_balance<CRED>(BOB, bob_balance_manager_id, &mut test);
+    create_caps(BOB, bob_trading_account_id, &mut test);
+    let _bob_sui_balance_before = asset_balance<SUI>(BOB, bob_trading_account_id, &mut test);
+    let _bob_usdc_balance_before = asset_balance<USDC>(BOB, bob_trading_account_id, &mut test);
+    let _bob_cred_balance_before = asset_balance<CRED>(BOB, bob_trading_account_id, &mut test);
 
     let (base_out, quote_out, cred_out) = if (is_bid) {
-        if (with_manager) {
+        if (with_trading_account) {
             let cred_out = coin::zero(test.ctx());
-            let (base_out, quote_out) = place_exact_base_for_quote_with_manager<SUI, USDC>(
+            let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<SUI, USDC>(
                 pool_id,
                 BOB,
-                bob_balance_manager_id,
+                bob_trading_account_id,
                 base_in,
                 min_out,
                 &mut test,
@@ -3065,12 +3065,12 @@ fun test_swap_exact_not_fully_filled(
             )
         }
     } else {
-        if (with_manager) {
+        if (with_trading_account) {
             let cred_out = coin::zero(test.ctx());
-            let (base_out, quote_out) = place_exact_quote_for_base_with_manager<SUI, USDC>(
+            let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<SUI, USDC>(
                 pool_id,
                 BOB,
-                bob_balance_manager_id,
+                bob_trading_account_id,
                 quote_in,
                 min_out,
                 &mut test,
@@ -3088,9 +3088,9 @@ fun test_swap_exact_not_fully_filled(
             )
         }
     };
-    let _bob_sui_balance_after = asset_balance<SUI>(BOB, bob_balance_manager_id, &mut test);
-    let _bob_usdc_balance_after = asset_balance<USDC>(BOB, bob_balance_manager_id, &mut test);
-    let _bob_cred_balance_after = asset_balance<CRED>(BOB, bob_balance_manager_id, &mut test);
+    let _bob_sui_balance_after = asset_balance<SUI>(BOB, bob_trading_account_id, &mut test);
+    let _bob_usdc_balance_after = asset_balance<USDC>(BOB, bob_trading_account_id, &mut test);
+    let _bob_cred_balance_after = asset_balance<CRED>(BOB, bob_trading_account_id, &mut test);
 
     if (low_quantity) {
         // With lot_size removed, tiny amounts (100 units) can now match
@@ -3169,7 +3169,7 @@ fun test_swap_exact_not_fully_filled(
 fun test_mid_price() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -3177,7 +3177,7 @@ fun test_mid_price() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -3195,7 +3195,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_bid_1,
@@ -3208,7 +3208,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_bid_best,
@@ -3221,7 +3221,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_bid_expired,
@@ -3234,7 +3234,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_ask_1,
@@ -3247,7 +3247,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_ask_best,
@@ -3260,7 +3260,7 @@ fun test_mid_price() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price_ask_expired,
@@ -3295,7 +3295,7 @@ fun test_mid_price() {
 fun test_market_order(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -3303,7 +3303,7 @@ fun test_market_order(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -3327,7 +3327,7 @@ fun test_market_order(is_bid: bool) {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             (start + i) * base_price,
@@ -3355,7 +3355,7 @@ fun test_market_order(is_bid: bool) {
     let order_info = place_market_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::self_matching_allowed(),
         quantity_2,
         !is_bid,
@@ -3417,7 +3417,7 @@ fun test_market_order(is_bid: bool) {
 fun test_crossing_multiple(is_bid: bool, num_orders: u64) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -3425,7 +3425,7 @@ fun test_crossing_multiple(is_bid: bool, num_orders: u64) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -3438,7 +3438,7 @@ fun test_crossing_multiple(is_bid: bool, num_orders: u64) {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -3459,7 +3459,7 @@ fun test_crossing_multiple(is_bid: bool, num_orders: u64) {
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -3496,7 +3496,7 @@ fun test_crossing_multiple(is_bid: bool, num_orders: u64) {
 fun test_fill_or_kill(is_bid: bool, order_can_be_filled: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -3504,7 +3504,7 @@ fun test_fill_or_kill(is_bid: bool, order_can_be_filled: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -3522,7 +3522,7 @@ fun test_fill_or_kill(is_bid: bool, order_can_be_filled: bool) {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -3544,7 +3544,7 @@ fun test_fill_or_kill(is_bid: bool, order_can_be_filled: bool) {
     let order_info = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::fill_or_kill(),
         constants::self_matching_allowed(),
         price,
@@ -3578,7 +3578,7 @@ fun test_fill_or_kill(is_bid: bool, order_can_be_filled: bool) {
 fun test_post_only(is_bid: bool, crosses_order: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -3586,7 +3586,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -3598,7 +3598,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -3618,7 +3618,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -3723,7 +3723,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 // }
 
 // #feat:refer
-// #[test, expected_failure(abort_code = ::triexbook::balance_manager::EInvalidReferralOwner)]
+// #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidReferralOwner)]
 // fun test_update_referral_multiplier_wrong_owner() {
 //     let mut test = begin(OWNER);
 //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3747,7 +3747,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 // }
 
 // #feat:refer
-// #[test, expected_failure(abort_code = ::triexbook::balance_manager::EInvalidReferralOwner)]
+// #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidReferralOwner)]
 // fun test_claim_referral_rewards_wrong_owner() {
 //     let mut test = begin(OWNER);
 //     let pool_id = setup_everything<SUI, USDC, SUI, CRED>(&mut test);
@@ -3786,10 +3786,10 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         return_shared(pool);
 //     };
 
-//     let balance_manager_id_alice;
+//     let trading_account_id_alice;
 //     test.next_tx(ALICE);
 //     {
-//         balance_manager_id_alice =
+//         trading_account_id_alice =
 //             create_acct_and_share_with_funds_typed<SUI, USDC, SUI, CRED>(
 //                 ALICE,
 //                 1000000 * constants::float_scaling(),
@@ -3799,11 +3799,11 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 
 //     test.next_tx(ALICE);
 //     {
-//         let mut balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+//         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id_alice);
 //         let referral = test.take_shared_by_id<TriexBookReferral>(referral_id);
-//         let trade_cap = balance_manager.mint_trade_cap(test.ctx());
-//         balance_manager.set_referral(&referral, &trade_cap);
-//         return_shared(balance_manager);
+//         let trade_cap = trading_account.mint_trade_cap(test.ctx());
+//         trading_account.set_referral(&referral, &trade_cap);
+//         return_shared(trading_account);
 //         return_shared(referral);
 //         destroy(trade_cap);
 //     };
@@ -3813,7 +3813,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -3853,7 +3853,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -3884,7 +3884,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -3917,7 +3917,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -3977,10 +3977,10 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         return_shared(pool);
 //     };
 
-//     let balance_manager_id_alice;
+//     let trading_account_id_alice;
 //     test.next_tx(ALICE);
 //     {
-//         balance_manager_id_alice =
+//         trading_account_id_alice =
 //             create_acct_and_share_with_funds_typed<SUI, USDC, SUI, CRED>(
 //                 ALICE,
 //                 1000000 * constants::float_scaling(),
@@ -3995,7 +3995,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -4011,7 +4011,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -4029,7 +4029,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -4056,7 +4056,7 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 //         let order_info = place_market_order<SUI, USDC>(
 //             ALICE,
 //             pool_id,
-//             balance_manager_id_alice,
+//             trading_account_id_alice,
 //             1,
 //             constants::self_matching_allowed(),
 //             1_500_000_000,
@@ -4075,10 +4075,10 @@ fun test_post_only(is_bid: bool, crosses_order: bool) {
 /// Alice places a bid order, Bob places a swap_exact_amount order
 /// Make sure the assets returned to Bob are correct
 /// Make sure expired orders are skipped over
-fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
+fun test_swap_exact_amount(is_bid: bool, with_trading_account: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4086,7 +4086,7 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -4103,7 +4103,7 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -4116,7 +4116,7 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         expired_price,
@@ -4162,20 +4162,20 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
     };
 
     let initial_bob_balances = 1000000 * constants::float_scaling();
-    let bob_balance_manager_id = create_acct_and_share_with_funds(
+    let bob_trading_account_id = create_acct_and_share_with_funds(
         BOB,
         initial_bob_balances,
         &mut test,
     );
-    create_caps(BOB, bob_balance_manager_id, &mut test);
+    create_caps(BOB, bob_trading_account_id, &mut test);
 
     let (base_out, quote_out, cred_out) = if (is_bid) {
-        if (with_manager) {
+        if (with_trading_account) {
             let cred_out = coin::zero(test.ctx());
-            let (base_out, quote_out) = place_exact_base_for_quote_with_manager<SUI, USDC>(
+            let (base_out, quote_out) = place_exact_base_for_quote_with_trading_account<SUI, USDC>(
                 pool_id,
                 BOB,
-                bob_balance_manager_id,
+                bob_trading_account_id,
                 base_in,
                 0,
                 &mut test,
@@ -4193,12 +4193,12 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
             )
         }
     } else {
-        if (with_manager) {
+        if (with_trading_account) {
             let cred_out = coin::zero(test.ctx());
-            let (base_out, quote_out) = place_exact_quote_for_base_with_manager<SUI, USDC>(
+            let (base_out, quote_out) = place_exact_quote_for_base_with_trading_account<SUI, USDC>(
                 pool_id,
                 BOB,
-                bob_balance_manager_id,
+                bob_trading_account_id,
                 quote_in,
                 0,
                 &mut test,
@@ -4241,7 +4241,7 @@ fun test_swap_exact_amount(is_bid: bool, with_manager: bool) {
 fun test_swap_exact_amount_with_input(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4269,7 +4269,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -4282,7 +4282,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         expired_price,
@@ -4375,7 +4375,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
 // fun test_get_quantity_out_zero(is_bid: bool) {
 //     let mut test = begin(OWNER);
 //     let registry_id = setup_test(OWNER, &mut test);
-//     let balance_manager_id_alice = create_acct_and_share_with_funds(
+//     let trading_account_id_alice = create_acct_and_share_with_funds(
 //         ALICE,
 //         1000000 * constants::float_scaling(),
 //         &mut test,
@@ -4383,7 +4383,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
 //     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
 //         ALICE,
 //         registry_id,
-//         balance_manager_id_alice,
+//         trading_account_id_alice,
 //         &mut test,
 //     );
 
@@ -4394,7 +4394,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
 //     place_limit_order<SUI, USDC>(
 //         ALICE,
 //         pool_id,
-//         balance_manager_id_alice,
+//         trading_account_id_alice,
 //         constants::no_restriction(),
 //         constants::self_matching_allowed(),
 //         alice_price,
@@ -4493,7 +4493,7 @@ fun test_swap_exact_amount_with_input(is_bid: bool) {
 fun test_self_matching_cancel_taker(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4501,7 +4501,7 @@ fun test_self_matching_cancel_taker(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -4518,7 +4518,7 @@ fun test_self_matching_cancel_taker(is_bid: bool) {
     let order_info_1 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price_1,
@@ -4542,7 +4542,7 @@ fun test_self_matching_cancel_taker(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::cancel_taker(),
         price_2,
@@ -4562,7 +4562,7 @@ fun test_self_matching_cancel_taker(is_bid: bool) {
 fun test_self_matching_cancel_maker(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4570,7 +4570,7 @@ fun test_self_matching_cancel_maker(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
     let order_type = constants::no_restriction();
@@ -4586,7 +4586,7 @@ fun test_self_matching_cancel_maker(is_bid: bool) {
     let order_info_1 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price_1,
@@ -4610,7 +4610,7 @@ fun test_self_matching_cancel_maker(is_bid: bool) {
     let order_info_2 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::cancel_maker(),
         price_2,
@@ -4644,7 +4644,7 @@ fun test_self_matching_cancel_maker(is_bid: bool) {
 fun place_with_price_quantity(price: u64, quantity: u64) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4652,7 +4652,7 @@ fun place_with_price_quantity(price: u64, quantity: u64) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -4662,7 +4662,7 @@ fun place_with_price_quantity(price: u64, quantity: u64) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -4677,7 +4677,7 @@ fun place_with_price_quantity(price: u64, quantity: u64) {
 fun partially_filled_order_taken(is_bid: bool) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4685,10 +4685,10 @@ fun partially_filled_order_taken(is_bid: bool) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4708,7 +4708,7 @@ fun partially_filled_order_taken(is_bid: bool) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price_1,
@@ -4723,7 +4723,7 @@ fun partially_filled_order_taken(is_bid: bool) {
     let alice_order_info_2 = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price_2,
@@ -4771,7 +4771,7 @@ fun partially_filled_order_taken(is_bid: bool) {
     let bob_order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         bob_price,
@@ -4820,7 +4820,7 @@ fun partial_fill_order(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4828,10 +4828,10 @@ fun partial_fill_order(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4843,7 +4843,7 @@ fun partial_fill_order(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -4859,7 +4859,7 @@ fun partial_fill_order(
     let bob_order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         bob_price,
@@ -4901,7 +4901,7 @@ fun partial_fill_maker_order(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4909,10 +4909,10 @@ fun partial_fill_maker_order(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -4924,7 +4924,7 @@ fun partial_fill_maker_order(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -4938,7 +4938,7 @@ fun partial_fill_maker_order(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -4955,7 +4955,7 @@ fun partial_fill_maker_order(
     let bob_order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         bob_price,
@@ -4999,7 +4999,7 @@ fun place_then_fill(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5008,11 +5008,11 @@ fun place_then_fill(
         setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         )
     };
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5024,7 +5024,7 @@ fun place_then_fill(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -5044,7 +5044,7 @@ fun place_then_fill(
     let bob_order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         bob_price,
@@ -5074,7 +5074,7 @@ fun place_then_fill(
 fun place_then_fill_correct(is_bid: bool, order_type: u8, alice_quantity: u64) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5082,10 +5082,10 @@ fun place_then_fill_correct(is_bid: bool, order_type: u8, alice_quantity: u64) {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5097,7 +5097,7 @@ fun place_then_fill_correct(is_bid: bool, order_type: u8, alice_quantity: u64) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -5110,7 +5110,7 @@ fun place_then_fill_correct(is_bid: bool, order_type: u8, alice_quantity: u64) {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         alice_price,
@@ -5130,7 +5130,7 @@ fun place_then_fill_correct(is_bid: bool, order_type: u8, alice_quantity: u64) {
     let mut bob_order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         bob_price,
@@ -5191,7 +5191,7 @@ fun place_then_no_fill(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5199,10 +5199,10 @@ fun place_then_no_fill(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5215,7 +5215,7 @@ fun place_then_no_fill(
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -5234,7 +5234,7 @@ fun place_then_no_fill(
     let order_info = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -5261,7 +5261,7 @@ fun place_then_no_fill(
     cancel_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_info.order_id(),
         &mut test,
     );
@@ -5281,7 +5281,7 @@ fun place_order_expire_timestamp_e(
 ) {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5289,10 +5289,10 @@ fun place_order_expire_timestamp_e(
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -5305,7 +5305,7 @@ fun place_order_expire_timestamp_e(
     let order_info_alice = place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -5337,7 +5337,7 @@ fun place_order_expire_timestamp_e(
     let order_info_bob = place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -5583,10 +5583,10 @@ fun place_swap_exact_base_for_quote<BaseAsset, QuoteAsset>(
     }
 }
 
-fun place_exact_base_for_quote_with_manager<BaseAsset, QuoteAsset>(
+fun place_exact_base_for_quote_with_trading_account<BaseAsset, QuoteAsset>(
     pool_id: ID,
     trader: address,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     base_in: u64,
     min_quote_out: u64,
     test: &mut Scenario,
@@ -5597,19 +5597,19 @@ fun place_exact_base_for_quote_with_manager<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         let trade_cap = test.take_from_sender<TradeCap>();
         let deposit_cap = test.take_from_sender<DepositCap>();
         let withdraw_cap = test.take_from_sender<WithdrawCap>();
 
         // Place order in pool
-        let (base_out, quote_out) = pool.swap_exact_base_for_quote_with_manager<
+        let (base_out, quote_out) = pool.swap_exact_base_for_quote_with_trading_account<
             BaseAsset,
             QuoteAsset,
         >(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_cap,
             &deposit_cap,
             &withdraw_cap,
@@ -5621,7 +5621,7 @@ fun place_exact_base_for_quote_with_manager<BaseAsset, QuoteAsset>(
 
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
         test.return_to_sender(trade_cap);
         test.return_to_sender(deposit_cap);
         test.return_to_sender(withdraw_cap);
@@ -5660,10 +5660,10 @@ fun place_swap_exact_quote_for_base<BaseAsset, QuoteAsset>(
     }
 }
 
-fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
+fun place_exact_quote_for_base_with_trading_account<BaseAsset, QuoteAsset>(
     pool_id: ID,
     trader: address,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     quote_in: u64,
     min_base_out: u64,
     test: &mut Scenario,
@@ -5674,19 +5674,19 @@ fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         let trade_cap = test.take_from_sender<TradeCap>();
         let deposit_cap = test.take_from_sender<DepositCap>();
         let withdraw_cap = test.take_from_sender<WithdrawCap>();
 
         // Place order in pool
-        let (base_out, quote_out) = pool.swap_exact_quote_for_base_with_manager<
+        let (base_out, quote_out) = pool.swap_exact_quote_for_base_with_trading_account<
             BaseAsset,
             QuoteAsset,
         >(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_cap,
             &deposit_cap,
             &withdraw_cap,
@@ -5698,7 +5698,7 @@ fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
 
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
         test.return_to_sender(trade_cap);
         test.return_to_sender(deposit_cap);
         test.return_to_sender(withdraw_cap);
@@ -5710,7 +5710,7 @@ fun place_exact_quote_for_base_with_manager<BaseAsset, QuoteAsset>(
 public(package) fun cancel_orders<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_ids: vector<u64>,
     test: &mut Scenario,
 ) {
@@ -5720,19 +5720,19 @@ public(package) fun cancel_orders<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         // Ensure quote is available for fee refunds before batch cancel
         let extra_quote = mint_for_testing<QuoteAsset>(
             1_000_000_000 * constants::float_scaling(),
             test.ctx(),
         );
-        balance_manager.deposit(extra_quote, test.ctx());
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        trading_account.deposit(extra_quote, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         pool.cancel_orders<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             order_ids,
             &clock,
@@ -5740,14 +5740,14 @@ public(package) fun cancel_orders<BaseAsset, QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
     }
 }
 
 public(package) fun cancel_all_orders<BaseAsset, QuoteAsset>(
     pool_id: ID,
     owner: address,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ) {
     test.next_tx(owner);
@@ -5756,26 +5756,26 @@ public(package) fun cancel_all_orders<BaseAsset, QuoteAsset>(
             pool_id,
         );
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         // Ensure quote is available for fee refunds before cancel-all
         let extra_quote = mint_for_testing<QuoteAsset>(
             10_000_000 * constants::float_scaling(),
             test.ctx(),
         );
-        balance_manager.deposit(extra_quote, test.ctx());
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        trading_account.deposit(extra_quote, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
         pool.cancel_all_orders<BaseAsset, QuoteAsset>(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             &clock,
             test.ctx(),
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(balance_manager);
+        return_shared(trading_account);
     }
 }
 
@@ -5990,13 +5990,13 @@ fun get_quote_quantity_out_input_fee<BaseAsset, QuoteAsset>(
 //     test.next_with_context(ctx);
 // }
 
-/// Acceptance #1: place -> cancel with no fills returns the balance manager to
+/// Acceptance #1: place -> cancel with no fills returns the trading account to
 /// its pre-order state minus the 20% retention. The refund has to come out of
 /// the fee reserve, not out of the pool balance holding other users' quote.
 public(package) fun test_cancel_refunds_escrow_to_maker() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6004,7 +6004,7 @@ public(package) fun test_cancel_refunds_escrow_to_maker() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -6013,14 +6013,14 @@ public(package) fun test_cancel_refunds_escrow_to_maker() {
     // 200 quote notional at 1.8% = 3.6 escrowed, so 0.72 is retained.
     let retained = 72 * constants::float_scaling() / 100;
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     let order_id;
     {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6036,17 +6036,17 @@ public(package) fun test_cancel_refunds_escrow_to_maker() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Round trip cost Alice exactly the retention, nothing else.
     assert!(balance_before - balance_after == retained, 0);
 
@@ -6070,7 +6070,7 @@ public(package) fun test_cancel_refunds_escrow_to_maker() {
 public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6078,10 +6078,10 @@ public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6101,7 +6101,7 @@ public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6116,7 +6116,7 @@ public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -6130,12 +6130,12 @@ public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6161,7 +6161,7 @@ public(package) fun test_cancel_after_partial_fill_refunds_unfilled_only() {
 public(package) fun test_cancel_uses_snapshotted_retention_rate() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6169,7 +6169,7 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -6182,7 +6182,7 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6205,23 +6205,23 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
     };
     test.next_epoch(OWNER);
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Alice still gets her 80% back: the order carries the 20% it was placed
     // under, not the 100% now in force.
     assert!(balance_after - balance_before == 200 * constants::float_scaling() +
@@ -6242,7 +6242,7 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6254,27 +6254,27 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
         new_order_id = order_info.order_id();
     };
 
-    let before_second_cancel = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let before_second_cancel = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, new_order_id, &clock, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, new_order_id, &clock, test.ctx());
 
         // 100% retention: nothing to unlock, so no refund event at all.
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 0, 2);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let after_second_cancel = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let after_second_cancel = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Principal back, escrow entirely forfeited under the new policy.
     assert!(after_second_cancel - before_second_cancel == 200 * constants::float_scaling(), 3);
 
@@ -6286,7 +6286,7 @@ public(package) fun test_cancel_uses_snapshotted_retention_rate() {
 public(package) fun test_zero_retention_refunds_the_whole_escrow() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6294,7 +6294,7 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -6312,14 +6312,14 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
     let quantity = 100 * constants::float_scaling();
     let escrow = 36 * constants::float_scaling() / 10;
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     let order_id;
     {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6335,11 +6335,11 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 0);
@@ -6350,12 +6350,12 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
         assert!(pool.quote_fee_reserve_balance() == 0, 2);
         assert!(pool.locked_maker_fees() == 0, 3);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Exactly whole: the round trip cost nothing but gas.
     assert!(balance_after == balance_before, 4);
 
@@ -6363,11 +6363,11 @@ public(package) fun test_zero_retention_refunds_the_whole_escrow() {
 }
 
 /// An expired bid maker is refunded on cancel terms, and the funds actually
-/// reach their balance manager rather than only being credited as settled.
+/// reach their trading account rather than only being credited as settled.
 public(package) fun test_expired_bid_maker_is_refunded() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6375,10 +6375,10 @@ public(package) fun test_expired_bid_maker_is_refunded() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6390,12 +6390,12 @@ public(package) fun test_expired_bid_maker_is_refunded() {
     let retained = 72 * constants::float_scaling() / 100;
     let expire_timestamp = get_time(&mut test) + 100;
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -6410,7 +6410,7 @@ public(package) fun test_expired_bid_maker_is_refunded() {
     place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        balance_manager_id_bob,
+        trading_account_id_bob,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -6424,16 +6424,16 @@ public(package) fun test_expired_bid_maker_is_refunded() {
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.withdraw_settled_amounts(&mut balance_manager, &trade_proof);
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.withdraw_settled_amounts(&mut trading_account, &trade_proof);
+        return_shared(trading_account);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Expiring cost Alice the same 0.72 a cancel would have.
     assert!(balance_before - balance_after == retained, 0);
 
@@ -6447,7 +6447,7 @@ public(package) fun test_expired_bid_maker_is_refunded() {
 public(package) fun test_cancel_and_refund_events_agree() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6455,7 +6455,7 @@ public(package) fun test_cancel_and_refund_events_agree() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -6469,7 +6469,7 @@ public(package) fun test_cancel_and_refund_events_agree() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6485,11 +6485,11 @@ public(package) fun test_cancel_and_refund_events_agree() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 0);
@@ -6498,7 +6498,7 @@ public(package) fun test_cancel_and_refund_events_agree() {
         );
         assert!(refund_order_id == order_id, 1);
         assert!(refund_amount == expected_refund, 2);
-        assert!(refund_bm == balance_manager_id_alice, 3);
+        assert!(refund_bm == trading_account_id_alice, 3);
 
         let cancels = event::events_by_type<order::OrderCanceled>();
         assert!(cancels.length() == 1, 4);
@@ -6512,7 +6512,7 @@ public(package) fun test_cancel_and_refund_events_agree() {
         // the vault has nothing to emit for it.
         assert!(fee_refunded + fee_retained == escrow, 7);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6526,7 +6526,7 @@ public(package) fun test_cancel_and_refund_events_agree() {
 public(package) fun test_expiry_refund_event_attributes_the_maker() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6534,10 +6534,10 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6554,7 +6554,7 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6571,12 +6571,12 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -6594,8 +6594,8 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
             &refunds[0],
         );
         // Bob sent the transaction; Alice owns the refund.
-        assert!(refund_bm == balance_manager_id_alice, 1);
-        assert!(refund_bm != balance_manager_id_bob, 2);
+        assert!(refund_bm == trading_account_id_alice, 1);
+        assert!(refund_bm != trading_account_id_bob, 2);
         assert!(refund_order_id == alice_order_id, 3);
         assert!(refund_amount == expected_refund, 4);
 
@@ -6608,7 +6608,7 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
         assert!(fee_refunded == refund_amount, 7);
         assert!(fee_refunded + fee_retained == escrow, 8);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6623,16 +6623,16 @@ public(package) fun test_expiry_refund_event_attributes_the_maker() {
 /// `reserve >= locked` invariant actually has to hold, not just be tidy.
 public(package) fun test_cancel_refund_survives_sweep_to_the_floor() {
     let mut test = begin(OWNER);
-    let (pool_id, balance_manager_id_alice, _bob) = setup_pool_with_half_filled_bid(&mut test);
+    let (pool_id, trading_account_id_alice, _bob) = setup_pool_with_half_filled_bid(&mut test);
 
     // Half filled: reserve 5.8 (3.6 escrow + 2.2 taker fee), 1.8 still locked.
     let alice_order_id;
     test.next_tx(ALICE);
     {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
-        alice_order_id = pool.account_open_orders(&balance_manager).into_keys()[0];
-        return_shared(balance_manager);
+        let trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id_alice);
+        alice_order_id = pool.account_open_orders(&trading_account).into_keys()[0];
+        return_shared(trading_account);
         return_shared(pool);
     };
 
@@ -6658,18 +6658,18 @@ public(package) fun test_cancel_refund_survives_sweep_to_the_floor() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.cancel_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             alice_order_id,
             &clock,
             test.ctx(),
         );
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6696,7 +6696,7 @@ public(package) fun test_cancel_refund_survives_sweep_to_the_floor() {
 public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6704,7 +6704,7 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -6716,7 +6716,7 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6745,12 +6745,12 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
-            let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id_alice,
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id_alice,
             );
-            let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.modify_order(
-                &mut balance_manager,
+                &mut trading_account,
                 &trade_proof,
                 order_id,
                 steps[i] * constants::float_scaling(),
@@ -6758,7 +6758,7 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
                 test.ctx(),
             );
             assert!(pool.quote_fee_reserve_balance() >= pool.locked_maker_fees(), 0);
-            return_shared(balance_manager);
+            return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
@@ -6769,12 +6769,12 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6803,7 +6803,7 @@ public(package) fun test_repeated_modify_downs_then_cancel_stay_solvent() {
 public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6811,10 +6811,10 @@ public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6828,7 +6828,7 @@ public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6846,7 +6846,7 @@ public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
         place_limit_order<SUI, USDC>(
             BOB,
             pool_id,
-            balance_manager_id_bob,
+            trading_account_id_bob,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6868,12 +6868,12 @@ public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
-        return_shared(balance_manager);
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -6895,7 +6895,7 @@ public(package) fun test_many_partial_fills_then_cancel_stay_solvent() {
 public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6903,15 +6903,15 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
     );
-    let balance_manager_id_owner = create_acct_and_share_with_funds(
+    let trading_account_id_owner = create_acct_and_share_with_funds(
         OWNER,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -6930,7 +6930,7 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6946,7 +6946,7 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
         let order_info = place_limit_order<SUI, USDC>(
             OWNER,
             pool_id,
-            balance_manager_id_owner,
+            trading_account_id_owner,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -6964,12 +6964,12 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -6984,14 +6984,14 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
         // Two refunds, one per expired maker, each naming its own order.
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 2, 0);
-        let (id_a, amount_a, bm_a) = vault::refunded_event_parts(&refunds[0]);
-        let (id_b, amount_b, bm_b) = vault::refunded_event_parts(&refunds[1]);
-        assert!(bm_a != bm_b, 1);
+        let (id_a, amount_a, ta_a) = vault::refunded_event_parts(&refunds[0]);
+        let (id_b, amount_b, ta_b) = vault::refunded_event_parts(&refunds[1]);
+        assert!(ta_a != ta_b, 1);
         // Neither is attributed to Bob, who merely triggered the expiries.
-        assert!(bm_a != balance_manager_id_bob, 2);
-        assert!(bm_b != balance_manager_id_bob, 3);
+        assert!(ta_a != trading_account_id_bob, 2);
+        assert!(ta_b != trading_account_id_bob, 3);
 
-        let (alice_amount, owner_amount) = if (bm_a == balance_manager_id_alice) {
+        let (alice_amount, owner_amount) = if (ta_a == trading_account_id_alice) {
             assert!(id_a == alice_order_id, 4);
             assert!(id_b == owner_order_id, 5);
             (amount_a, amount_b)
@@ -7003,7 +7003,7 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
         assert!(alice_amount == alice_refund, 8);
         assert!(owner_amount == owner_refund, 9);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -7016,7 +7016,7 @@ public(package) fun test_multiple_expired_makers_each_get_their_own_refund() {
 public(package) fun test_expired_ask_maker_refunds_nothing() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -7024,10 +7024,10 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -7040,7 +7040,7 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -7063,12 +7063,12 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_bob,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_bob,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -7102,7 +7102,7 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
         assert!(pool.quote_fee_reserve_balance() == bob_escrow, 3);
         assert!(pool.withdrawable_pool_fees() == 0, 4);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -7116,7 +7116,7 @@ public(package) fun test_expired_ask_maker_refunds_nothing() {
 public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -7124,7 +7124,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -7138,7 +7138,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -7155,12 +7155,12 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut balance_manager,
+            &mut trading_account,
             &trade_proof,
             constants::no_restriction(),
             constants::cancel_maker(),
@@ -7179,7 +7179,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
         );
         assert!(refund_order_id == bid_order_id, 1);
         assert!(refund_amount == expected_refund, 2);
-        assert!(refund_bm == balance_manager_id_alice, 3);
+        assert!(refund_bm == trading_account_id_alice, 3);
 
         // A self-match cancel emits OrderCanceled rather than OrderExpired,
         // and it has to carry the same split.
@@ -7194,7 +7194,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
 
         assert!(pool.locked_maker_fees() == 0, 8);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
@@ -7207,7 +7207,7 @@ public(package) fun test_self_match_cancel_maker_refunds_the_bid_escrow() {
 public(package) fun test_cancel_all_orders_refunds_every_bid() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -7215,11 +7215,11 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     // Three resting bids at different prices, plus an ask that escrows nothing.
     let quantities = vector[100, 40, 20];
@@ -7228,7 +7228,7 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             (2 + i) * constants::float_scaling(),
@@ -7242,7 +7242,7 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
     place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         50 * constants::float_scaling(),
@@ -7266,11 +7266,11 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_all_orders(&mut balance_manager, &trade_proof, &clock, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_all_orders(&mut trading_account, &trade_proof, &clock, test.ctx());
 
         // One refund per bid; the ask escrowed nothing and contributes none.
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -7278,8 +7278,8 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
         let mut summed = 0;
         let mut r = 0;
         while (r < refunds.length()) {
-            let (_id, amount, bm) = vault::refunded_event_parts(&refunds[r]);
-            assert!(bm == balance_manager_id_alice, 2);
+            let (_id, amount, ta) = vault::refunded_event_parts(&refunds[r]);
+            assert!(ta == trading_account_id_alice, 2);
             summed = summed + amount;
             r = r + 1;
         };
@@ -7292,12 +7292,12 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
         assert!(pool.quote_fee_reserve_balance() == escrow_before - total_refunded, 4);
         assert!(pool.withdrawable_pool_fees() == escrow_before - total_refunded, 5);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Place three bids and an ask, then cancel the lot: Alice is out exactly
     // the retention, and nothing else.
     assert!(balance_before - balance_after == escrow_before - total_refunded, 6);
@@ -7317,7 +7317,7 @@ public(package) fun test_cancel_all_orders_refunds_every_bid() {
 public(package) fun test_refund_rounding_dust_favors_the_retention() {
     let mut test = begin(OWNER);
     let registry_id = setup_test(OWNER, &mut test);
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -7325,7 +7325,7 @@ public(package) fun test_refund_rounding_dust_favors_the_retention() {
     let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
         ALICE,
         registry_id,
-        balance_manager_id_alice,
+        trading_account_id_alice,
         &mut test,
     );
 
@@ -7336,14 +7336,14 @@ public(package) fun test_refund_rounding_dust_favors_the_retention() {
     let expected_refund = 14; // floor(18 * 80%), not 14.4
     let expected_retained = 4; // the dust lands here
 
-    let balance_before = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
     let order_id;
     {
         let order_info = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
@@ -7366,11 +7366,11 @@ public(package) fun test_refund_rounding_dust_favors_the_retention() {
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id_alice,
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id_alice,
         );
-        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
-        pool.cancel_order(&mut balance_manager, &trade_proof, order_id, &clock, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
         let refunds = event::events_by_type<vault::PoolFeesRefunded>();
         assert!(refunds.length() == 1, 1);
@@ -7386,12 +7386,12 @@ public(package) fun test_refund_rounding_dust_favors_the_retention() {
         assert!(pool.locked_maker_fees() == 0, 6);
         assert!(pool.quote_fee_reserve_balance() == expected_retained, 7);
 
-        return_shared(balance_manager);
+        return_shared(trading_account);
         return_shared(clock);
         return_shared(pool);
     };
 
-    let balance_after = asset_balance<USDC>(ALICE, balance_manager_id_alice, &mut test);
+    let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
     // Alice paid 4 of 18 rather than the nominal 3.6 — dust rounds against the
     // maker, which is the only safe direction for a solvency counter.
     assert!(balance_before - balance_after == expected_retained, 8);

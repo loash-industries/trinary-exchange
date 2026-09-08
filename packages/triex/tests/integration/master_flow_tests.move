@@ -7,7 +7,7 @@ module triexbook::integration_master_flow_tests;
 use sui::{sui::SUI, test_scenario::{begin, end}};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests::{Self as balance_manager_tests, SPAM, USDC},
+    trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
     balances,
     constants,
     integration_test_utils::{Self as utils, ExpectedBalances},
@@ -30,7 +30,7 @@ fun test_master_duplicate_pool_e() {
     test_master(EDuplicatePool)
 }
 
-#[test, expected_failure(abort_code = ::triexbook::balance_manager::EBalanceManagerBalanceTooLow)]
+#[test, expected_failure(abort_code = ::triexbook::trading_account::ETradingAccountBalanceTooLow)]
 fun test_master_not_enough_funds_e() {
     test_master(ENotEnoughFunds)
 }
@@ -41,7 +41,7 @@ fun test_master(error_code: u64) {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::owner(),
         starting_balance,
         &mut test,
@@ -50,14 +50,14 @@ fun test_master(error_code: u64) {
     let _pool1_reference_id = pool_tests::setup_reference_pool<SUI, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::cred_multiplier(),
         &mut test,
     );
     let _pool2_reference_id = pool_tests::setup_reference_pool<SPAM, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::cred_multiplier(),
         &mut test,
     );
@@ -80,12 +80,12 @@ fun test_master(error_code: u64) {
         &mut test,
     );
 
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::alice(),
         starting_balance,
         &mut test,
     );
-    let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::bob(),
         starting_balance,
         &mut test,
@@ -108,7 +108,7 @@ fun test_master(error_code: u64) {
         pool_tests::place_limit_order<SUI, USDC>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -122,14 +122,14 @@ fun test_master(error_code: u64) {
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
 
     let order_info_1 = pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -150,7 +150,7 @@ fun test_master(error_code: u64) {
     pool_tests::place_limit_order<SPAM, USDC>(
         utils::alice(),
         pool2_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -162,7 +162,7 @@ fun test_master(error_code: u64) {
 
     utils::sub_spam(&mut alice_balance, quantity);
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 1, 0);
@@ -174,7 +174,7 @@ fun test_master(error_code: u64) {
     pool_tests::cancel_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_info_1.order_id(),
         &mut test,
     );
@@ -186,12 +186,12 @@ fun test_master(error_code: u64) {
             cred_multiplier,
         ),
     );
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -208,7 +208,7 @@ fun test_master(error_code: u64) {
             cred_multiplier,
         ),
     );
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     let executed_quantity = 3 * constants::float_scaling();
     let quantity = constants::cred_multiplier();
@@ -216,7 +216,7 @@ fun test_master(error_code: u64) {
     pool_tests::place_market_order<SUI, USDC>(
         utils::bob(),
         pool1_id,
-        bob_balance_manager_id,
+        bob_trading_account_id,
         constants::self_matching_allowed(),
         quantity,
         !is_bid,
@@ -224,12 +224,12 @@ fun test_master(error_code: u64) {
     );
     utils::sub_sui(&mut bob_balance, executed_quantity);
     utils::add_usdc(&mut bob_balance, math::mul(price, executed_quantity));
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     utils::add_sui(&mut alice_balance, executed_quantity);
@@ -237,10 +237,10 @@ fun test_master(error_code: u64) {
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 3, 0);
@@ -248,8 +248,8 @@ fun test_master(error_code: u64) {
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 4, 0);
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     let expected_vault_fee = 0;
     utils::check_vault_balances<SUI, USDC>(
@@ -264,8 +264,8 @@ fun test_master(error_code: u64) {
         test.next_epoch(utils::owner());
         utils::execute_cross_trading<SUI, USDC>(
             pool1_id,
-            alice_balance_manager_id,
-            bob_balance_manager_id,
+            alice_trading_account_id,
+            bob_trading_account_id,
             order_type,
             price,
             quantity,
@@ -289,23 +289,23 @@ fun test_master(error_code: u64) {
     utils::sub_sui(&mut bob_balance, quantity_sui_traded);
     utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 28, 0);
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     let bob_rebates = 0;
     utils::add_cred(&mut bob_balance, bob_rebates);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     let quantity = 500_000_000;
     utils::execute_cross_trading<SUI, USDC>(
         pool1_id,
-        alice_balance_manager_id,
-        bob_balance_manager_id,
+        alice_trading_account_id,
+        bob_trading_account_id,
         order_type,
         price,
         quantity,
@@ -329,18 +329,18 @@ fun test_master(error_code: u64) {
     utils::sub_sui(&mut bob_balance, quantity_sui_traded);
     utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
 
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 29, 0);
 
     let expected_amount_burned = 0;
     utils::add_cred(&mut alice_balance, 0);
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     utils::add_cred(&mut bob_balance, 0);
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     utils::burn_cred<SUI, USDC>(utils::alice(), pool1_id, expected_amount_burned, &mut test);
 

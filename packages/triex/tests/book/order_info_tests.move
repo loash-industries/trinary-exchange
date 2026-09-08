@@ -487,14 +487,14 @@ fun validate_inputs_invalid_order_type_e() {
     test.next_tx(ALICE);
     let price = 1_000_000;
     let quantity = 100_000;
-    let balance_manager_id = id_from_address(@0x1);
+    let trading_account_id = id_from_address(@0x1);
     let order_type = 5;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = true;
     create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -517,14 +517,14 @@ fun validate_inputs_market_order_post_only_e() {
     test.next_tx(ALICE);
     let price = 1_000_000;
     let quantity = 100_000;
-    let balance_manager_id = id_from_address(@0x1);
+    let trading_account_id = id_from_address(@0x1);
     let order_type = 3;
     let market_order = true;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = false;
     create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -561,14 +561,14 @@ fun validate_execution_post_only_e() {
     test.next_tx(ALICE);
     let price = 1_000_000;
     let quantity = 100_000;
-    let balance_manager_id = id_from_address(@0x1);
+    let trading_account_id = id_from_address(@0x1);
     let order_type = 3;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = true;
     let mut order_info = create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -600,14 +600,14 @@ fun validate_execution_FOK_e() {
     test.next_tx(ALICE);
     let price = 1_000_000;
     let quantity = 100_000_000;
-    let balance_manager_id = id_from_address(@0x1);
+    let trading_account_id = id_from_address(@0x1);
     let order_type = 2;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = false;
     let mut order_info = create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -639,14 +639,14 @@ fun validate_execution_immediate_or_cancel_ok() {
     test.next_tx(ALICE);
     let price = 1_000_000;
     let quantity = 100_000_000;
-    let balance_manager_id = id_from_address(@0x1);
+    let trading_account_id = id_from_address(@0x1);
     let order_type = 1;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = false;
     let mut order_info = create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -680,7 +680,7 @@ public fun create_order_info_base(
     is_bid: bool,
     epoch: u64,
 ): OrderInfo {
-    let balance_manager_id = id_from_address(trader);
+    let trading_account_id = id_from_address(trader);
     let order_type = 0;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
@@ -688,7 +688,7 @@ public fun create_order_info_base(
     let order_inserted = true;
 
     create_order_info(
-        balance_manager_id,
+        trading_account_id,
         trader,
         order_type,
         price,
@@ -704,7 +704,7 @@ public fun create_order_info_base(
 
 #[test_only]
 public fun create_order_info(
-    balance_manager_id: ID,
+    trading_account_id: ID,
     trader: address,
     order_type: u8,
     price: u64,
@@ -719,7 +719,7 @@ public fun create_order_info(
     let pool_id = id_from_address(@0x2);
     let mut order_info = order_info::new(
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         trader,
         order_type,
         constants::self_matching_allowed(),

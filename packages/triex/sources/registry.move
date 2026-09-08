@@ -22,7 +22,7 @@ const EPackageVersionNotEnabled: u64 = 3;
 const EVersionNotEnabled: u64 = 4;
 const EVersionAlreadyEnabled: u64 = 5;
 const ECannotDisableCurrentVersion: u64 = 6;
-const EMaxBalanceManagersReached: u64 = 9;
+const EMaxTradingAccountsReached: u64 = 9;
 const EQuoteNotApproved: u64 = 10;
 const EQuoteAlreadyApproved: u64 = 11;
 const EMulticoinPoolAlreadyExists: u64 = 13;
@@ -53,7 +53,7 @@ public struct PoolKey has copy, drop, store {
     quote: TypeName,
 }
 
-public struct BalanceManagerKey has copy, drop, store {}
+public struct TradingAccountKey has copy, drop, store {}
 public struct ApprovedQuoteKey has copy, drop, store {}
 public struct MultiCoinPoolsKey has copy, drop, store {}
 
@@ -181,8 +181,8 @@ public fun remove_approved_quote<QuoteCoin>(self: &mut Registry, _cap: &Triexboo
     approved_quotes.remove(&quote_type);
 }
 
-/// Adds the BalanceManagerKey dynamic field to the registry
-public fun init_balance_manager_map(
+/// Adds the TradingAccountKey dynamic field to the registry
+public fun init_trading_account_map(
     self: &mut Registry,
     _cap: &TriexbookAdminCap,
     ctx: &mut TxContext,
@@ -191,25 +191,25 @@ public fun init_balance_manager_map(
     if (
         !dynamic_field::exists_(
             &self.id,
-            BalanceManagerKey {},
+            TradingAccountKey {},
         )
     ) {
         dynamic_field::add(
             &mut self.id,
-            BalanceManagerKey {},
+            TradingAccountKey {},
             table::new<address, VecSet<ID>>(ctx),
         );
     };
 }
 
-/// Get the balance manager IDs for a given owner
-public fun get_balance_manager_ids(self: &Registry, owner: address): VecSet<ID> {
-    let balance_manager_map: &Table<address, VecSet<ID>> = dynamic_field::borrow(
+/// Get the trading account IDs for a given owner
+public fun get_trading_account_ids(self: &Registry, owner: address): VecSet<ID> {
+    let trading_account_map: &Table<address, VecSet<ID>> = dynamic_field::borrow(
         &self.id,
-        BalanceManagerKey {},
+        TradingAccountKey {},
     );
-    if (balance_manager_map.contains(owner)) {
-        *balance_manager_map.borrow<address, VecSet<ID>>(owner)
+    if (trading_account_map.contains(owner)) {
+        *trading_account_map.borrow<address, VecSet<ID>>(owner)
     } else {
         vec_set::empty()
     }
@@ -330,23 +330,23 @@ public(package) fun load_inner(self: &Registry): &RegistryInner {
     inner
 }
 
-/// Adds a balance_manager to the registry
-public(package) fun add_balance_manager(self: &mut Registry, owner: address, manager_id: ID) {
+/// Adds a trading_account to the registry
+public(package) fun add_trading_account(self: &mut Registry, owner: address, trading_account_id: ID) {
     let _: &mut RegistryInner = self.load_inner_mut();
-    let balance_manager_map: &mut Table<address, VecSet<ID>> = dynamic_field::borrow_mut(
+    let trading_account_map: &mut Table<address, VecSet<ID>> = dynamic_field::borrow_mut(
         &mut self.id,
-        BalanceManagerKey {},
+        TradingAccountKey {},
     );
-    if (!balance_manager_map.contains(owner)) {
-        balance_manager_map.add(owner, vec_set::empty());
+    if (!trading_account_map.contains(owner)) {
+        trading_account_map.add(owner, vec_set::empty());
     };
-    let balance_manager_ids = balance_manager_map.borrow_mut(owner);
-    if (!balance_manager_ids.contains(&manager_id)) {
-        balance_manager_ids.insert(manager_id);
+    let trading_account_ids = trading_account_map.borrow_mut(owner);
+    if (!trading_account_ids.contains(&trading_account_id)) {
+        trading_account_ids.insert(trading_account_id);
     };
     assert!(
-        balance_manager_ids.length() <= constants::max_balance_managers(),
-        EMaxBalanceManagersReached,
+        trading_account_ids.length() <= constants::max_trading_accounts(),
+        EMaxTradingAccountsReached,
     );
 }
 

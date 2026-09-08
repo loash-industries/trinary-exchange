@@ -7,8 +7,8 @@ module triexbook::vault_tests;
 use std::unit_test::destroy;
 use sui::{balance, object::id_from_address, test_scenario::{next_tx, begin, end}};
 use triexbook::{
-    balance_manager::{Self, BalanceManager},
-    balance_manager_tests::{USDC, SPAM, create_acct_and_share_with_funds},
+    trading_account::{Self, TradingAccount},
+    trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds},
     balances,
     constants,
     vault
@@ -27,7 +27,7 @@ const BOB: address = @0xB;
 fun borrow_flashloan_ok() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -36,16 +36,16 @@ fun borrow_flashloan_ok() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -65,7 +65,7 @@ fun borrow_flashloan_ok() {
     vault.return_flashloan_quote(id_from_address(@0x1), quote, quote_loan);
 
     destroy(vault);
-    destroy(balance_manager);
+    destroy(trading_account);
     test.end();
 }
 
@@ -73,7 +73,7 @@ fun borrow_flashloan_ok() {
 fun borrow_flashloan_single_ok() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -82,16 +82,16 @@ fun borrow_flashloan_single_ok() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -105,7 +105,7 @@ fun borrow_flashloan_single_ok() {
     vault.return_flashloan_quote(id_from_address(@0x1), quote, loan);
 
     destroy(vault);
-    destroy(balance_manager);
+    destroy(trading_account);
     test.end();
 }
 
@@ -113,7 +113,7 @@ fun borrow_flashloan_single_ok() {
 fun borrow_flashloan_not_enough_base_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -122,16 +122,16 @@ fun borrow_flashloan_not_enough_base_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -155,7 +155,7 @@ fun borrow_flashloan_not_enough_base_e() {
 fun borrow_flashloan_not_enough_quote_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -164,16 +164,16 @@ fun borrow_flashloan_not_enough_quote_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -197,7 +197,7 @@ fun borrow_flashloan_not_enough_quote_e() {
 fun borrow_flashloan_incorrect_pool_id_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -206,16 +206,16 @@ fun borrow_flashloan_incorrect_pool_id_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -235,7 +235,7 @@ fun borrow_flashloan_incorrect_pool_id_e() {
 fun borrow_flashloan_incorrect_return_base_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -244,16 +244,16 @@ fun borrow_flashloan_incorrect_return_base_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -274,7 +274,7 @@ fun borrow_flashloan_incorrect_return_base_e() {
 fun borrow_flashloan_incorrect_return_quote_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -283,16 +283,16 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -315,7 +315,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 fun owed_equals_settled_ok() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id = create_acct_and_share_with_funds(
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -324,35 +324,35 @@ fun owed_equals_settled_ok() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(1000, 1000, 1000);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id,
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(
+        trading_account_id,
     );
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
 
     destroy(vault);
-    destroy(balance_manager);
+    destroy(trading_account);
     test.end();
 }
 
-#[test, expected_failure(abort_code = balance_manager::EInvalidProof)]
+#[test, expected_failure(abort_code = trading_account::EInvalidProof)]
 fun owed_equals_settled_e() {
     let mut test = begin(OWNER);
 
-    let balance_manager_id_alice = create_acct_and_share_with_funds(
+    let trading_account_id_alice = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
     );
-    let balance_manager_id_bob = create_acct_and_share_with_funds(
+    let trading_account_id_bob = create_acct_and_share_with_funds(
         BOB,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -361,26 +361,26 @@ fun owed_equals_settled_e() {
     let mut vault = vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(1000, 1000, 1000);
     let owed_balances = balances::new(1000, 1000, 1000);
-    let mut balance_manager_alice = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id_alice,
+    let mut trading_account_alice = test.take_shared_by_id<TradingAccount>(
+        trading_account_id_alice,
     );
-    let mut balance_manager_bob = test.take_shared_by_id<BalanceManager>(
-        balance_manager_id_bob,
+    let mut trading_account_bob = test.take_shared_by_id<TradingAccount>(
+        trading_account_id_bob,
     );
-    let trade_proof = balance_manager_alice.generate_proof_as_owner(test.ctx());
+    let trade_proof = trading_account_alice.generate_proof_as_owner(test.ctx());
 
     // move funds into the vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager_bob,
+        &mut trading_account_bob,
         &trade_proof,
         option::none(),
     );
 
     destroy(vault);
-    destroy(balance_manager_bob);
-    destroy(balance_manager_alice);
+    destroy(trading_account_bob);
+    destroy(trading_account_alice);
     test.end();
 }
 
@@ -567,8 +567,8 @@ fun test_fee_reserve_separate_from_quote_balance() {
     let mut test = begin(ALICE);
     let mut vault = vault::empty<SPAM, USDC>();
 
-    // Setup balance manager with funds
-    let balance_manager_id = create_acct_and_share_with_funds(
+    // Setup trading account with funds
+    let trading_account_id = create_acct_and_share_with_funds(
         ALICE,
         1000000 * constants::float_scaling(),
         &mut test,
@@ -577,14 +577,14 @@ fun test_fee_reserve_separate_from_quote_balance() {
 
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(0, 50_000, 0);
-    let mut balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id);
-    let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
+    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
     // Move quote funds into vault
-    vault.settle_balance_manager(
+    vault.settle_trading_account(
         settled_balances,
         owed_balances,
-        &mut balance_manager,
+        &mut trading_account,
         &trade_proof,
         option::none(),
     );
@@ -603,7 +603,7 @@ fun test_fee_reserve_separate_from_quote_balance() {
     assert!(vault.quote_fee_reserve_balance() == 10_000);
 
     destroy(vault);
-    destroy(balance_manager);
+    destroy(trading_account);
     test.end();
 }
 

@@ -15,7 +15,7 @@ const EOrderExpired: u64 = 1;
 // === Structs ===
 /// Order struct represents the order in the order book. It is optimized for space.
 public struct Order has drop, store {
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_id: u64,
     price: u64,
     is_bid: bool,
@@ -44,7 +44,7 @@ public struct Order has drop, store {
 /// `order_id`, which is where the vault-side movement is recorded. Both are
 /// zero for asks, which never escrow a fee.
 public struct OrderCanceled has copy, drop, store {
-    balance_manager_id: ID,
+    trading_account_id: ID,
     pool_id: ID,
     order_id: u64,
     trader: address,
@@ -61,7 +61,7 @@ public struct OrderCanceled has copy, drop, store {
 /// the quantity removed, split on the same terms as a cancel; see
 /// `OrderCanceled` for how the two halves relate to `PoolFeesRefunded`.
 public struct OrderModified has copy, drop, store {
-    balance_manager_id: ID,
+    trading_account_id: ID,
     pool_id: ID,
     order_id: u64,
     trader: address,
@@ -76,8 +76,8 @@ public struct OrderModified has copy, drop, store {
 }
 
 // === Public-View Functions ===
-public fun balance_manager_id(self: &Order): ID {
-    self.balance_manager_id
+public fun trading_account_id(self: &Order): ID {
+    self.trading_account_id
 }
 
 public fun order_id(self: &Order): u64 {
@@ -120,7 +120,7 @@ public fun price(self: &Order): u64 {
 /// initialize the order struct.
 public(package) fun new(
     order_id: u64,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     price: u64,
     is_bid: bool,
     quantity: u64,
@@ -133,7 +133,7 @@ public(package) fun new(
 ): Order {
     Order {
         order_id,
-        balance_manager_id,
+        trading_account_id,
         price,
         is_bid,
         quantity,
@@ -161,7 +161,7 @@ public(package) fun generate_fill(
     let mut quote_quantity = math::qty_to_quote(base_quantity, self.price(), price_scaling);
 
     let order_id = self.order_id;
-    let balance_manager_id = self.balance_manager_id;
+    let trading_account_id = self.trading_account_id;
     let expired = timestamp > self.expire_timestamp || expire_maker;
 
     if (expired) {
@@ -177,7 +177,7 @@ public(package) fun generate_fill(
     fill::new(
         order_id,
         self.price(),
-        balance_manager_id,
+        trading_account_id,
         expired,
         self.quantity == self.filled_quantity,
         self.quantity,
@@ -327,7 +327,7 @@ public(package) fun emit_order_canceled(
     event::emit(OrderCanceled {
         pool_id,
         order_id: self.order_id,
-        balance_manager_id: self.balance_manager_id,
+        trading_account_id: self.trading_account_id,
         is_bid,
         trader,
         original_quantity: self.quantity,
@@ -353,7 +353,7 @@ public(package) fun emit_order_modified(
     event::emit(OrderModified {
         order_id: self.order_id,
         pool_id,
-        balance_manager_id: self.balance_manager_id,
+        trading_account_id: self.trading_account_id,
         trader,
         price,
         is_bid,
@@ -367,7 +367,7 @@ public(package) fun emit_order_modified(
 }
 
 public(package) fun emit_cancel_maker(
-    balance_manager_id: ID,
+    trading_account_id: ID,
     pool_id: ID,
     order_id: u64,
     trader: address,
@@ -380,7 +380,7 @@ public(package) fun emit_cancel_maker(
     timestamp: u64,
 ) {
     event::emit(OrderCanceled {
-        balance_manager_id,
+        trading_account_id,
         pool_id,
         order_id,
         trader,
@@ -398,7 +398,7 @@ public(package) fun emit_cancel_maker(
 public(package) fun copy_order(order: &Order): Order {
     Order {
         order_id: order.order_id,
-        balance_manager_id: order.balance_manager_id,
+        trading_account_id: order.trading_account_id,
         price: order.price,
         is_bid: order.is_bid,
         quantity: order.quantity,

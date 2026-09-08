@@ -139,7 +139,7 @@ fun process_create_ok() {
     let proceeds_fees = fee_flows.proceeds();
     assert!(proceeds_fees.length() == 1, 0);
     assert!(proceeds_fees[0].amount() == 44_044, 0);
-    assert!(proceeds_fees[0].balance_manager_id() == id_from_address(BOB), 0);
+    assert!(proceeds_fees[0].trading_account_id() == id_from_address(BOB), 0);
     // The fixture's makers were built with a zero snapshotted maker rate, so
     // they locked nothing at placement and these fills earn nothing out.
     assert!(fee_flows.recognized() == 0, 0);
@@ -186,14 +186,14 @@ fun process_create_expired_ok() {
     let mut state = state::empty(test.ctx());
     let price = 1 * constants::usdc_unit();
     let quantity = 10 * constants::sui_unit();
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let order_type = 0;
     let market_order = false;
     let expire_timestamp = 1;
     let fill_limit_reached = false;
     let order_inserted = true;
     let mut order_info1 = create_order_info(
-        balance_manager_id,
+        trading_account_id,
         ALICE,
         order_type,
         price,
@@ -290,14 +290,14 @@ fun process_create_cred_price_ok() {
     test.next_tx(ALICE);
     let taker_price = 1 * constants::usdc_unit();
     let taker_quantity = 10 * constants::sui_unit();
-    let balance_manager_id = id_from_address(BOB);
+    let trading_account_id = id_from_address(BOB);
     let order_type = 0;
     let market_order = false;
     let expire_timestamp = constants::max_u64();
     let fill_limit_reached = false;
     let order_inserted = true;
     let mut taker_order = create_order_info(
-        balance_manager_id,
+        trading_account_id,
         BOB,
         order_type,
         taker_price,
@@ -1614,7 +1614,7 @@ fun process_fills_books_expiry_retention_as_collected() {
     let refunds = flows.refunded();
     assert_eq!(refunds.length(), 1);
     assert_eq!(refunds[0].refund_amount(), refund);
-    assert_eq!(refunds[0].refund_balance_manager_id(), id_from_address(ALICE));
+    assert_eq!(refunds[0].refund_trading_account_id(), id_from_address(ALICE));
     assert_eq!(refunds[0].refund_order_id(), order.order_id());
     assert_eq!(flows.recognized(), retained);
 

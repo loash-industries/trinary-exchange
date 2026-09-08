@@ -6,8 +6,8 @@ module triexbook::integration_master_withdraw_permissionless_tests;
 
 use sui::{sui::SUI, test_scenario::{Scenario, begin, end, return_shared}};
 use triexbook::{
-    balance_manager::{Self, BalanceManager},
-    balance_manager_tests::{Self as balance_manager_tests, USDC},
+    trading_account::{Self, TradingAccount},
+    trading_account_tests::{Self as trading_account_tests, USDC},
     constants,
     pool::{Self, Pool},
     pool_tests
@@ -25,12 +25,12 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         ALICE,
         starting_balance,
         &mut test,
     );
-    let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         BOB,
         starting_balance,
         &mut test,
@@ -51,7 +51,7 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     pool_tests::place_limit_order<SUI, USDC>(
         ALICE,
         pool_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -65,7 +65,7 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     pool_tests::place_limit_order<SUI, USDC>(
         BOB,
         pool_id,
-        bob_balance_manager_id,
+        bob_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -78,11 +78,11 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     // Check Alice's balance before withdrawal (settled amounts not yet withdrawn)
     test.next_tx(ALICE);
     let alice_sui_before = {
-        let alice_manager = test.take_shared_by_id<BalanceManager>(
-            alice_balance_manager_id,
+        let alice_trading_account = test.take_shared_by_id<TradingAccount>(
+            alice_trading_account_id,
         );
-        let balance = balance_manager::balance<SUI>(&alice_manager);
-        return_shared(alice_manager);
+        let balance = trading_account::balance<SUI>(&alice_trading_account);
+        return_shared(alice_trading_account);
         balance
     };
 
@@ -91,23 +91,23 @@ fun test_withdraw_settled_amounts_permissionless_ok() {
     withdraw_settled_amounts_permissionless<SUI, USDC>(
         BOB,
         pool_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
 
     // Verify Alice's balance increased by the traded quantity
     test.next_tx(ALICE);
     {
-        let alice_manager = test.take_shared_by_id<BalanceManager>(
-            alice_balance_manager_id,
+        let alice_trading_account = test.take_shared_by_id<TradingAccount>(
+            alice_trading_account_id,
         );
-        let alice_sui_after = balance_manager::balance<SUI>(&alice_manager);
+        let alice_sui_after = trading_account::balance<SUI>(&alice_trading_account);
 
         // Alice should have received the full quantity (5 SUI) from her filled bid order
         let expected_sui_received = quantity;
         assert!(alice_sui_after == alice_sui_before + expected_sui_received, 0);
 
-        return_shared(alice_manager);
+        return_shared(alice_trading_account);
     };
 
     test.end();
@@ -120,7 +120,7 @@ fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         ALICE,
         starting_balance,
         &mut test,
@@ -136,7 +136,7 @@ fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
     withdraw_settled_amounts_permissionless<SUI, USDC>(
         BOB,
         pool_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
 
@@ -146,22 +146,22 @@ fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
 fun withdraw_settled_amounts_permissionless<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ) {
     test.next_tx(sender);
     {
-        let mut my_manager = test.take_shared_by_id<BalanceManager>(
-            balance_manager_id,
+        let mut my_trading_account = test.take_shared_by_id<TradingAccount>(
+            trading_account_id,
         );
         let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
             pool_id,
         );
         pool::withdraw_settled_amounts_permissionless<BaseAsset, QuoteAsset>(
             &mut pool,
-            &mut my_manager,
+            &mut my_trading_account,
         );
-        return_shared(my_manager);
+        return_shared(my_trading_account);
         return_shared(pool);
     }
 }

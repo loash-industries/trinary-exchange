@@ -22,13 +22,13 @@ fun test_swap_exact_amount_ask_bid() {
 }
 
 #[test]
-fun test_swap_exact_amount_bid_ask_with_manager() {
-    pool_test_utils::test_swap_exact_amount_bid_ask_with_manager();
+fun test_swap_exact_amount_bid_ask_with_trading_account() {
+    pool_test_utils::test_swap_exact_amount_bid_ask_with_trading_account();
 }
 
 #[test]
-fun test_swap_exact_amount_ask_bid_with_manager() {
-    pool_test_utils::test_swap_exact_amount_ask_bid_with_manager();
+fun test_swap_exact_amount_ask_bid_with_trading_account() {
+    pool_test_utils::test_swap_exact_amount_ask_bid_with_trading_account();
 }
 
 #[test]
@@ -47,8 +47,8 @@ fun test_swap_exact_not_fully_filled_bid_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_bid_with_manager_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_manager_ok();
+fun test_swap_exact_not_fully_filled_bid_with_trading_account_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_trading_account_ok();
 }
 
 #[test]
@@ -57,8 +57,8 @@ fun test_swap_exact_not_fully_filled_ask_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_ask_with_manager_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_manager_ok();
+fun test_swap_exact_not_fully_filled_ask_with_trading_account_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_trading_account_ok();
 }
 
 #[test]
@@ -67,8 +67,8 @@ fun test_swap_exact_not_fully_filled_bid_low_qty_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_bid_with_manager_low_qty_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_manager_low_qty_ok();
+fun test_swap_exact_not_fully_filled_bid_with_trading_account_low_qty_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_trading_account_low_qty_ok();
 }
 
 #[test]
@@ -77,8 +77,8 @@ fun test_swap_exact_not_fully_filled_ask_low_qty_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_ask_with_manager_low_qty_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_manager_low_qty_ok();
+fun test_swap_exact_not_fully_filled_ask_with_trading_account_low_qty_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_trading_account_low_qty_ok();
 }
 
 #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
@@ -87,8 +87,8 @@ fun test_swap_exact_not_fully_filled_bid_min_e() {
 }
 
 #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
-fun test_swap_exact_not_fully_filled_bid_with_manager_min_e() {
-    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_manager_min_e();
+fun test_swap_exact_not_fully_filled_bid_with_trading_account_min_e() {
+    pool_test_utils::test_swap_exact_not_fully_filled_bid_with_trading_account_min_e();
 }
 
 #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
@@ -97,8 +97,8 @@ fun test_swap_exact_not_fully_filled_ask_min_e() {
 }
 
 #[test, expected_failure(abort_code = ::triexbook::pool::EMinimumQuantityOutNotMet)]
-fun test_swap_exact_not_fully_filled_ask_with_manager_min_e() {
-    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_manager_min_e();
+fun test_swap_exact_not_fully_filled_ask_with_trading_account_min_e() {
+    pool_test_utils::test_swap_exact_not_fully_filled_ask_with_trading_account_min_e();
 }
 
 #[test]
@@ -107,8 +107,8 @@ fun test_swap_exact_not_fully_filled_maker_partial_bid_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_maker_partial_bid_with_manager_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_maker_partial_bid_with_manager_ok();
+fun test_swap_exact_not_fully_filled_maker_partial_bid_with_trading_account_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_maker_partial_bid_with_trading_account_ok();
 }
 
 #[test]
@@ -117,6 +117,6 @@ fun test_swap_exact_not_fully_filled_maker_partial_ask_ok() {
 }
 
 #[test]
-fun test_swap_exact_not_fully_filled_maker_partial_ask_with_manager_ok() {
-    pool_test_utils::test_swap_exact_not_fully_filled_maker_partial_ask_with_manager_ok();
+fun test_swap_exact_not_fully_filled_maker_partial_ask_with_trading_account_ok() {
+    pool_test_utils::test_swap_exact_not_fully_filled_maker_partial_ask_with_trading_account_ok();
 }

@@ -9,7 +9,7 @@ use triexbook::{balances::{Self, Balances}, fill::Fill};
 
 // === Structs ===
 /// Account data that is updated every epoch.
-/// One Account struct per BalanceManager object.
+/// One Account struct per TradingAccount object.
 public struct Account has copy, drop, store {
     epoch: u64,
     open_orders: VecSet<u64>,

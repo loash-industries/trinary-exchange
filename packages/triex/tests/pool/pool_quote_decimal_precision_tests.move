@@ -34,7 +34,7 @@ use sui::{
     test_scenario::{begin, end, return_shared}
 };
 use triexbook::{
-    balance_manager::{Self as balance_manager, BalanceManager},
+    trading_account::{Self as trading_account, TradingAccount},
     constants,
     math,
     pool::{Self, Pool},
@@ -114,11 +114,11 @@ fun create_pool<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scen
 
 fun create_funded_bm<QuoteAsset>(trader: address, test: &mut sui::test_scenario::Scenario): ID {
     test.next_tx(trader);
-    let mut bm = balance_manager::new(test.ctx());
-    bm.deposit(mint_for_testing<SUI>(LARGE_BALANCE, test.ctx()), test.ctx());
-    bm.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
-    let id = object::id(&bm);
-    transfer::public_share_object(bm);
+    let mut ta = trading_account::new(test.ctx());
+    ta.deposit(mint_for_testing<SUI>(LARGE_BALANCE, test.ctx()), test.ctx());
+    ta.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
+    let id = object::id(&ta);
+    transfer::public_share_object(ta);
     id
 }
 
@@ -136,10 +136,10 @@ fun fill_and_get_fees<QuoteAsset>(
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
-        let proof = bm.generate_proof_as_owner(test.ctx());
+        let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
         pool.place_limit_order(
-            &mut bm,
+            &mut ta,
             &proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -152,7 +152,7 @@ fun fill_and_get_fees<QuoteAsset>(
         );
         return_shared(pool);
         return_shared(clock);
-        return_shared(bm);
+        return_shared(ta);
     };
 
     // Bob: crossing bid (buy SUI with QuoteAsset, taker pays 2% fee)
@@ -160,10 +160,10 @@ fun fill_and_get_fees<QuoteAsset>(
     {
         let mut pool = test.take_shared_by_id<Pool<SUI, QuoteAsset>>(pool_id);
         let clock = test.take_shared<Clock>();
-        let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
-        let proof = bm.generate_proof_as_owner(test.ctx());
+        let mut ta = test.take_shared_by_id<TradingAccount>(bob_bm_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
         let order_info = pool.place_limit_order(
-            &mut bm,
+            &mut ta,
             &proof,
             constants::no_restriction(),
             constants::self_matching_allowed(),
@@ -178,7 +178,7 @@ fun fill_and_get_fees<QuoteAsset>(
         let vault_reserve = pool.quote_fee_reserve_balance();
         return_shared(pool);
         return_shared(clock);
-        return_shared(bm);
+        return_shared(ta);
         (paid_fees, vault_reserve)
     }
 }

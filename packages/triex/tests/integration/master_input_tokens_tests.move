@@ -7,7 +7,7 @@ module triexbook::integration_master_input_tokens_tests;
 use sui::{sui::SUI, test_scenario::{begin, end}};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests::{Self as balance_manager_tests, SPAM, USDC},
+    trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
     balances,
     constants,
     integration_test_utils::{Self as utils, ExpectedBalances},
@@ -58,43 +58,43 @@ fun test_master_input_tokens(error_code: u64) {
 
     if (error_code == NoErrorHasCredPrice) {
         std::debug::print(&b"Setting up CRED price (NoErrorHasCredPrice branch)");
-        let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::owner(),
             starting_balance,
             &mut test,
         );
-        std::debug::print(&b"Owner balance manager created");
+        std::debug::print(&b"Owner trading account created");
 
         let _pool1_reference_id = pool_tests::setup_reference_pool<SUI, CRED>(
             utils::owner(),
             registry_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             constants::cred_multiplier(),
             &mut test,
         );
         let _pool2_reference_id = pool_tests::setup_reference_pool<SPAM, CRED>(
             utils::owner(),
             registry_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             constants::cred_multiplier(),
             &mut test,
         );
     };
 
-    std::debug::print(&b"Creating Alice balance manager...");
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    std::debug::print(&b"Creating Alice trading account...");
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::alice(),
         starting_balance,
         &mut test,
     );
-    std::debug::print(&b"Alice balance manager created");
-    std::debug::print(&b"Creating Bob balance manager...");
-    let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    std::debug::print(&b"Alice trading account created");
+    std::debug::print(&b"Creating Bob trading account...");
+    let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::bob(),
         starting_balance,
         &mut test,
     );
-    std::debug::print(&b"Bob balance manager created");
+    std::debug::print(&b"Bob trading account created");
 
     let order_type = constants::no_restriction();
     let price = 2 * constants::float_scaling();
@@ -112,7 +112,7 @@ fun test_master_input_tokens(error_code: u64) {
         pool_tests::place_limit_order<SUI, USDC>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -127,7 +127,7 @@ fun test_master_input_tokens(error_code: u64) {
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     std::debug::print(&b"Settled amounts withdrawn");
@@ -136,7 +136,7 @@ fun test_master_input_tokens(error_code: u64) {
     let order_info_1 = pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -150,7 +150,7 @@ fun test_master_input_tokens(error_code: u64) {
     pool_tests::cancel_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_info_1.order_id(),
         &mut test,
     );
@@ -159,7 +159,7 @@ fun test_master_input_tokens(error_code: u64) {
     let order_info_1_epoch0 = pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -181,7 +181,7 @@ fun test_master_input_tokens(error_code: u64) {
     let order_info_2 = pool_tests::place_limit_order<SPAM, USDC>(
         utils::alice(),
         pool2_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -194,7 +194,7 @@ fun test_master_input_tokens(error_code: u64) {
     pool_tests::cancel_order<SPAM, USDC>(
         utils::alice(),
         pool2_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_info_2.order_id(),
         &mut test,
     );
@@ -202,7 +202,7 @@ fun test_master_input_tokens(error_code: u64) {
     pool_tests::place_limit_order<SPAM, USDC>(
         utils::alice(),
         pool2_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -215,7 +215,7 @@ fun test_master_input_tokens(error_code: u64) {
     utils::sub_spam(&mut alice_balance, quantity);
 
     std::debug::print(&b"Checking Alice balance after Epoch 0 orders...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed");
 
     std::debug::print(&b"=== Advancing to EPOCH 1 ===");
@@ -236,7 +236,7 @@ fun test_master_input_tokens(error_code: u64) {
     pool_tests::cancel_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_info_1_epoch0.order_id(),
         &mut test,
     );
@@ -245,13 +245,13 @@ fun test_master_input_tokens(error_code: u64) {
     utils::add_usdc(&mut alice_balance, canceled_quote_amount);
 
     std::debug::print(&b"Checking Alice balance after cancel refund...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after cancel");
 
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -269,7 +269,7 @@ fun test_master_input_tokens(error_code: u64) {
     utils::sub_usdc(&mut alice_balance, usdc_penalty_fee_new);
 
     std::debug::print(&b"Checking Alice balance after Epoch 2 order...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after Epoch 2 order");
 
     let executed_quantity = 3 * constants::float_scaling();
@@ -278,7 +278,7 @@ fun test_master_input_tokens(error_code: u64) {
     pool_tests::place_market_order<SUI, USDC>(
         utils::bob(),
         pool1_id,
-        bob_balance_manager_id,
+        bob_trading_account_id,
         constants::self_matching_allowed(),
         quantity,
         !is_bid,
@@ -286,12 +286,12 @@ fun test_master_input_tokens(error_code: u64) {
     );
     utils::sub_sui(&mut bob_balance, executed_quantity);
     utils::add_usdc(&mut bob_balance, math::mul(price, executed_quantity));
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     utils::add_sui(&mut alice_balance, executed_quantity);
@@ -299,10 +299,10 @@ fun test_master_input_tokens(error_code: u64) {
     utils::withdraw_settled_amounts<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 3, 0);
@@ -311,11 +311,11 @@ fun test_master_input_tokens(error_code: u64) {
     assert!(test.ctx().epoch() == 4, 0);
 
     std::debug::print(&b"Checking Alice balance after rebate claim...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after rebate");
 
     std::debug::print(&b"Checking Bob balance after rebate claim...");
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
     std::debug::print(&b"Bob balance check passed after rebate");
 
     let alice_order_quantity = 3 * constants::float_scaling();
@@ -338,8 +338,8 @@ fun test_master_input_tokens(error_code: u64) {
         test.next_epoch(utils::owner());
         utils::execute_cross_trading<SUI, USDC>(
             pool1_id,
-            alice_balance_manager_id,
-            bob_balance_manager_id,
+            alice_trading_account_id,
+            bob_trading_account_id,
             order_type,
             price,
             quantity,
@@ -361,29 +361,29 @@ fun test_master_input_tokens(error_code: u64) {
     utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
 
     std::debug::print(&b"Checking Alice balance after 23-epoch loop...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after loop");
 
     std::debug::print(&b"Checking Bob balance after 23-epoch loop...");
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
     std::debug::print(&b"Bob balance check passed after loop");
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 28, 0);
 
     std::debug::print(&b"Checking Alice balance after Epoch 28 rebate claim...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after Epoch 28 rebate");
 
     std::debug::print(&b"Checking Bob balance after Epoch 28 rebate claim...");
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
     std::debug::print(&b"Bob balance check passed after Epoch 28 rebate");
 
     let quantity = 500_000_000;
     utils::execute_cross_trading<SUI, USDC>(
         pool1_id,
-        alice_balance_manager_id,
-        bob_balance_manager_id,
+        alice_trading_account_id,
+        bob_trading_account_id,
         order_type,
         price,
         quantity,
@@ -403,22 +403,22 @@ fun test_master_input_tokens(error_code: u64) {
     utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
 
     std::debug::print(&b"Checking Alice balance after Epoch 28 trading...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice balance check passed after Epoch 28 trading");
 
     std::debug::print(&b"Checking Bob balance after Epoch 28 trading...");
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
     std::debug::print(&b"Bob balance check passed after Epoch 28 trading");
 
     test.next_epoch(utils::owner());
     assert!(test.ctx().epoch() == 29, 0);
 
     std::debug::print(&b"Checking Alice final balance...");
-    utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+    utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
     std::debug::print(&b"Alice final balance check passed");
 
     std::debug::print(&b"Checking Bob final balance...");
-    utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+    utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
     std::debug::print(&b"Bob final balance check passed");
 
     std::debug::print(&b"=== Test completed successfully ===");

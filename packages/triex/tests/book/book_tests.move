@@ -171,13 +171,13 @@ fun find_order_index_searches_backwards() {
 #[test_only]
 // Helper function to create a test order
 fun create_test_order(price: u64, quantity: u64, is_bid: bool, order_id: u64): Order {
-    let balance_manager_id = id_from_address(ALICE);
+    let trading_account_id = id_from_address(ALICE);
     let epoch = 1;
     let expire_timestamp = constants::max_u64();
 
     order::new(
         order_id,
-        balance_manager_id,
+        trading_account_id,
         price,
         is_bid,
         quantity,

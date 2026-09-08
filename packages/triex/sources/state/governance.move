@@ -160,7 +160,7 @@ public(package) fun update(self: &mut Governance, ctx: &TxContext) {
 //     // stake_required: u64,// #feat:fee_gov
 //     fee: u64,
 //     stake_amount: u64,
-//     balance_manager_id: ID,
+//     trading_account_id: ID,
 // ) {
 //     assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
 //     // #feat:fee_gov
@@ -184,7 +184,7 @@ public(package) fun update(self: &mut Governance, ctx: &TxContext) {
 //     // #feat:fee_gov
 //     // let new_proposal = new_proposal(taker_fee, maker_fee, stake_required);
 //     let new_proposal = new_proposal(fee);
-//     self.proposals.insert(balance_manager_id, new_proposal);
+//     self.proposals.insert(trading_account_id, new_proposal);
 // }
 
 // Vote on a proposal. Validation of the account and stake is done in `State`.

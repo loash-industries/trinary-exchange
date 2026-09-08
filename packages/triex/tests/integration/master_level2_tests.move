@@ -7,7 +7,7 @@ module triexbook::integration_master_level2_tests;
 use sui::{sui::SUI, test_scenario::{begin, end}};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests as balance_manager_tests,
+    trading_account_tests as trading_account_tests,
     constants,
     integration_test_utils as utils,
     pool_tests
@@ -30,7 +30,7 @@ fun test_get_level_2_range() {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::owner(),
         starting_balance,
         &mut test,
@@ -38,7 +38,7 @@ fun test_get_level_2_range() {
     let pool1_reference_id = pool_tests::setup_reference_pool<SUI, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::cred_multiplier(),
         &mut test,
     );
@@ -51,7 +51,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -68,7 +68,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -82,7 +82,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -141,7 +141,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -155,7 +155,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -174,7 +174,7 @@ fun test_get_level_2_range() {
     pool_tests::place_limit_order<SUI, CRED>(
         utils::owner(),
         pool1_reference_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,

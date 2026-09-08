@@ -7,7 +7,7 @@ module triexbook::integration_locked_balance_tests;
 use sui::{sui::SUI, test_scenario::{begin, end, return_shared}, test_utils::destroy};
 use token::cred::CRED;
 use triexbook::{
-    balance_manager_tests::{Self as balance_manager_tests, USDC},
+    trading_account_tests::{Self as trading_account_tests, USDC},
     constants,
     integration_test_utils as utils,
     math,
@@ -37,7 +37,7 @@ fun test_locked_balance(is_bid: bool) {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::owner(),
         starting_balance,
         &mut test,
@@ -46,7 +46,7 @@ fun test_locked_balance(is_bid: bool) {
     let _pool1_reference_id = pool_tests::setup_reference_pool<SUI, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::cred_multiplier(),
         &mut test,
     );
@@ -57,12 +57,12 @@ fun test_locked_balance(is_bid: bool) {
         &mut test,
     );
 
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::alice(),
         starting_balance,
         &mut test,
     );
-    let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::bob(),
         starting_balance,
         &mut test,
@@ -82,7 +82,7 @@ fun test_locked_balance(is_bid: bool) {
     utils::check_locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &alice_locked_balance,
         &mut test,
     );
@@ -90,7 +90,7 @@ fun test_locked_balance(is_bid: bool) {
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -109,7 +109,7 @@ fun test_locked_balance(is_bid: bool) {
     utils::check_locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &alice_locked_balance,
         &mut test,
     );
@@ -117,7 +117,7 @@ fun test_locked_balance(is_bid: bool) {
     pool_tests::place_limit_order<SUI, USDC>(
         utils::bob(),
         pool1_id,
-        bob_balance_manager_id,
+        bob_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -141,7 +141,7 @@ fun test_locked_balance(is_bid: bool) {
     utils::check_locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &alice_locked_balance,
         &mut test,
     );
@@ -149,7 +149,7 @@ fun test_locked_balance(is_bid: bool) {
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         order_type,
         constants::self_matching_allowed(),
         price,
@@ -164,14 +164,14 @@ fun test_locked_balance(is_bid: bool) {
         utils::sub_sui(&mut alice_locked_balance, quantity / 2);
     } else {
         utils::add_sui(&mut alice_locked_balance, quantity);
-        // Placing again settles her netted proceeds out to her balance manager
+        // Placing again settles her netted proceeds out to her trading account
         utils::sub_usdc(&mut alice_locked_balance, quote / 2 - maker_fee_on(quote / 2));
     };
 
     utils::check_locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &alice_locked_balance,
         &mut test,
     );
@@ -190,7 +190,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     pool_tests::set_time(0, &mut test);
 
     let starting_balance = 10000 * constants::float_scaling();
-    let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::owner(),
         starting_balance,
         &mut test,
@@ -198,7 +198,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let _pool1_reference_id = pool_tests::setup_reference_pool<SUI, CRED>(
         utils::owner(),
         registry_id,
-        owner_balance_manager_id,
+        owner_trading_account_id,
         constants::cred_multiplier(),
         &mut test,
     );
@@ -207,7 +207,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
         registry_id,
         &mut test,
     );
-    let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+    let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
         utils::alice(),
         starting_balance,
         &mut test,
@@ -222,7 +222,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -235,7 +235,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let (_, quote_locked, _) = utils::locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     assert!(quote_locked == quote + fee_at_default_rate, 0);
@@ -255,7 +255,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let (_, quote_locked, _) = utils::locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     assert!(quote_locked == quote + fee_at_default_rate, 1);
@@ -265,7 +265,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         constants::no_restriction(),
         constants::self_matching_allowed(),
         price,
@@ -278,7 +278,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let (_, quote_locked, _) = utils::locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,
-        alice_balance_manager_id,
+        alice_trading_account_id,
         &mut test,
     );
     assert!(quote_locked == 2 * quote + fee_at_default_rate + fee_at_new_rate, 2);

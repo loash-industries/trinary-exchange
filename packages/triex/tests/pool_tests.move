@@ -35,14 +35,14 @@ public(package) fun setup_test(owner: address, test: &mut Scenario): ID {
 public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     cred_multiplier: u64,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_reference_pool<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        balance_manager_id,
+        trading_account_id,
         cred_multiplier,
         test,
     )
@@ -52,14 +52,14 @@ public(package) fun setup_reference_pool<BaseAsset, QuoteAsset>(
 public(package) fun setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     cred_multiplier: u64,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_reference_pool_cred_as_base<BaseAsset, QuoteAsset>(
         sender,
         registry_id,
-        balance_manager_id,
+        trading_account_id,
         cred_multiplier,
         test,
     )
@@ -107,7 +107,7 @@ public(package) fun setup_default_permissionless_pool<BaseAsset, QuoteAsset>(
 public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
     trader: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_type: u8,
     self_matching_option: u8,
     price: u64,
@@ -119,7 +119,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
     pool_test_utils::place_limit_order<BaseAsset, QuoteAsset>(
         trader,
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         order_type,
         self_matching_option,
         price,
@@ -134,7 +134,7 @@ public(package) fun place_limit_order<BaseAsset, QuoteAsset>(
 public(package) fun place_market_order<BaseAsset, QuoteAsset>(
     trader: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     self_matching_option: u8,
     quantity: u64,
     is_bid: bool,
@@ -143,7 +143,7 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
     pool_test_utils::place_market_order<BaseAsset, QuoteAsset>(
         trader,
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         self_matching_option,
         quantity,
         is_bid,
@@ -155,14 +155,14 @@ public(package) fun place_market_order<BaseAsset, QuoteAsset>(
 public(package) fun cancel_order<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_id: u64,
     test: &mut Scenario,
 ) {
     pool_test_utils::cancel_order<BaseAsset, QuoteAsset>(
         sender,
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         order_id,
         test,
     )
@@ -177,7 +177,7 @@ public(package) fun set_time(current_time: u64, test: &mut Scenario) {
 public(package) fun modify_order<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     order_id: u64,
     new_quantity: u64,
     test: &mut Scenario,
@@ -185,7 +185,7 @@ public(package) fun modify_order<BaseAsset, QuoteAsset>(
     pool_test_utils::modify_order<BaseAsset, QuoteAsset>(
         sender,
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         order_id,
         new_quantity,
         test,
@@ -201,14 +201,14 @@ public(package) fun get_time(test: &mut Scenario): u64 {
 public(package) fun validate_open_orders<BaseAsset, QuoteAsset>(
     sender: address,
     pool_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     expected_open_orders: u64,
     test: &mut Scenario,
 ) {
     pool_test_utils::validate_open_orders<BaseAsset, QuoteAsset>(
         sender,
         pool_id,
-        balance_manager_id,
+        trading_account_id,
         expected_open_orders,
         test,
     )
@@ -232,7 +232,7 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
 >(
     sender: address,
     registry_id: ID,
-    balance_manager_id: ID,
+    trading_account_id: ID,
     test: &mut Scenario,
 ): ID {
     pool_test_utils::setup_pool_with_default_fees_and_reference_pool<
@@ -240,5 +240,5 @@ public(package) fun setup_pool_with_default_fees_and_reference_pool<
         QuoteAsset,
         ReferenceBaseAsset,
         ReferenceQuoteAsset,
-    >(sender, registry_id, balance_manager_id, test)
+    >(sender, registry_id, trading_account_id, test)
 }
