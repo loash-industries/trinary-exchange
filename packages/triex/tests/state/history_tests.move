@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test_only]
-module triexbook::history_tests;
+module triexbook::history_tests {
+
+}
 
 // #feat:rebate - DISABLED - All imports unused since all tests are disabled
 // use sui::{test_scenario::{begin, end}, test_utils};

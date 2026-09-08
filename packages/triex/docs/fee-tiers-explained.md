@@ -131,14 +131,21 @@ of it.
 
 | Level | Score needed (fees paid, in quote units) | Coin pool taker / maker | Multi-coin taker / maker |
 |---|---|---|---|
-| 0 | 0 | 1.100% / 0.900% | 2.200% / 1.800% |
-| 1 | 20,000 | 1.012% / 0.828% | 2.024% / 1.656% |
-| 2 | 100,000 | 0.924% / 0.756% | 1.848% / 1.512% |
-| 3 | 500,000 | 0.836% / 0.684% | 1.672% / 1.368% |
-| 4 | 2,000,000 | 0.748% / 0.612% | 1.496% / 1.224% |
-| 5 | 10,000,000 | 0.682% / 0.558% | 1.364% / 1.116% |
-| 6 | 50,000,000 | 0.616% / 0.504% | 1.232% / 1.008% |
-| 7 | 200,000,000 | 0.550% / 0.450% | 1.100% / 0.900% |
+| 0 | 0 | 1.10% / 0.90% | 2.20% / 1.80% |
+| 1 | 20,000 | 1.05% / 0.86% | 2.09% / 1.71% |
+| 2 | 100,000 | 0.99% / 0.81% | 1.98% / 1.62% |
+| 3 | 500,000 | 0.91% / 0.75% | 1.83% / 1.49% |
+| 4 | 2,000,000 | 0.83% / 0.68% | 1.65% / 1.35% |
+| 5 | 10,000,000 | 0.72% / 0.59% | 1.43% / 1.17% |
+| 6 | 50,000,000 | 0.61% / 0.50% | 1.21% / 0.99% |
+| 7 | 200,000,000 | 0.55% / 0.45% | 1.10% / 0.90% |
+
+Each column decreases on its own curve — the ladder was hand-tuned rather than
+derived from a single discount formula. Only the entry tier holds a fixed
+relationship between the two pool kinds: multi-coin prices at exactly double
+the coin pool's rate. Above that, the two ladders are independent, so don't
+assume a multi-coin rate is always double its coin-pool counterpart at the same
+level (it happens to be at levels 0, 2, and 7, and not at the others).
 
 These rungs target sustained institutional flow. As a rough sense of scale, level
 1 is about 2 million quote of actual trading in a month; the upper rungs are
