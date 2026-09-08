@@ -32,7 +32,7 @@ order:
    trade parameters, and fee accounting. Processes each action's
    results and computes settlement amounts.
 3. **Vault** (`sources/vault/`) — holds the pool's assets and settles the
-   computed balances against the user's `BalanceManager` at the end of the
+   computed balances against the user's `TradingAccount` at the end of the
    action.
 
 Two shared objects sit alongside the pools:
@@ -41,9 +41,9 @@ Two shared objects sit alongside the pools:
   time. Tracks all pools (preventing duplicates per asset pair), the treasury
   address, allowed package versions, approved quote coins, and the
   `TriexbookAdminCap` capability that gates all admin functions.
-- **`BalanceManager`** (`sources/balance_manager.move`) — holds all of one
+- **`TradingAccount`** (`sources/trading_account.move`) — holds all of one
   account's balances (both regular coins and multicoin assets) and is passed
-  into nearly every exchange interaction; one manager works across all pools.
+  into nearly every exchange interaction; one account works across all pools.
   The owner authorizes each action with a `TradeProof`, generated either
   directly (`generate_proof_as_owner`) or by a delegated trader holding a
   `TradeCap` (`generate_proof_as_trader`). Scoped `DepositCap` /
@@ -62,11 +62,11 @@ The public entry points live in `triexbook::pool` and
   and `POST_ONLY`, plus self-matching options (allow, cancel-taker,
   cancel-maker) and expiry timestamps.
 - **Swaps** — `swap_exact_base_for_quote`, `swap_exact_quote_for_base`, and
-  `..._with_manager` variants for one-shot taker trades without maintaining
-  resting orders.
+  `..._with_trading_account` variants for one-shot taker trades without
+  maintaining resting orders.
 - **Settlement** — `withdraw_settled_amounts` (and a
   `withdraw_settled_amounts_permissionless` variant) to move settled funds
-  from the pool back to a `BalanceManager`.
+  from the pool back to a `TradingAccount`.
 - **Queries** — `mid_price`, `get_quantity_out`, `get_level2_range`,
   `get_level2_ticks_from_mid`, `account_open_orders`, `locked_balance`,
   `vault_balances`, and paginated order iteration via
@@ -124,7 +124,7 @@ after upgrades.
 sources/
 ├── pool.move             # Public trading interface (standard pools)
 ├── multicoin_pool.move   # Public trading interface (multicoin pools)
-├── balance_manager.move  # BalanceManager + TradeCap/DepositCap/WithdrawCap
+├── trading_account.move  # TradingAccount + TradeCap/DepositCap/WithdrawCap
 ├── registry.move         # Pool registry, TriexbookAdminCap, versioning
 ├── order_query.move      # Paginated order iteration (OrderPage)
 ├── book/                 # Order book: book, order, order_info, fill

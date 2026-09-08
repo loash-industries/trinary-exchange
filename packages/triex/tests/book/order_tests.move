@@ -207,7 +207,7 @@ module triexbook::order_tests {
         let quantity = 10 * constants::sui_unit();
         let is_bid = true;
         let order_id = 1;
-        let balance_manager_id = id_from_address(ALICE);
+        let trading_account_id = id_from_address(ALICE);
         let epoch = 1;
         let expire_timestamp = test.ctx().epoch_timestamp_ms();
         let mut order = create_order(
@@ -215,7 +215,7 @@ module triexbook::order_tests {
             quantity,
             is_bid,
             order_id,
-            balance_manager_id,
+            trading_account_id,
             epoch,
             expire_timestamp,
         );
@@ -252,7 +252,7 @@ module triexbook::order_tests {
         let quantity = 10 * constants::sui_unit();
         let is_bid = true;
         let order_id = 1;
-        let balance_manager_id = id_from_address(ALICE);
+        let trading_account_id = id_from_address(ALICE);
         let epoch = 1;
         let expire_timestamp = test.ctx().epoch_timestamp_ms();
         let mut order = create_order(
@@ -260,7 +260,7 @@ module triexbook::order_tests {
             quantity,
             is_bid,
             order_id,
-            balance_manager_id,
+            trading_account_id,
             epoch,
             expire_timestamp,
         );
@@ -414,7 +414,7 @@ module triexbook::order_tests {
         let quantity = 10 * constants::sui_unit();
         let is_bid = true;
         let order_id = 1;
-        let balance_manager_id = id_from_address(ALICE);
+        let trading_account_id = id_from_address(ALICE);
         let epoch = 1;
         let expire_timestamp = test.ctx().epoch_timestamp_ms() + 1000;
         let mut order = create_order(
@@ -422,7 +422,7 @@ module triexbook::order_tests {
             quantity,
             is_bid,
             order_id,
-            balance_manager_id,
+            trading_account_id,
             epoch,
             expire_timestamp,
         );
@@ -436,7 +436,7 @@ module triexbook::order_tests {
     #[test_only]
     public fun create_order_base(price: u64, quantity: u64, is_bid: bool): Order {
         let order_id = 1;
-        let balance_manager_id = id_from_address(ALICE);
+        let trading_account_id = id_from_address(ALICE);
         let epoch = 1;
         let expire_timestamp = constants::max_u64();
 
@@ -445,7 +445,7 @@ module triexbook::order_tests {
             quantity,
             is_bid,
             order_id,
-            balance_manager_id,
+            trading_account_id,
             epoch,
             expire_timestamp,
         )
@@ -457,13 +457,13 @@ module triexbook::order_tests {
         quantity: u64,
         is_bid: bool,
         order_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         epoch: u64,
         expire_timestamp: u64,
     ): Order {
         order::new(
             order_id,
-            balance_manager_id,
+            trading_account_id,
             price,
             is_bid,
             quantity,

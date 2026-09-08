@@ -19,7 +19,7 @@ module triexbook::multicoin_pool {
     use token::cred::{CRED, ProtectedTreasury};
     use triexbook::{
         account::Account,
-        balance_manager::{Self, BalanceManager, TradeProof, TradeCap, DepositCap, WithdrawCap},
+        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
@@ -35,7 +35,7 @@ module triexbook::multicoin_pool {
     // === Errors ===
     const EInvalidFee: u64 = 1;
     const EInvalidQuantityIn: u64 = 8;
-    const EInvalidOrderBalanceManager: u64 = 9;
+    const EInvalidOrderTradingAccount: u64 = 9;
     const EPackageVersionDisabled: u64 = 11;
     const EMinimumQuantityOutNotMet: u64 = 13;
     const EPoolNotRegistered: u64 = 14;
@@ -198,7 +198,7 @@ module triexbook::multicoin_pool {
     public fun place_limit_order<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_type: u8,
         self_matching_option: u8,
@@ -211,7 +211,7 @@ module triexbook::multicoin_pool {
     ): OrderInfo {
         self.place_limit_order_with_quote_fees(
             policy,
-            balance_manager,
+            trading_account,
             trade_proof,
             order_type,
             self_matching_option,
@@ -227,7 +227,7 @@ module triexbook::multicoin_pool {
     public fun place_limit_order_with_quote_fees<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_type: u8,
         self_matching_option: u8,
@@ -240,7 +240,7 @@ module triexbook::multicoin_pool {
     ): OrderInfo {
         self.place_order_int(
             policy,
-            balance_manager,
+            trading_account,
             trade_proof,
             order_type,
             self_matching_option,
@@ -259,7 +259,7 @@ module triexbook::multicoin_pool {
     public fun place_market_order<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         self_matching_option: u8,
         quantity: u64,
@@ -269,7 +269,7 @@ module triexbook::multicoin_pool {
     ): OrderInfo {
         self.place_market_order_with_quote_fees(
             policy,
-            balance_manager,
+            trading_account,
             trade_proof,
             self_matching_option,
             quantity,
@@ -282,7 +282,7 @@ module triexbook::multicoin_pool {
     public fun place_market_order_with_quote_fees<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         self_matching_option: u8,
         quantity: u64,
@@ -292,7 +292,7 @@ module triexbook::multicoin_pool {
     ): OrderInfo {
         self.place_order_int(
             policy,
-            balance_manager,
+            trading_account,
             trade_proof,
             constants::immediate_or_cancel(),
             self_matching_option,
@@ -308,7 +308,7 @@ module triexbook::multicoin_pool {
 
     // === Public-Mutative Functions * SWAP * ===
 
-    /// Swap exact base (MultiCoin) for quote without needing a balance_manager.
+    /// Swap exact base (MultiCoin) for quote without needing a trading_account.
     /// Returns the leftover MultiCoin base, quote Coin received, and leftover CRED (returned unchanged).
     /// #ref:functions
     public fun swap_exact_base_for_quote<QuoteAsset>(
@@ -337,13 +337,13 @@ module triexbook::multicoin_pool {
         )
     }
 
-    /// Swap exact base (MultiCoin) for quote with a balance_manager.
+    /// Swap exact base (MultiCoin) for quote with a trading_account.
     /// Fees are quote-denominated.
     /// #ref:functions
-    public fun swap_exact_base_for_quote_with_manager<QuoteAsset>(
+    public fun swap_exact_base_for_quote_with_trading_account<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_cap: &TradeCap,
         deposit_cap: &DepositCap,
         withdraw_cap: &WithdrawCap,
@@ -356,9 +356,9 @@ module triexbook::multicoin_pool {
         let collection_id = self.load_inner().collection_id;
         let asset_id = self.load_inner().asset_id;
 
-        self.swap_exact_quantity_with_manager(
+        self.swap_exact_quantity_with_trading_account(
             policy,
-            balance_manager,
+            trading_account,
             trade_cap,
             deposit_cap,
             withdraw_cap,
@@ -372,7 +372,7 @@ module triexbook::multicoin_pool {
         )
     }
 
-    /// Swap exact quote quantity for base (MultiCoin) without needing a balance_manager.
+    /// Swap exact quote quantity for base (MultiCoin) without needing a trading_account.
     /// Returns leftover MultiCoin base, leftover quote, and leftover CRED (returned unchanged).
     /// #ref:functions
     public fun swap_exact_quote_for_base<QuoteAsset>(
@@ -401,13 +401,13 @@ module triexbook::multicoin_pool {
         )
     }
 
-    /// Swap exact quote for base (MultiCoin) with a balance_manager.
+    /// Swap exact quote for base (MultiCoin) with a trading_account.
     /// Fees are quote-denominated.
     /// #ref:functions
-    public fun swap_exact_quote_for_base_with_manager<QuoteAsset>(
+    public fun swap_exact_quote_for_base_with_trading_account<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_cap: &TradeCap,
         deposit_cap: &DepositCap,
         withdraw_cap: &WithdrawCap,
@@ -420,9 +420,9 @@ module triexbook::multicoin_pool {
         let asset_id = self.load_inner().asset_id;
         let base_in = multicoin::zero(collection_id, asset_id, ctx);
 
-        self.swap_exact_quantity_with_manager(
+        self.swap_exact_quantity_with_trading_account(
             policy,
-            balance_manager,
+            trading_account,
             trade_cap,
             deposit_cap,
             withdraw_cap,
@@ -436,7 +436,7 @@ module triexbook::multicoin_pool {
         )
     }
 
-    /// Swap exact quantity without needing a balance_manager.
+    /// Swap exact quantity without needing a trading_account.
     /// #ref:functions
     fun swap_exact_quantity<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
@@ -460,15 +460,15 @@ module triexbook::multicoin_pool {
                 self.get_quantity_out_input_fee(policy, 0, quote_quantity, clock, ctx)
         };
 
-        let mut temp_balance_manager = balance_manager::new(ctx);
-        let trade_proof = temp_balance_manager.generate_proof_as_owner(ctx);
-        temp_balance_manager.deposit_multicoin(base_in, ctx);
-        temp_balance_manager.deposit(quote_in, ctx);
-        temp_balance_manager.deposit(cred_in, ctx);
+        let mut temp_trading_account = trading_account::new(ctx);
+        let trade_proof = temp_trading_account.generate_proof_as_owner(ctx);
+        temp_trading_account.deposit_multicoin(base_in, ctx);
+        temp_trading_account.deposit(quote_in, ctx);
+        temp_trading_account.deposit(cred_in, ctx);
 
         self.place_market_order(
             policy,
-            &mut temp_balance_manager,
+            &mut temp_trading_account,
             &trade_proof,
             constants::self_matching_allowed(),
             base_quantity,
@@ -477,9 +477,9 @@ module triexbook::multicoin_pool {
             ctx,
         );
 
-        let base_out = temp_balance_manager.withdraw_all_multicoin(collection_id, asset_id, ctx);
-        let quote_out = temp_balance_manager.withdraw_all<QuoteAsset>(ctx);
-        let cred_out = temp_balance_manager.withdraw_all<CRED>(ctx);
+        let base_out = temp_trading_account.withdraw_all_multicoin(collection_id, asset_id, ctx);
+        let quote_out = temp_trading_account.withdraw_all<QuoteAsset>(ctx);
+        let cred_out = temp_trading_account.withdraw_all<CRED>(ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);
@@ -488,19 +488,19 @@ module triexbook::multicoin_pool {
         };
 
         // The market order above credited taker fees into a ring on the
-        // temporary manager; detach it before deletion so nothing leaks.
-        temp_balance_manager.remove_fee_turnover<QuoteAsset>();
-        temp_balance_manager.delete();
+        // temporary trading_account; detach it before deletion so nothing leaks.
+        temp_trading_account.remove_fee_turnover<QuoteAsset>();
+        temp_trading_account.delete();
 
         (base_out, quote_out, cred_out)
     }
 
-    /// Swap exact quantity with a balance_manager using quote-denominated fees.
+    /// Swap exact quantity with a trading_account using quote-denominated fees.
     /// #ref:functions
-    fun swap_exact_quantity_with_manager<QuoteAsset>(
+    fun swap_exact_quantity_with_trading_account<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_cap: &TradeCap,
         deposit_cap: &DepositCap,
         withdraw_cap: &WithdrawCap,
@@ -523,7 +523,7 @@ module triexbook::multicoin_pool {
             (adjusted_base_quantity, _) =
                 self.get_quantity_out_for_account(
                     policy,
-                    balance_manager,
+                    trading_account,
                     0,
                     quote_quantity,
                     clock,
@@ -532,7 +532,7 @@ module triexbook::multicoin_pool {
         } else {
             let (base_remaining, _) = self.get_quantity_out_for_account(
                 policy,
-                balance_manager,
+                trading_account,
                 base_quantity,
                 0,
                 clock,
@@ -541,12 +541,12 @@ module triexbook::multicoin_pool {
             adjusted_base_quantity = base_quantity - base_remaining;
         };
 
-        balance_manager.deposit_multicoin_with_cap(deposit_cap, base_in, ctx);
-        balance_manager.deposit_with_cap(deposit_cap, quote_in, ctx);
-        let trade_proof = balance_manager.generate_proof_as_trader(trade_cap, ctx);
+        trading_account.deposit_multicoin_with_cap(deposit_cap, base_in, ctx);
+        trading_account.deposit_with_cap(deposit_cap, quote_in, ctx);
+        let trade_proof = trading_account.generate_proof_as_trader(trade_cap, ctx);
         let order_info = self.place_market_order(
             policy,
-            balance_manager,
+            trading_account,
             &trade_proof,
             constants::self_matching_allowed(),
             adjusted_base_quantity,
@@ -567,14 +567,14 @@ module triexbook::multicoin_pool {
             (base_left, order_info.cumulative_quote_quantity() - order_info.paid_fees())
         };
 
-        let base_out = balance_manager.withdraw_multicoin_with_cap(
+        let base_out = trading_account.withdraw_multicoin_with_cap(
             withdraw_cap,
             collection_id,
             asset_id,
             base_out,
             ctx,
         );
-        let quote_out = balance_manager.withdraw_with_cap(withdraw_cap, quote_out, ctx);
+        let quote_out = trading_account.withdraw_with_cap(withdraw_cap, quote_out, ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);
@@ -590,7 +590,7 @@ module triexbook::multicoin_pool {
     /// #ref:functions #ref:order_modify
     public fun modify_order<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_id: u64,
         new_quantity: u64,
@@ -603,11 +603,11 @@ module triexbook::multicoin_pool {
         let (cancel_quantity, order) = pool_inner
             .book
             .modify_order(order_id, new_quantity, clock.timestamp_ms());
-        assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
+        assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
         let (settled, owed, fee_release) = pool_inner
             .state
             .process_modify(
-                balance_manager.id(),
+                trading_account.id(),
                 cancel_quantity,
                 order,
                 pool_inner.pool_id,
@@ -621,16 +621,16 @@ module triexbook::multicoin_pool {
             .unlock_quote_fees(
                 pool_inner.pool_id,
                 order_id,
-                balance_manager.id(),
+                trading_account.id(),
                 fee_release.release_refunded(),
                 clock.timestamp_ms(),
             );
         pool_inner
             .vault
-            .settle_balance_manager(
+            .settle_trading_account(
                 settled,
                 owed,
-                balance_manager,
+                trading_account,
                 trade_proof,
                 option::none(),
                 ctx,
@@ -653,7 +653,7 @@ module triexbook::multicoin_pool {
     /// #ref:functions #ref:order_cancel
     public fun cancel_order<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_id: u64,
         clock: &Clock,
@@ -661,12 +661,12 @@ module triexbook::multicoin_pool {
     ) {
         let pool_inner = self.load_inner_mut();
         let mut order = pool_inner.book.cancel_order(order_id);
-        assert!(order.balance_manager_id() == balance_manager.id(), EInvalidOrderBalanceManager);
+        assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
         let (settled, owed, fee_release) = pool_inner
             .state
             .process_cancel(
                 &mut order,
-                balance_manager.id(),
+                trading_account.id(),
                 pool_inner.pool_id,
                 pool_inner.book.price_scaling(),
                 ctx,
@@ -678,16 +678,16 @@ module triexbook::multicoin_pool {
             .unlock_quote_fees(
                 pool_inner.pool_id,
                 order_id,
-                balance_manager.id(),
+                trading_account.id(),
                 fee_release.release_refunded(),
                 clock.timestamp_ms(),
             );
         pool_inner
             .vault
-            .settle_balance_manager(
+            .settle_trading_account(
                 settled,
                 owed,
-                balance_manager,
+                trading_account,
                 trade_proof,
                 option::none(),
                 ctx,
@@ -705,36 +705,36 @@ module triexbook::multicoin_pool {
         );
     }
 
-    /// Cancel all orders for a balance_manager.
+    /// Cancel all orders for a trading_account.
     /// #ref:functions #ref:order_cancel
     public fun cancel_all_orders<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
         let inner = self.load_inner_mut();
         let mut open_orders = vector[];
-        if (inner.state.account_exists(balance_manager.id())) {
-            open_orders = inner.state.account(balance_manager.id()).open_orders().into_keys();
+        if (inner.state.account_exists(trading_account.id())) {
+            open_orders = inner.state.account(trading_account.id()).open_orders().into_keys();
         };
 
         let mut i = 0;
         let num_orders = open_orders.length();
         while (i < num_orders) {
             let order_id = open_orders[i];
-            self.cancel_order(balance_manager, trade_proof, order_id, clock, ctx);
+            self.cancel_order(trading_account, trade_proof, order_id, clock, ctx);
             i = i + 1;
         }
     }
 
-    /// Cancel multiple orders within a vector. The orders must be owned by the balance_manager.
+    /// Cancel multiple orders within a vector. The orders must be owned by the trading_account.
     /// If any order fails to cancel, no orders will be cancelled.
     /// #ref:functions #ref:order_cancel
     public fun cancel_orders<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_ids: vector<u64>,
         clock: &Clock,
@@ -744,42 +744,42 @@ module triexbook::multicoin_pool {
         let num_orders = order_ids.length();
         while (i < num_orders) {
             let order_id = order_ids[i];
-            self.cancel_order(balance_manager, trade_proof, order_id, clock, ctx);
+            self.cancel_order(trading_account, trade_proof, order_id, clock, ctx);
             i = i + 1;
         }
     }
 
-    /// Withdraw settled amounts to the balance_manager.
+    /// Withdraw settled amounts to the trading_account.
     /// #ref:functions
     public fun withdraw_settled_amounts<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         ctx: &mut TxContext,
     ) {
         let pool_inner = self.load_inner_mut();
-        let (settled, owed) = pool_inner.state.withdraw_settled_amounts(balance_manager.id());
+        let (settled, owed) = pool_inner.state.withdraw_settled_amounts(trading_account.id());
         pool_inner
             .vault
-            .settle_balance_manager(
+            .settle_trading_account(
                 settled,
                 owed,
-                balance_manager,
+                trading_account,
                 trade_proof,
                 option::none(),
                 ctx,
             );
     }
 
-    /// Withdraw settled amounts permissionlessly to the `balance_manager`.
+    /// Withdraw settled amounts permissionlessly to the `trading_account`.
     public fun withdraw_settled_amounts_permissionless<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         ctx: &mut TxContext,
     ) {
         let self = self.load_inner_mut();
-        let (settled, owed) = self.state.withdraw_settled_amounts(balance_manager.id());
-        self.vault.settle_balance_manager_permissionless(settled, owed, balance_manager, ctx);
+        let (settled, owed) = self.state.withdraw_settled_amounts(trading_account.id());
+        self.vault.settle_trading_account_permissionless(settled, owed, trading_account, ctx);
     }
 
     // === Public-Mutative Functions * ADMIN * ===
@@ -936,12 +936,12 @@ module triexbook::multicoin_pool {
             )
     }
 
-    /// Dry run priced at the rate this balance manager actually trades at, rather
+    /// Dry run priced at the rate this trading account actually trades at, rather
     /// than the entry rung. See `pool::get_quantity_out_for_account`.
     public fun get_quantity_out_for_account<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
         base_quantity: u64,
         quote_quantity: u64,
         clock: &Clock,
@@ -950,7 +950,7 @@ module triexbook::multicoin_pool {
         let self_inner = self.load_inner();
         let (_tier, taker_fee, _maker_fee) = policy.resolve(
             self_inner.fee_class,
-            self_inner.account_turnover_int(balance_manager, ctx),
+            self_inner.account_turnover_int(trading_account, ctx),
             ctx.epoch(),
         );
         self_inner
@@ -963,16 +963,16 @@ module triexbook::multicoin_pool {
             )
     }
 
-    /// Returns the order_id for all open orders for the balance_manager in the pool.
+    /// Returns the order_id for all open orders for the trading_account in the pool.
     public fun account_open_orders<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
     ): VecSet<u64> {
         let pool_inner = self.load_inner();
-        if (!pool_inner.state.account_exists(balance_manager.id())) {
+        if (!pool_inner.state.account_exists(trading_account.id())) {
             return vec_set::empty()
         };
-        pool_inner.state.account(balance_manager.id()).open_orders()
+        pool_inner.state.account(trading_account.id()).open_orders()
     }
 
     /// Returns the (price_vec, quantity_vec) for the level2 order book.
@@ -1069,21 +1069,21 @@ module triexbook::multicoin_pool {
     /// #ref:order_query
     public fun get_account_order_details<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
     ): vector<Order> {
-        let acct_open_orders = self.account_open_orders(balance_manager).into_keys();
+        let acct_open_orders = self.account_open_orders(trading_account).into_keys();
         self.get_orders(acct_open_orders)
     }
 
-    /// Returns the locked balance for the balance_manager in the pool.
+    /// Returns the locked balance for the trading_account in the pool.
     /// Returns (base_quantity, quote_quantity, cred_quantity)
     public fun locked_balance<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
     ): (u64, u64, u64) {
-        let account_orders = self.get_account_order_details(balance_manager);
+        let account_orders = self.get_account_order_details(trading_account);
         let pool_inner = self.load_inner();
-        if (!pool_inner.state.account_exists(balance_manager.id())) {
+        if (!pool_inner.state.account_exists(trading_account.id())) {
             return (0, 0, 0)
         };
 
@@ -1101,7 +1101,7 @@ module triexbook::multicoin_pool {
             cred_quantity = cred_quantity + locked_balance.cred();
         });
 
-        let settled_balances = pool_inner.state.account(balance_manager.id()).settled_balances();
+        let settled_balances = pool_inner.state.account(trading_account.id()).settled_balances();
         base_quantity = base_quantity + settled_balances.base();
         quote_quantity = quote_quantity + settled_balances.quote();
         cred_quantity = cred_quantity + settled_balances.cred();
@@ -1145,60 +1145,60 @@ module triexbook::multicoin_pool {
         policy.next_schedule(self.load_inner().fee_class)
     }
 
-    /// Returns the (taker_fee, maker_fee) this balance manager currently trades at.
+    /// Returns the (taker_fee, maker_fee) this trading account currently trades at.
     /// `pool_trade_params` reports the entry rung, which is what an account with no
     /// turnover pays; this reports what *this* account pays.
     public fun trade_params_for_account<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
         ctx: &TxContext,
     ): (u64, u64) {
         let pool_inner = self.load_inner();
         let (_tier, taker_fee, maker_fee) = policy.resolve(
             pool_inner.fee_class,
-            pool_inner.account_turnover_int(balance_manager, ctx),
+            pool_inner.account_turnover_int(trading_account, ctx),
             ctx.epoch(),
         );
 
         (taker_fee, maker_fee)
     }
 
-    /// The tier index this balance manager currently occupies.
+    /// The tier index this trading account currently occupies.
     public fun account_fee_tier<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
         ctx: &TxContext,
     ): u64 {
         let pool_inner = self.load_inner();
         let (tier, _taker_fee, _maker_fee) = policy.resolve(
             pool_inner.fee_class,
-            pool_inner.account_turnover_int(balance_manager, ctx),
+            pool_inner.account_turnover_int(trading_account, ctx),
             ctx.epoch(),
         );
 
         tier
     }
 
-    /// Fees this balance manager has paid across the trailing window in this
+    /// Fees this trading account has paid across the trailing window in this
     /// pool's quote — the metric tiers resolve against. Exchange-wide: the ring
-    /// on the manager counts every pool sharing this quote, plus this pool's
+    /// on the trading_account counts every pool sharing this quote, plus this pool's
     /// still-pending maker credits.
     public fun account_fee_turnover<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
         ctx: &TxContext,
     ): u128 {
-        self.load_inner().account_turnover_int(balance_manager, ctx)
+        self.load_inner().account_turnover_int(trading_account, ctx)
     }
 
     public fun account<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
     ): Account {
         let pool_inner = self.load_inner();
-        *pool_inner.state.account(balance_manager.id())
+        *pool_inner.state.account(trading_account.id())
     }
 
     public fun id<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): ID {
@@ -1216,15 +1216,15 @@ module triexbook::multicoin_pool {
     }
 
     /// Trailing turnover the next trade on this pool resolves against: the
-    /// exchange-wide ring on the manager plus this pool's still-pending maker
+    /// exchange-wide ring on the trading_account plus this pool's still-pending maker
     /// credits, both as of the current epoch.
     fun account_turnover_int<QuoteAsset>(
         self: &MultiCoinPoolInner<QuoteAsset>,
-        balance_manager: &BalanceManager,
+        trading_account: &TradingAccount,
         ctx: &TxContext,
     ): u128 {
-        balance_manager.fee_turnover<QuoteAsset>(ctx) +
-    self.state.pending_turnover_total(balance_manager.id(), ctx)
+        trading_account.fee_turnover<QuoteAsset>(ctx) +
+    self.state.pending_turnover_total(trading_account.id(), ctx)
     }
 
     public(package) fun load_inner<QuoteAsset>(
@@ -1250,7 +1250,7 @@ module triexbook::multicoin_pool {
     fun place_order_int<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_type: u8,
         self_matching_option: u8,
@@ -1269,8 +1269,8 @@ module triexbook::multicoin_pool {
             // maker rate snapshotted onto it is the one they actually pay. The
             // fold lands this pool's pending maker credits in the trader's ring
             // first, and only then is the turnover read — see the twin in `pool`.
-            let pending = pool_inner.state.take_pending_turnover(balance_manager.id(), ctx);
-            let turnover = balance_manager.fold_fee_turnover<QuoteAsset>(pending, ctx);
+            let pending = pool_inner.state.take_pending_turnover(trading_account.id(), ctx);
+            let turnover = trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
             let (
                 _tier,
                 taker_fee_rate,
@@ -1283,7 +1283,7 @@ module triexbook::multicoin_pool {
             );
             let mut order_info = order_info::new(
                 pool_inner.pool_id,
-                balance_manager.id(),
+                trading_account.id(),
                 ctx.sender(),
                 order_type,
                 self_matching_option,
@@ -1320,7 +1320,7 @@ module triexbook::multicoin_pool {
                     .unlock_quote_fees(
                         pool_inner.pool_id,
                         refund.refund_order_id(),
-                        refund.refund_balance_manager_id(),
+                        refund.refund_trading_account_id(),
                         refund.refund_amount(),
                         clock.timestamp_ms(),
                     );
@@ -1338,7 +1338,7 @@ module triexbook::multicoin_pool {
                 option::some(
                     vault::new_quote_fee_deposit(
                         pool_inner.pool_id,
-                        balance_manager.id(),
+                        trading_account.id(),
                         taker_fee_amount,
                         maker_fee_amount,
                         clock.timestamp_ms(),
@@ -1349,10 +1349,10 @@ module triexbook::multicoin_pool {
             };
             pool_inner
                 .vault
-                .settle_balance_manager(
+                .settle_trading_account(
                     settled,
                     owed,
-                    balance_manager,
+                    trading_account,
                     trade_proof,
                     fee_deposit,
                     ctx,
@@ -1368,7 +1368,7 @@ module triexbook::multicoin_pool {
                     .vault
                     .move_quote_to_fee_reserve(
                         pool_inner.pool_id,
-                        proceeds_fee.balance_manager_id(),
+                        proceeds_fee.trading_account_id(),
                         proceeds_fee.amount(),
                         clock.timestamp_ms(),
                     );
@@ -1379,9 +1379,9 @@ module triexbook::multicoin_pool {
             pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
             // The taker fee is revenue the moment it is charged, so it counts
             // toward this trader's tier — credited into the exchange-wide ring on
-            // their own manager, after pricing, so the order never discounts
+            // their own trading_account, after pricing, so the order never discounts
             // itself.
-            balance_manager.record_fee_turnover<QuoteAsset>(order_info.paid_fees(), ctx);
+            trading_account.record_fee_turnover<QuoteAsset>(order_info.paid_fees(), ctx);
             order_info.emit_order_info();
             order_info.emit_orders_filled(clock.timestamp_ms());
             order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());

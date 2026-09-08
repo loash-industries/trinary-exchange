@@ -13,8 +13,8 @@ module triexbook::integration_multicoin_test_utils {
     };
     use token::cred::CRED;
     use triexbook::{
-        balance_manager::{Self as balance_manager, BalanceManager, TradeCap},
-        balance_manager_tests::USDC,
+        trading_account::{Self as trading_account, TradingAccount, TradeCap},
+        trading_account_tests::USDC,
         constants,
         fee_policy::FeePolicy,
         multicoin_pool as multicoin_pool,
@@ -39,7 +39,7 @@ module triexbook::integration_multicoin_test_utils {
 
     public fun asset_iron(): u64 { ASSET_IRON }
 
-    // Quote currency for testing is `balance_manager_tests::USDC`, the same type
+    // Quote currency for testing is `trading_account_tests::USDC`, the same type
     // the shared `FeePolicy` is seeded for in `pool_test_utils`.
 
     public fun get_time(test: &mut Scenario): u64 {
@@ -97,21 +97,21 @@ module triexbook::integration_multicoin_test_utils {
         (registry_id, collection_id, collection_cap)
     }
 
-    /// Create a BalanceManager with USDC and CRED funds.
-    public fun create_balance_manager_with_funds(
+    /// Create a TradingAccount with USDC and CRED funds.
+    public fun create_trading_account_with_funds(
         sender: address,
         usdc_amount: u64,
         cred_amount: u64,
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
-        let mut balance_manager = balance_manager::new(test.ctx());
-        balance_manager.deposit(mint_for_testing<USDC>(usdc_amount, test.ctx()), test.ctx());
-        balance_manager.deposit(mint_for_testing<CRED>(cred_amount, test.ctx()), test.ctx());
-        let trade_cap = balance_manager.mint_trade_cap(test.ctx());
+        let mut trading_account = trading_account::new(test.ctx());
+        trading_account.deposit(mint_for_testing<USDC>(usdc_amount, test.ctx()), test.ctx());
+        trading_account.deposit(mint_for_testing<CRED>(cred_amount, test.ctx()), test.ctx());
+        let trade_cap = trading_account.mint_trade_cap(test.ctx());
         transfer::public_transfer(trade_cap, sender);
-        let id = object::id(&balance_manager);
-        transfer::public_share_object(balance_manager);
+        let id = object::id(&trading_account);
+        transfer::public_share_object(trading_account);
         id
     }
 
@@ -150,7 +150,7 @@ module triexbook::integration_multicoin_test_utils {
     public fun setup_cred_usdc_reference_pool(
         sender: address,
         registry_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
@@ -178,13 +178,13 @@ module triexbook::integration_multicoin_test_utils {
             let mut pool = test.take_shared_by_id<Pool<USDC, CRED>>(reference_pool_id);
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
-            let mut bm = test.take_shared_by_id<BalanceManager>(balance_manager_id);
+            let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
             let trade_cap = test.take_from_sender<TradeCap>();
-            let trade_proof = bm.generate_proof_as_trader(&trade_cap, test.ctx());
+            let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
 
             pool.place_limit_order(
                 &policy,
-                &mut bm,
+                &mut ta,
                 &trade_proof,
                 constants::no_restriction(),
                 constants::self_matching_allowed(),
@@ -199,7 +199,7 @@ module triexbook::integration_multicoin_test_utils {
             return_shared(pool);
             return_shared(policy);
             return_shared(clock);
-            return_shared(bm);
+            return_shared(ta);
             test.return_to_sender(trade_cap);
         };
 
@@ -208,13 +208,13 @@ module triexbook::integration_multicoin_test_utils {
             let mut pool = test.take_shared_by_id<Pool<USDC, CRED>>(reference_pool_id);
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
-            let mut bm = test.take_shared_by_id<BalanceManager>(balance_manager_id);
+            let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
             let trade_cap = test.take_from_sender<TradeCap>();
-            let trade_proof = bm.generate_proof_as_trader(&trade_cap, test.ctx());
+            let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
 
             pool.place_limit_order(
                 &policy,
-                &mut bm,
+                &mut ta,
                 &trade_proof,
                 constants::no_restriction(),
                 constants::self_matching_allowed(),
@@ -229,7 +229,7 @@ module triexbook::integration_multicoin_test_utils {
             return_shared(pool);
             return_shared(policy);
             return_shared(clock);
-            return_shared(bm);
+            return_shared(ta);
             test.return_to_sender(trade_cap);
         };
 
@@ -243,7 +243,7 @@ module triexbook::integration_multicoin_test_utils {
         registry_id: ID,
         collection_id: ID,
         asset_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ): (ID, ID) {
         let multicoin_pool_id = setup_multicoin_pool(
@@ -257,7 +257,7 @@ module triexbook::integration_multicoin_test_utils {
         let reference_pool_id = setup_cred_usdc_reference_pool(
             sender,
             registry_id,
-            balance_manager_id,
+            trading_account_id,
             test,
         );
 

@@ -7,7 +7,6 @@ MODULE_DIR="$PKG_DIR/build/triexbook/bytecode_modules"
 
 MODULES=(
   account
-  balance_manager
   balances
   book
   constants
@@ -27,6 +26,7 @@ MODULES=(
   quote_fee
   registry
   state
+  trading_account
   utils
   vault
 )

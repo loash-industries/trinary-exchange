@@ -16,7 +16,7 @@ use sui::{
     unit_test::destroy
 };
 use triexbook::{
-    balance_manager::{Self, BalanceManager},
+    trading_account::{Self, TradingAccount},
     constants,
     pool::{Self, Pool},
     registry::{Self, Registry, TriexbookAdminCap}
@@ -170,20 +170,20 @@ fun admin_fee_change_affects_trades_ok() {
         test.ctx(),
     );
     
-    // Create balance manager for Alice
+    // Create trading account for Alice
     test.next_tx(ALICE);
-    let manager = balance_manager::new(test.ctx());
-    let manager_id = manager.id();
-    balance_manager::share(manager);
+    let trading_account = trading_account::new(test.ctx());
+    let trading_account_id = trading_account.id();
+    trading_account::share(trading_account);
     
     // Alice deposits funds
     test.next_tx(ALICE);
-    let mut manager = test.take_shared_by_id<BalanceManager>(manager_id);
+    let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
     let spam_coin = coin::mint_for_testing<SPAM>(1000000 * constants::float_scaling(), test.ctx());
     let usdc_coin = coin::mint_for_testing<USDC>(1000000 * constants::float_scaling(), test.ctx());
     
-    manager.deposit(spam_coin);
-    manager.deposit(usdc_coin);
+    trading_account.deposit(spam_coin);
+    trading_account.deposit(usdc_coin);
     
     // Admin reduces fee from 2% to 0.5%
     pool.set_next_epoch_fee(5000000, &admin_cap);
@@ -195,7 +195,7 @@ fun admin_fee_change_affects_trades_ok() {
     // Now trades will use the new 0.5% fee rate
     // (Further trade execution would be tested in other test modules)
     
-    test.return_shared(manager);
+    test.return_shared(trading_account);
     destroy(pool);
     destroy(admin_cap);
     test.return_shared(registry);

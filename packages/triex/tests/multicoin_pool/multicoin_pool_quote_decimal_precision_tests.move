@@ -38,7 +38,7 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
         test_scenario::{begin, end, return_shared}
     };
     use triexbook::{
-        balance_manager::{Self as balance_manager, BalanceManager},
+        trading_account::{Self as trading_account, TradingAccount},
         constants,
         fee_policy::FeePolicy,
         math,
@@ -154,21 +154,21 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
         pool_id
     }
 
-    /// Create a BalanceManager funded with the QuoteAsset.
-    /// (Bob's BM; he pays QuoteAsset to buy NFTs.)
+    /// Create a TradingAccount funded with the QuoteAsset.
+    /// (Bob's TA; he pays QuoteAsset to buy NFTs.)
     fun create_quote_funded_bm<QuoteAsset>(
         trader: address,
         test: &mut sui::test_scenario::Scenario,
     ): ID {
         test.next_tx(trader);
-        let mut bm = balance_manager::new(test.ctx());
-        bm.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
-        let id = object::id(&bm);
-        transfer::public_share_object(bm);
+        let mut ta = trading_account::new(test.ctx());
+        ta.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let id = object::id(&ta);
+        transfer::public_share_object(ta);
         id
     }
 
-    /// Mint NFTs for Alice and deposit into her BalanceManager.
+    /// Mint NFTs for Alice and deposit into her TradingAccount.
     fun mint_and_deposit_nfts(
         alice_bm_id: ID,
         nft_qty: u64,
@@ -191,7 +191,7 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         {
-            let mut alice_bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
+            let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
             let nfts = test.take_from_sender<multicoin::Balance>();
             alice_bm.deposit_multicoin(nfts, test.ctx());
             return_shared(alice_bm);
@@ -213,11 +213,11 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
             let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
-            let mut bm = test.take_shared_by_id<BalanceManager>(alice_bm_id);
-            let proof = bm.generate_proof_as_owner(test.ctx());
+            let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
+            let proof = ta.generate_proof_as_owner(test.ctx());
             pool.place_limit_order(
                 &policy,
-                &mut bm,
+                &mut ta,
                 &proof,
                 constants::no_restriction(),
                 constants::self_matching_allowed(),
@@ -231,7 +231,7 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
             return_shared(pool);
             return_shared(policy);
             return_shared(clock);
-            return_shared(bm);
+            return_shared(ta);
         };
 
         // Bob: crossing bid (buy NFTs with QuoteAsset, taker pays 2% fee)
@@ -240,11 +240,11 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
             let mut pool = test.take_shared_by_id<MultiCoinPool<QuoteAsset>>(pool_id);
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
-            let mut bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
-            let proof = bm.generate_proof_as_owner(test.ctx());
+            let mut ta = test.take_shared_by_id<TradingAccount>(bob_bm_id);
+            let proof = ta.generate_proof_as_owner(test.ctx());
             let order_info = pool.place_limit_order(
                 &policy,
-                &mut bm,
+                &mut ta,
                 &proof,
                 constants::no_restriction(),
                 constants::self_matching_allowed(),
@@ -260,7 +260,7 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
             return_shared(pool);
             return_shared(policy);
             return_shared(clock);
-            return_shared(bm);
+            return_shared(ta);
             (paid_fees, vault_reserve)
         }
     }
@@ -279,13 +279,13 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
         let (registry_id, _collection_id, collection_cap) = setup_base(&mut test);
         let pool_id = create_pool_with_quote<MQ9>(registry_id, &mut test);
 
-        // Alice BM (needs MQ9 for potential bids, but really just needs NFTs for ask)
+        // Alice TA (needs MQ9 for potential bids, but really just needs NFTs for ask)
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ9>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ9>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ9>(BOB, &mut test);
@@ -339,10 +339,10 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ6>(BOB, &mut test);
@@ -389,10 +389,10 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ6>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ6>(BOB, &mut test);
@@ -438,10 +438,10 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ2>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ2>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ2>(BOB, &mut test);
@@ -491,10 +491,10 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ1>(BOB, &mut test);
@@ -542,10 +542,10 @@ module triexbook::multicoin_pool_quote_decimal_precision_tests {
 
         test.next_tx(ALICE);
         let alice_bm_id = {
-            let mut bm = balance_manager::new(test.ctx());
-            bm.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
-            let id = object::id(&bm);
-            transfer::public_share_object(bm);
+            let mut ta = trading_account::new(test.ctx());
+            ta.deposit(mint_for_testing<MQ1>(LARGE_BALANCE, test.ctx()), test.ctx());
+            let id = object::id(&ta);
+            transfer::public_share_object(ta);
             id
         };
         let bob_bm_id = create_quote_funded_bm<MQ1>(BOB, &mut test);

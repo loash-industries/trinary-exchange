@@ -13,7 +13,7 @@ module triexbook::account {
 
     // === Structs ===
     /// Account data that is updated every epoch.
-    /// One Account struct per BalanceManager object.
+    /// One Account struct per TradingAccount object.
     public struct Account has copy, drop, store {
         epoch: u64,
         open_orders: VecSet<u64>,
@@ -27,9 +27,9 @@ module triexbook::account {
         settled_balances: Balances,
         owed_balances: Balances,
         /// Maker fees recognized at fill but not yet folded into the owner's
-        /// exchange-wide turnover ring on their `BalanceManager`. A fill is
+        /// exchange-wide turnover ring on their `TradingAccount`. A fill is
         /// processed in the *taker's* transaction, which does not carry the
-        /// maker's manager, so the credit waits here — tagged with the epoch it
+        /// maker's trading_account, so the credit waits here — tagged with the epoch it
         /// was earned in — until the maker's own next transaction against this
         /// pool folds it. Ascending by epoch, at most one entry per epoch, and
         /// entries older than the turnover window are dropped on append, so the

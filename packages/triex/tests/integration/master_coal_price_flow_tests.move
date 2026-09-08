@@ -6,8 +6,8 @@ module triexbook::integration_master_cred_price_flow_tests {
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
     use triexbook::{
-        balance_manager::{Self as balance_manager, BalanceManager},
-        balance_manager_tests::{Self as balance_manager_tests, SPAM, USDC},
+        trading_account::{Self as trading_account, TradingAccount},
+        trading_account_tests::{Self as trading_account_tests, SPAM, USDC},
         constants,
         integration_test_utils as utils,
         math,
@@ -27,7 +27,7 @@ module triexbook::integration_master_cred_price_flow_tests {
 
         let starting_balance = 10000 * constants::float_scaling();
 
-        let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::owner(),
             starting_balance,
             &mut test,
@@ -36,7 +36,7 @@ module triexbook::integration_master_cred_price_flow_tests {
         let pool1_id = pool_tests::setup_reference_pool<SUI, CRED>(
             utils::owner(),
             registry_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             constants::cred_multiplier(),
             &mut test,
         );
@@ -54,12 +54,12 @@ module triexbook::integration_master_cred_price_flow_tests {
             &mut test,
         );
 
-        let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::alice(),
             starting_balance,
             &mut test,
         );
-        let bob_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let bob_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::bob(),
             starting_balance,
             &mut test,
@@ -80,7 +80,7 @@ module triexbook::integration_master_cred_price_flow_tests {
         let order_info = pool_tests::place_limit_order<SUI, CRED>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -93,15 +93,15 @@ module triexbook::integration_master_cred_price_flow_tests {
         pool_tests::cancel_order<SUI, CRED>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_info.order_id(),
             &mut test,
         );
 
         utils::execute_cross_trading<SUI, CRED>(
             pool1_id,
-            alice_balance_manager_id,
-            bob_balance_manager_id,
+            alice_trading_account_id,
+            bob_trading_account_id,
             order_type,
             price,
             quantity,
@@ -112,16 +112,16 @@ module triexbook::integration_master_cred_price_flow_tests {
 
         let alice_cred_after = {
             test.next_tx(utils::alice());
-            let balance_manager = test.take_shared_by_id<BalanceManager>(alice_balance_manager_id);
-            let cred = balance_manager::balance<CRED>(&balance_manager);
-            return_shared(balance_manager);
+            let trading_account = test.take_shared_by_id<TradingAccount>(alice_trading_account_id);
+            let cred = trading_account::balance<CRED>(&trading_account);
+            return_shared(trading_account);
             cred
         };
         let bob_cred_after = {
             test.next_tx(utils::bob());
-            let balance_manager = test.take_shared_by_id<BalanceManager>(bob_balance_manager_id);
-            let cred = balance_manager::balance<CRED>(&balance_manager);
-            return_shared(balance_manager);
+            let trading_account = test.take_shared_by_id<TradingAccount>(bob_trading_account_id);
+            let cred = trading_account::balance<CRED>(&trading_account);
+            return_shared(trading_account);
             cred
         };
 
@@ -129,8 +129,8 @@ module triexbook::integration_master_cred_price_flow_tests {
         utils::set_cred(&mut alice_balance, alice_cred_after);
         utils::sub_sui(&mut bob_balance, 2 * quantity);
         utils::set_cred(&mut bob_balance, bob_cred_after);
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-        utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+        utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
         pool_tests::set_time(100_000, &mut test);
 
@@ -138,7 +138,7 @@ module triexbook::integration_master_cred_price_flow_tests {
         pool_tests::place_limit_order<SUI, CRED>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -149,9 +149,9 @@ module triexbook::integration_master_cred_price_flow_tests {
         );
         let alice_cred_after_bid = {
             test.next_tx(utils::alice());
-            let balance_manager = test.take_shared_by_id<BalanceManager>(alice_balance_manager_id);
-            let cred = balance_manager::balance<CRED>(&balance_manager);
-            return_shared(balance_manager);
+            let trading_account = test.take_shared_by_id<TradingAccount>(alice_trading_account_id);
+            let cred = trading_account::balance<CRED>(&trading_account);
+            return_shared(trading_account);
             cred
         };
         utils::set_cred(&mut alice_balance, alice_cred_after_bid);
@@ -160,7 +160,7 @@ module triexbook::integration_master_cred_price_flow_tests {
         pool_tests::place_limit_order<SUI, CRED>(
             utils::bob(),
             pool1_id,
-            bob_balance_manager_id,
+            bob_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -172,8 +172,8 @@ module triexbook::integration_master_cred_price_flow_tests {
 
         utils::sub_sui(&mut bob_balance, quantity);
 
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-        utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+        utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
         test.next_epoch(utils::owner());
         assert!(test.ctx().epoch() == 1, 0);
@@ -189,7 +189,7 @@ module triexbook::integration_master_cred_price_flow_tests {
         let order_info = pool_tests::place_limit_order<SPAM, SUI>(
             utils::alice(),
             pool2_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -207,12 +207,12 @@ module triexbook::integration_master_cred_price_flow_tests {
                 cred_multiplier,
             ),
         );
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         pool_tests::cancel_order<SPAM, SUI>(
             utils::alice(),
             pool2_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_info.order_id(),
             &mut test,
         );
@@ -224,14 +224,14 @@ module triexbook::integration_master_cred_price_flow_tests {
                 cred_multiplier,
             ),
         );
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         let price = 10 * constants::float_scaling();
         let quantity = 3 * constants::float_scaling();
         utils::execute_cross_trading<SPAM, SUI>(
             pool2_id,
-            alice_balance_manager_id,
-            bob_balance_manager_id,
+            alice_trading_account_id,
+            bob_trading_account_id,
             order_type,
             price,
             quantity,
@@ -260,8 +260,8 @@ module triexbook::integration_master_cred_price_flow_tests {
         utils::sub_spam(&mut bob_balance, quantity_traded);
         utils::add_sui(&mut bob_balance, math::mul(price, quantity_traded));
 
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
-        utils::check_balance(bob_balance_manager_id, &bob_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
+        utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
         end(test);
     }

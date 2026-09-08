@@ -7,7 +7,7 @@ module triexbook::order_query_tests {
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
     use triexbook::{
-        balance_manager_tests::{
+        trading_account_tests::{
             USDC,
             create_acct_and_share_with_funds as create_acct_and_share_with_funds
         },
@@ -24,7 +24,7 @@ module triexbook::order_query_tests {
     fun test_place_orders_ok() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -32,7 +32,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
         let mut iter = 1;
@@ -46,7 +46,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -88,7 +88,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 ask_price,
@@ -118,7 +118,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -159,7 +159,7 @@ module triexbook::order_query_tests {
     fun test_find_start_position_anchor_behavior() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -167,7 +167,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -182,7 +182,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -246,7 +246,7 @@ module triexbook::order_query_tests {
     fun test_iter_orders_limit_zero() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -254,7 +254,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -268,7 +268,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -301,7 +301,7 @@ module triexbook::order_query_tests {
     fun test_iter_orders_end_order_id_stop_and_pagination() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -309,7 +309,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -323,7 +323,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -374,7 +374,7 @@ module triexbook::order_query_tests {
     fun test_iter_orders_min_expire_timestamp_filtering() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -382,7 +382,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -400,7 +400,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -451,7 +451,7 @@ module triexbook::order_query_tests {
     fun test_iter_orders_asks_anchor_and_end_stop() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -459,7 +459,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -473,7 +473,7 @@ module triexbook::order_query_tests {
             place_limit_order<SUI, USDC>(
                 ALICE,
                 pool_id,
-                balance_manager_id_alice,
+                trading_account_id_alice,
                 order_type,
                 constants::self_matching_allowed(),
                 price,
@@ -522,7 +522,7 @@ module triexbook::order_query_tests {
     fun test_find_insert_position_bids_price_time_priority() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -530,7 +530,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -548,7 +548,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -560,7 +560,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p1,
@@ -572,7 +572,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p3,
@@ -584,7 +584,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -627,7 +627,7 @@ module triexbook::order_query_tests {
     fun test_find_insert_position_asks_price_time_priority() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -635,7 +635,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -653,7 +653,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -665,7 +665,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p3,
@@ -677,7 +677,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p1,
@@ -689,7 +689,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -732,7 +732,7 @@ module triexbook::order_query_tests {
     fun test_find_insert_position_insert_at_end_new_best_price() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -740,7 +740,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -757,7 +757,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -769,7 +769,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p3,
@@ -781,7 +781,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p4,
@@ -823,7 +823,7 @@ module triexbook::order_query_tests {
     fun test_find_insert_position_insert_at_start_worst_price() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
-        let balance_manager_id_alice = create_acct_and_share_with_funds(
+        let trading_account_id_alice = create_acct_and_share_with_funds(
             ALICE,
             1000000 * constants::float_scaling(),
             &mut test,
@@ -831,7 +831,7 @@ module triexbook::order_query_tests {
         let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             &mut test,
         );
 
@@ -848,7 +848,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p2,
@@ -860,7 +860,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p3,
@@ -872,7 +872,7 @@ module triexbook::order_query_tests {
         place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
-            balance_manager_id_alice,
+            trading_account_id_alice,
             order_type,
             constants::self_matching_allowed(),
             p1,

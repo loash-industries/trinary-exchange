@@ -19,7 +19,7 @@ module triexbook::constants {
     // const REFERRAL_DF_KEY: vector<u8> = b"referral";
     // const REFERRAL_MAX_MULTIPLIER: u64 = 2_000_000_000; // 2x multiplier
     // const REFERRAL_MULTIPLIER: u64 = 100_000_000; // 0.1x multiplier
-    const MAX_BALANCE_MANAGERS: u64 = 100;
+    const MAX_TRADING_ACCOUNTS: u64 = 100;
 
     const DEFAULT_EWMA_ALPHA: u64 = 10_000_000; // 1% smoothing factor. at 3 TPS ~ one minute alpha
     const MAX_EWMA_ALPHA: u64 = 100_000_000; // 10% smoothing factor. at 3 TPS ~ one minute alpha
@@ -60,7 +60,7 @@ module triexbook::constants {
     // Maximum number of fills per transaction
     const MAX_FILLS: u64 = 100;
 
-    // Maximum number of open orders per balance manager
+    // Maximum number of open orders per trading account
     const MAX_OPEN_ORDERS: u64 = 100;
 
     // Big vector params
@@ -280,8 +280,8 @@ module triexbook::constants {
     //     REFERRAL_MULTIPLIER
     // }
 
-    public fun max_balance_managers(): u64 {
-        MAX_BALANCE_MANAGERS
+    public fun max_trading_accounts(): u64 {
+        MAX_TRADING_ACCOUNTS
     }
 
     // #[test_only]

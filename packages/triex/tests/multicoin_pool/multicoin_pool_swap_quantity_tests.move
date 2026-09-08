@@ -12,8 +12,8 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
     };
     use token::cred::CRED;
     use triexbook::{
-        balance_manager::{Self, BalanceManager, TradeCap, DepositCap, WithdrawCap},
-        balance_manager_tests::USDC,
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap},
+        trading_account_tests::USDC,
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
@@ -63,13 +63,13 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
     }
 
     #[test_only]
-    fun create_balance_manager_with_funds(
+    fun create_trading_account_with_funds(
         sender: address,
         usdc_amount: u64,
         cred_amount: u64,
         test: &mut Scenario,
     ): ID {
-        mc_utils::create_balance_manager_with_funds(sender, usdc_amount, cred_amount, test)
+        mc_utils::create_trading_account_with_funds(sender, usdc_amount, cred_amount, test)
     }
 
     #[test_only]
@@ -93,10 +93,10 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
     fun setup_cred_usdc_reference_pool(
         sender: address,
         registry_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ): ID {
-        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, balance_manager_id, test)
+        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
     }
 
     #[test_only]
@@ -105,7 +105,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         registry_id: ID,
         collection_id: ID,
         asset_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ): (ID, ID) {
         mc_utils::setup_multicoin_pool_with_cred_pricing(
@@ -113,7 +113,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
             registry_id,
             collection_id,
             asset_id,
-            balance_manager_id,
+            trading_account_id,
             test,
         )
     }
@@ -135,7 +135,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         );
 
         // BOB provides liquidity - places bid at price 2 (buying base with quote)
-        let bob_bm_id = create_balance_manager_with_funds(
+        let bob_bm_id = create_trading_account_with_funds(
             BOB,
             10_000_000 * constants::float_scaling(),
             1_000_000 * constants::float_scaling(),
@@ -146,7 +146,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
         let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
@@ -231,7 +231,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         );
 
         // BOB provides liquidity - places ask at price 2 (selling base for quote)
-        let bob_bm_id = create_balance_manager_with_funds(
+        let bob_bm_id = create_trading_account_with_funds(
             BOB,
             1_000_000 * constants::float_scaling(),
             1_000_000 * constants::float_scaling(),
@@ -252,7 +252,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         transfer::public_transfer(gold, BOB);
 
         test.next_tx(BOB);
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
         bob_bm.deposit_multicoin(gold, test.ctx());
         return_shared(bob_bm);
@@ -262,7 +262,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
         let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
@@ -332,7 +332,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         );
 
         // BOB provides liquidity - places ask at price 2
-        let bob_bm_id = create_balance_manager_with_funds(
+        let bob_bm_id = create_trading_account_with_funds(
             BOB,
             1_000_000 * constants::float_scaling(),
             1_000_000 * constants::float_scaling(),
@@ -353,7 +353,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         transfer::public_transfer(gold, BOB);
 
         test.next_tx(BOB);
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
         bob_bm.deposit_multicoin(gold, test.ctx());
         return_shared(bob_bm);
@@ -363,7 +363,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
         let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
@@ -429,7 +429,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         );
 
         // BOB provides liquidity
-        let bob_bm_id = create_balance_manager_with_funds(
+        let bob_bm_id = create_trading_account_with_funds(
             BOB,
             10_000_000 * constants::float_scaling(),
             1_000_000 * constants::float_scaling(),
@@ -450,7 +450,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         transfer::public_transfer(gold, BOB);
 
         test.next_tx(BOB);
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
         bob_bm.deposit_multicoin(gold, test.ctx());
         return_shared(bob_bm);
@@ -460,7 +460,7 @@ module triexbook::integration_multicoin_pool_swap_quantity_tests {
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
-        let mut bob_bm = test.take_shared_by_id<BalanceManager>(bob_bm_id);
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
         let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
