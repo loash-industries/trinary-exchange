@@ -2,420 +2,420 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test_only]
-module triexbook::integration_test_utils;
-
-use sui::{clock::Clock, sui::SUI, test_scenario::{Scenario, return_shared}};
-use token::cred::{Self as cred, ProtectedTreasury};
-use triexbook::{
-    trading_account::{Self as trading_account, TradingAccount},
-    trading_account_tests::{SPAM, USDC},
-    balances::Balances,
-    constants,
-    pool::{Self as pool, Pool},
-    pool_tests
-};
-
-public struct ExpectedBalances has drop {
-    sui: u64,
-    usdc: u64,
-    spam: u64,
-    cred: u64,
-    usdt: u64,
-}
-
-public fun expected_balances(
-    sui: u64,
-    usdc: u64,
-    spam: u64,
-    cred: u64,
-    usdt: u64,
-): ExpectedBalances {
-    ExpectedBalances { sui, usdc, spam, cred, usdt }
-}
-
-public fun expected_balances_all(amount: u64): ExpectedBalances {
-    expected_balances(amount, amount, amount, amount, amount)
-}
-
-public fun add_sui(balances: &mut ExpectedBalances, amount: u64) {
-    balances.sui = balances.sui + amount;
-}
-
-public fun sub_sui(balances: &mut ExpectedBalances, amount: u64) {
-    balances.sui = balances.sui - amount;
-}
-
-public fun add_usdc(balances: &mut ExpectedBalances, amount: u64) {
-    balances.usdc = balances.usdc + amount;
-}
-
-public fun sub_usdc(balances: &mut ExpectedBalances, amount: u64) {
-    balances.usdc = balances.usdc - amount;
-}
-
-public fun add_spam(balances: &mut ExpectedBalances, amount: u64) {
-    balances.spam = balances.spam + amount;
-}
-
-public fun sub_spam(balances: &mut ExpectedBalances, amount: u64) {
-    balances.spam = balances.spam - amount;
-}
-
-public fun add_cred(balances: &mut ExpectedBalances, amount: u64) {
-    balances.cred = balances.cred + amount;
-}
-
-public fun sub_cred(balances: &mut ExpectedBalances, amount: u64) {
-    balances.cred = balances.cred - amount;
-}
-
-public fun set_cred(balances: &mut ExpectedBalances, amount: u64) {
-    balances.cred = amount;
-}
-
-public fun add_usdt(balances: &mut ExpectedBalances, amount: u64) {
-    balances.usdt = balances.usdt + amount;
-}
-
-public fun sub_usdt(balances: &mut ExpectedBalances, amount: u64) {
-    balances.usdt = balances.usdt - amount;
-}
-
-const OWNER: address = @0x1;
-const ALICE: address = @0xAAAA;
-const BOB: address = @0xBBBB;
-
-public fun owner(): address { OWNER }
-
-public fun alice(): address { ALICE }
-
-public fun bob(): address { BOB }
-
-public fun authorize_trader(
-    sender: address,
-    trading_account_id: ID,
-    trader: address,
-    test: &mut Scenario,
-): ID {
-    test.next_tx(sender);
-    {
-        let mut trading_account = test.take_shared_by_id<TradingAccount>(
-            trading_account_id,
-        );
-        let trade_cap = trading_account.mint_trade_cap(test.ctx());
-        let trade_cap_id = object::id(&trade_cap);
-        transfer::public_transfer(trade_cap, trader);
-        return_shared(trading_account);
-
-        trade_cap_id
-    }
-}
-
-public fun remove_trader(
-    sender: address,
-    trading_account_id: ID,
-    trade_cap_id: ID,
-    test: &mut Scenario,
-) {
-    test.next_tx(sender);
-    {
-        let mut trading_account = test.take_shared_by_id<TradingAccount>(
-            trading_account_id,
-        );
-        trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
-        return_shared(trading_account);
-    }
-}
-
-public fun check_mid_price<BaseAsset, QuoteAsset>(
-    pool_id: ID,
-    expected_mid_price: u64,
-    test: &mut Scenario,
-) {
-    test.next_tx(OWNER);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let clock = test.take_shared<Clock>();
-        let mid_price = pool::mid_price(&pool, &clock);
-        assert!(mid_price == expected_mid_price, 0);
-        return_shared(pool);
-        return_shared(clock);
-    }
-}
-
-public fun burn_cred<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    expected_amount_burned: u64,
-    test: &mut Scenario,
-) {
-    test.next_tx(sender);
-    {
-        cred::share_treasury_for_testing(test.ctx());
+module triexbook::integration_test_utils {
+    use sui::{clock::Clock, sui::SUI, test_scenario::{Scenario, return_shared}};
+    use token::cred::{Self as cred, ProtectedTreasury};
+    use triexbook::{
+        balances::Balances,
+        constants,
+        pool::{Self as pool, Pool},
+        pool_tests,
+        trading_account::{Self as trading_account, TradingAccount},
+        trading_account_tests::{SPAM, USDC}
     };
-    test.next_tx(sender);
-    {
-        let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let mut treasury = test.take_shared<ProtectedTreasury>();
-        let amount_burned = pool::burn_cred<BaseAsset, QuoteAsset>(
-            &mut pool,
-            &mut treasury,
-            test.ctx(),
-        );
-        if (amount_burned != expected_amount_burned) {
-            std::debug::print(&b"--- Burn Amount Mismatch ---");
-            std::debug::print(&b"actual:");
-            std::debug::print(&amount_burned);
-            std::debug::print(&b"expected:");
-            std::debug::print(&expected_amount_burned);
+
+    public struct ExpectedBalances has drop {
+        sui: u64,
+        usdc: u64,
+        spam: u64,
+        cred: u64,
+        usdt: u64,
+    }
+
+    public fun expected_balances(
+        sui: u64,
+        usdc: u64,
+        spam: u64,
+        cred: u64,
+        usdt: u64,
+    ): ExpectedBalances {
+        ExpectedBalances { sui, usdc, spam, cred, usdt }
+    }
+
+    public fun expected_balances_all(amount: u64): ExpectedBalances {
+        expected_balances(amount, amount, amount, amount, amount)
+    }
+
+    public fun add_sui(balances: &mut ExpectedBalances, amount: u64) {
+        balances.sui = balances.sui + amount;
+    }
+
+    public fun sub_sui(balances: &mut ExpectedBalances, amount: u64) {
+        balances.sui = balances.sui - amount;
+    }
+
+    public fun add_usdc(balances: &mut ExpectedBalances, amount: u64) {
+        balances.usdc = balances.usdc + amount;
+    }
+
+    public fun sub_usdc(balances: &mut ExpectedBalances, amount: u64) {
+        balances.usdc = balances.usdc - amount;
+    }
+
+    public fun add_spam(balances: &mut ExpectedBalances, amount: u64) {
+        balances.spam = balances.spam + amount;
+    }
+
+    public fun sub_spam(balances: &mut ExpectedBalances, amount: u64) {
+        balances.spam = balances.spam - amount;
+    }
+
+    public fun add_cred(balances: &mut ExpectedBalances, amount: u64) {
+        balances.cred = balances.cred + amount;
+    }
+
+    public fun sub_cred(balances: &mut ExpectedBalances, amount: u64) {
+        balances.cred = balances.cred - amount;
+    }
+
+    public fun set_cred(balances: &mut ExpectedBalances, amount: u64) {
+        balances.cred = amount;
+    }
+
+    public fun add_usdt(balances: &mut ExpectedBalances, amount: u64) {
+        balances.usdt = balances.usdt + amount;
+    }
+
+    public fun sub_usdt(balances: &mut ExpectedBalances, amount: u64) {
+        balances.usdt = balances.usdt - amount;
+    }
+
+    const OWNER: address = @0x1;
+    const ALICE: address = @0xAAAA;
+    const BOB: address = @0xBBBB;
+
+    public fun owner(): address { OWNER }
+
+    public fun alice(): address { ALICE }
+
+    public fun bob(): address { BOB }
+
+    public fun authorize_trader(
+        sender: address,
+        trading_account_id: ID,
+        trader: address,
+        test: &mut Scenario,
+    ): ID {
+        test.next_tx(sender);
+        {
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
+            );
+            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap_id = object::id(&trade_cap);
+            transfer::public_transfer(trade_cap, trader);
+            return_shared(trading_account);
+
+            trade_cap_id
+        }
+    }
+
+    public fun remove_trader(
+        sender: address,
+        trading_account_id: ID,
+        trade_cap_id: ID,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(sender);
+        {
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
+            );
+            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
+            return_shared(trading_account);
+        }
+    }
+
+    public fun check_mid_price<BaseAsset, QuoteAsset>(
+        pool_id: ID,
+        expected_mid_price: u64,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let mid_price = pool::mid_price(&pool, &clock);
+            assert!(mid_price == expected_mid_price, 0);
+            return_shared(pool);
+            return_shared(clock);
+        }
+    }
+
+    public fun burn_cred<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        expected_amount_burned: u64,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(sender);
+        {
+            cred::share_treasury_for_testing(test.ctx());
         };
-        assert!(amount_burned == expected_amount_burned, 0);
-        return_shared(pool);
-        return_shared(treasury);
+        test.next_tx(sender);
+        {
+            let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let mut treasury = test.take_shared<ProtectedTreasury>();
+            let amount_burned = pool::burn_cred<BaseAsset, QuoteAsset>(
+                &mut pool,
+                &mut treasury,
+                test.ctx(),
+            );
+            if (amount_burned != expected_amount_burned) {
+                std::debug::print(&b"--- Burn Amount Mismatch ---");
+                std::debug::print(&b"actual:");
+                std::debug::print(&amount_burned);
+                std::debug::print(&b"expected:");
+                std::debug::print(&expected_amount_burned);
+            };
+            assert!(amount_burned == expected_amount_burned, 0);
+            return_shared(pool);
+            return_shared(treasury);
+        }
     }
-}
 
-public fun execute_cross_trading<BaseAsset, QuoteAsset>(
-    pool_id: ID,
-    trading_account_id_1: ID,
-    trading_account_id_2: ID,
-    order_type: u8,
-    price: u64,
-    quantity: u64,
-    is_bid: bool,
-    expire_timestamp: u64,
-    test: &mut Scenario,
-) {
-    pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
-        ALICE,
-        pool_id,
-        trading_account_id_1,
-        order_type,
-        constants::self_matching_allowed(),
-        price,
-        quantity,
-        is_bid,
-        expire_timestamp,
-        test,
-    );
-    pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
-        BOB,
-        pool_id,
-        trading_account_id_2,
-        order_type,
-        constants::self_matching_allowed(),
-        price,
-        2 * quantity,
-        !is_bid,
-        expire_timestamp,
-        test,
-    );
-    pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
-        ALICE,
-        pool_id,
-        trading_account_id_1,
-        order_type,
-        constants::self_matching_allowed(),
-        price,
-        quantity,
-        is_bid,
-        expire_timestamp,
-        test,
-    );
-    withdraw_settled_amounts<BaseAsset, QuoteAsset>(
-        BOB,
-        pool_id,
-        trading_account_id_2,
-        test,
-    );
-}
-
-public fun check_vault_balances<BaseAsset, QuoteAsset>(
-    pool_id: ID,
-    expected_balances: &Balances,
-    test: &mut Scenario,
-) {
-    test.next_tx(OWNER);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let (vault_base, vault_quote, vault_cred) = pool::vault_balances<BaseAsset, QuoteAsset>(
-            &pool,
-        );
-        std::debug::print(&std::string::utf8(b"--- Vault Balance Check ---"));
-        std::debug::print(&std::string::utf8(b"Base:"));
-        std::debug::print(&vault_base);
-        std::debug::print(&expected_balances.base());
-        std::debug::print(&std::string::utf8(b"Quote:"));
-        std::debug::print(&vault_quote);
-        std::debug::print(&expected_balances.quote());
-        std::debug::print(&std::string::utf8(b"Cred:"));
-        std::debug::print(&vault_cred);
-        std::debug::print(&expected_balances.cred());
-        assert!(vault_base == expected_balances.base(), 0);
-        assert!(vault_quote == expected_balances.quote(), 0);
-        assert!(vault_cred == expected_balances.cred(), 0);
-
-        return_shared(pool);
-    }
-}
-
-public fun withdraw_settled_amounts<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    trading_account_id: ID,
-    test: &mut Scenario,
-) {
-    test.next_tx(sender);
-    {
-        let mut my_trading_account = test.take_shared_by_id<TradingAccount>(
-            trading_account_id,
-        );
-        let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let trade_proof = my_trading_account.generate_proof_as_owner(test.ctx());
-        pool::withdraw_settled_amounts<BaseAsset, QuoteAsset>(
-            &mut pool,
-            &mut my_trading_account,
-            &trade_proof,
-        );
-        return_shared(my_trading_account);
-        return_shared(pool);
-    }
-}
-
-public fun check_balance(
-    trading_account_id: ID,
-    expected_balances: &ExpectedBalances,
-    test: &mut Scenario,
-) {
-    test.next_tx(OWNER);
-    {
-        let my_trading_account = test.take_shared_by_id<TradingAccount>(
-            trading_account_id,
-        );
-        let sui = trading_account::balance<SUI>(&my_trading_account);
-        let usdc = trading_account::balance<USDC>(&my_trading_account);
-        let spam = trading_account::balance<SPAM>(&my_trading_account);
-
-        std::debug::print(&std::string::utf8(b"--- Balance Check ---"));
-        std::debug::print(&std::string::utf8(b"SUI:"));
-        std::debug::print(&sui);
-        std::debug::print(&expected_balances.sui);
-        std::debug::print(&std::string::utf8(b"USDC:"));
-        std::debug::print(&usdc);
-        std::debug::print(&expected_balances.usdc);
-        std::debug::print(&std::string::utf8(b"SPAM:"));
-        std::debug::print(&spam);
-        std::debug::print(&expected_balances.spam);
-
-        if (sui != expected_balances.sui) {
-            std::debug::print(&std::string::utf8(b"SUI mismatch:"));
-            std::debug::print(&std::string::utf8(b"actual:"));
-            std::debug::print(&sui);
-            std::debug::print(&std::string::utf8(b"expected:"));
-            std::debug::print(&expected_balances.sui);
-        };
-        if (usdc != expected_balances.usdc) {
-            std::debug::print(&std::string::utf8(b"USDC mismatch:"));
-            std::debug::print(&std::string::utf8(b"actual:"));
-            std::debug::print(&usdc);
-            std::debug::print(&std::string::utf8(b"expected:"));
-            std::debug::print(&expected_balances.usdc);
-        };
-        // Quote-only fees: USDC/SPAM balances may vary due to fee locking
-        // Skip strict equality checks for quote-denominated assets
-
-        return_shared(my_trading_account);
-    }
-}
-
-public fun check_locked_balance<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    trading_account_id: ID,
-    expected_balances: &ExpectedBalances,
-    test: &mut Scenario,
-) {
-    let (base, quote, cred) = locked_balance<BaseAsset, QuoteAsset>(
-        sender,
-        pool_id,
-        trading_account_id,
-        test,
-    );
-    assert!(base == expected_balances.sui, 0);
-    // Quote fees are locked alongside quote principal, so the quote side is
-    // part of what this checks — leaving it unasserted made every
-    // quote-denominated expectation dead weight.
-    assert!(quote == expected_balances.usdc, 1);
-    assert!(cred == expected_balances.cred, 2);
-}
-
-public fun get_level2_range<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    price_low: u64,
-    price_high: u64,
-    is_bid: bool,
-    test: &mut Scenario,
-): (vector<u64>, vector<u64>) {
-    test.next_tx(sender);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let clock = test.take_shared<Clock>();
-        let (prices, quantities) = pool.get_level2_range<BaseAsset, QuoteAsset>(
-            price_low,
-            price_high,
+    public fun execute_cross_trading<BaseAsset, QuoteAsset>(
+        pool_id: ID,
+        trading_account_id_1: ID,
+        trading_account_id_2: ID,
+        order_type: u8,
+        price: u64,
+        quantity: u64,
+        is_bid: bool,
+        expire_timestamp: u64,
+        test: &mut Scenario,
+    ) {
+        pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
+            ALICE,
+            pool_id,
+            trading_account_id_1,
+            order_type,
+            constants::self_matching_allowed(),
+            price,
+            quantity,
             is_bid,
-            &clock,
+            expire_timestamp,
+            test,
         );
-        return_shared(pool);
-        return_shared(clock);
-
-        (prices, quantities)
+        pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
+            BOB,
+            pool_id,
+            trading_account_id_2,
+            order_type,
+            constants::self_matching_allowed(),
+            price,
+            2 * quantity,
+            !is_bid,
+            expire_timestamp,
+            test,
+        );
+        pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
+            ALICE,
+            pool_id,
+            trading_account_id_1,
+            order_type,
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            is_bid,
+            expire_timestamp,
+            test,
+        );
+        withdraw_settled_amounts<BaseAsset, QuoteAsset>(
+            BOB,
+            pool_id,
+            trading_account_id_2,
+            test,
+        );
     }
-}
 
-public fun get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    ticks: u64,
-    test: &mut Scenario,
-): (vector<u64>, vector<u64>, vector<u64>, vector<u64>) {
-    test.next_tx(sender);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let clock = test.take_shared<Clock>();
-        let (
-            bid_prices,
-            bid_quantities,
-            ask_prices,
-            ask_quantities,
-        ) = pool.get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(ticks, &clock);
-        return_shared(pool);
-        return_shared(clock);
+    public fun check_vault_balances<BaseAsset, QuoteAsset>(
+        pool_id: ID,
+        expected_balances: &Balances,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let (vault_base, vault_quote, vault_cred) = pool::vault_balances<BaseAsset, QuoteAsset>(
+                &pool,
+            );
+            std::debug::print(&std::string::utf8(b"--- Vault Balance Check ---"));
+            std::debug::print(&std::string::utf8(b"Base:"));
+            std::debug::print(&vault_base);
+            std::debug::print(&expected_balances.base());
+            std::debug::print(&std::string::utf8(b"Quote:"));
+            std::debug::print(&vault_quote);
+            std::debug::print(&expected_balances.quote());
+            std::debug::print(&std::string::utf8(b"Cred:"));
+            std::debug::print(&vault_cred);
+            std::debug::print(&expected_balances.cred());
+            assert!(vault_base == expected_balances.base(), 0);
+            assert!(vault_quote == expected_balances.quote(), 0);
+            assert!(vault_cred == expected_balances.cred(), 0);
 
-        (bid_prices, bid_quantities, ask_prices, ask_quantities)
+            return_shared(pool);
+        }
     }
-}
 
-public fun locked_balance<BaseAsset, QuoteAsset>(
-    sender: address,
-    pool_id: ID,
-    trading_account_id: ID,
-    test: &mut Scenario,
-): (u64, u64, u64) {
-    test.next_tx(sender);
-    {
-        let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let my_trading_account = test.take_shared_by_id<TradingAccount>(
+    public fun withdraw_settled_amounts<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        trading_account_id: ID,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(sender);
+        {
+            let mut my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
+            );
+            let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let trade_proof = my_trading_account.generate_proof_as_owner(test.ctx());
+            pool::withdraw_settled_amounts<BaseAsset, QuoteAsset>(
+                &mut pool,
+                &mut my_trading_account,
+                &trade_proof,
+            );
+            return_shared(my_trading_account);
+            return_shared(pool);
+        }
+    }
+
+    public fun check_balance(
+        trading_account_id: ID,
+        expected_balances: &ExpectedBalances,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(OWNER);
+        {
+            let my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
+            );
+            let sui = trading_account::balance<SUI>(&my_trading_account);
+            let usdc = trading_account::balance<USDC>(&my_trading_account);
+            let spam = trading_account::balance<SPAM>(&my_trading_account);
+
+            std::debug::print(&std::string::utf8(b"--- Balance Check ---"));
+            std::debug::print(&std::string::utf8(b"SUI:"));
+            std::debug::print(&sui);
+            std::debug::print(&expected_balances.sui);
+            std::debug::print(&std::string::utf8(b"USDC:"));
+            std::debug::print(&usdc);
+            std::debug::print(&expected_balances.usdc);
+            std::debug::print(&std::string::utf8(b"SPAM:"));
+            std::debug::print(&spam);
+            std::debug::print(&expected_balances.spam);
+
+            if (sui != expected_balances.sui) {
+                std::debug::print(&std::string::utf8(b"SUI mismatch:"));
+                std::debug::print(&std::string::utf8(b"actual:"));
+                std::debug::print(&sui);
+                std::debug::print(&std::string::utf8(b"expected:"));
+                std::debug::print(&expected_balances.sui);
+            };
+            if (usdc != expected_balances.usdc) {
+                std::debug::print(&std::string::utf8(b"USDC mismatch:"));
+                std::debug::print(&std::string::utf8(b"actual:"));
+                std::debug::print(&usdc);
+                std::debug::print(&std::string::utf8(b"expected:"));
+                std::debug::print(&expected_balances.usdc);
+            };
+            // Quote-only fees: USDC/SPAM balances may vary due to fee locking
+            // Skip strict equality checks for quote-denominated assets
+
+            return_shared(my_trading_account);
+        }
+    }
+
+    public fun check_locked_balance<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        trading_account_id: ID,
+        expected_balances: &ExpectedBalances,
+        test: &mut Scenario,
+    ) {
+        let (base, quote, cred) = locked_balance<BaseAsset, QuoteAsset>(
+            sender,
+            pool_id,
             trading_account_id,
+            test,
         );
-        let (base, quote, cred) = pool::locked_balance<BaseAsset, QuoteAsset>(
-            &pool,
-            &my_trading_account,
-        );
-        return_shared(pool);
-        return_shared(my_trading_account);
+        assert!(base == expected_balances.sui, 0);
+        // Quote fees are locked alongside quote principal, so the quote side is
+        // part of what this checks — leaving it unasserted made every
+        // quote-denominated expectation dead weight.
+        assert!(quote == expected_balances.usdc, 1);
+        assert!(cred == expected_balances.cred, 2);
+    }
 
-        (base, quote, cred)
+    public fun get_level2_range<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        price_low: u64,
+        price_high: u64,
+        is_bid: bool,
+        test: &mut Scenario,
+    ): (vector<u64>, vector<u64>) {
+        test.next_tx(sender);
+        {
+            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let (prices, quantities) = pool.get_level2_range<BaseAsset, QuoteAsset>(
+                price_low,
+                price_high,
+                is_bid,
+                &clock,
+            );
+            return_shared(pool);
+            return_shared(clock);
+
+            (prices, quantities)
+        }
+    }
+
+    public fun get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        ticks: u64,
+        test: &mut Scenario,
+    ): (vector<u64>, vector<u64>, vector<u64>, vector<u64>) {
+        test.next_tx(sender);
+        {
+            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let (
+                bid_prices,
+                bid_quantities,
+                ask_prices,
+                ask_quantities,
+            ) = pool.get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(ticks, &clock);
+            return_shared(pool);
+            return_shared(clock);
+
+            (bid_prices, bid_quantities, ask_prices, ask_quantities)
+        }
+    }
+
+    public fun locked_balance<BaseAsset, QuoteAsset>(
+        sender: address,
+        pool_id: ID,
+        trading_account_id: ID,
+        test: &mut Scenario,
+    ): (u64, u64, u64) {
+        test.next_tx(sender);
+        {
+            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
+            let my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
+            );
+            let (base, quote, cred) = pool::locked_balance<BaseAsset, QuoteAsset>(
+                &pool,
+                &my_trading_account,
+            );
+            return_shared(pool);
+            return_shared(my_trading_account);
+
+            (base, quote, cred)
+        }
     }
 }
