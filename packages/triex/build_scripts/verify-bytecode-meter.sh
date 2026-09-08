@@ -12,10 +12,10 @@ MODULES=(
   book
   constants
   ewma
+  fee_policy
   fee_schedule
   fee_turnover
   fill
-  governance
   history
   math
   multicoin_pool
@@ -27,7 +27,6 @@ MODULES=(
   quote_fee
   registry
   state
-  trade_params
   utils
   vault
 )
