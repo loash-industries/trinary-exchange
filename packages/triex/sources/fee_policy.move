@@ -26,6 +26,8 @@ const EClassDoesNotExist: u64 = 1;
 const EInvalidCancelRetention: u64 = 2;
 const ENoDefaultClassForQuote: u64 = 3;
 const EClassQuoteMismatch: u64 = 4;
+const EDuplicateGenesisClass: u64 = 5;
+const EInvalidQuoteUnit: u64 = 6;
 
 // === Constants ===
 const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -38,6 +40,78 @@ const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 /// Share of released bid-maker escrow the protocol keeps on cancel, modify-down
 /// or expiry. Full basis points, so the cap is a 100% retention (no refund).
 const MAX_CANCEL_RETENTION_BPS: u64 = 10000;
+
+// === Genesis ladder ===
+// Launch pricing, written by `bootstrap_quote`. Eight tiers, each rung a fixed
+// discount off the entry rate — 0/8/16/24/32/38/44/50 percent — taken on the
+// taker and maker columns alike, so the spread between the two sides holds its
+// ratio the whole way up. Every value is a `FEE_MULTIPLE` multiple and clears
+// `MIN_TAKER_FEE`, so `validated_schedule` accepts both columns as written.
+const GENESIS_CANCEL_RETENTION_BPS: u64 = 2000; // 20% retained
+
+/// Coin pools: 1.1% taker / 0.9% maker at the entry tier, halving to
+/// 0.55% / 0.45% at the top.
+fun coin_taker_fees(): vector<u64> {
+    vector[11_000_000, 10_120_000, 9_240_000, 8_360_000, 7_480_000, 6_820_000, 6_160_000, 5_500_000]
+}
+
+fun coin_maker_fees(): vector<u64> {
+    vector[9_000_000, 8_280_000, 7_560_000, 6_840_000, 6_120_000, 5_580_000, 5_040_000, 4_500_000]
+}
+
+/// Multicoin pools: 2.2% taker / 1.8% maker at the entry tier, halving to
+/// 1.1% / 0.9% at the top.
+fun multicoin_taker_fees(): vector<u64> {
+    vector[
+        22_000_000,
+        20_240_000,
+        18_480_000,
+        16_720_000,
+        14_960_000,
+        13_640_000,
+        12_320_000,
+        11_000_000,
+    ]
+}
+
+fun multicoin_maker_fees(): vector<u64> {
+    vector[
+        18_000_000,
+        16_560_000,
+        15_120_000,
+        13_680_000,
+        12_240_000,
+        11_160_000,
+        10_080_000,
+        9_000_000,
+    ]
+}
+
+/// Tier thresholds, scaled to a quote whose smallest unit is `quote_unit`
+/// (10^decimals).
+///
+/// Denominated in fees *paid*, not notional traded: the turnover ring
+/// accumulates fee revenue, so reading these as trade size understates them by
+/// roughly the entry rate — 20k of fees is on the order of 1.8M of actual
+/// trading at 1.1%.
+///
+/// Set two orders of magnitude above TRIEX-137 §11's ladder carried through the
+/// entry rate, so the rungs target sustained institutional flow rather than
+/// retail activity. The upper rungs are deliberately far out; they are headroom,
+/// and `update_class` can pull the whole ladder down for the next epoch without
+/// touching a single trader's accrued turnover.
+fun genesis_thresholds(quote_unit: u128): vector<u128> {
+    vector[
+        0,
+        20_000 * quote_unit,
+        100_000 * quote_unit,
+        500_000 * quote_unit,
+        2_000_000 * quote_unit,
+        10_000_000 * quote_unit,
+        50_000_000 * quote_unit,
+        200_000_000 * quote_unit,
+    ]
+}
 
 // === Structs ===
 /// The one shared object all fee policy lives in.
@@ -93,6 +167,62 @@ fun init(ctx: &mut TxContext) {
 }
 
 // === Public-Mutative Functions * ADMIN * ===
+/// Stand up the launch pricing for `QuoteAsset`: create its coin and multicoin
+/// classes on the genesis ladder and register both as the defaults new pools of
+/// that quote are born into. The entire post-publish fee setup for one quote,
+/// in one transaction.
+///
+/// This is not optional plumbing. `FeePolicy` ships empty and `create_pool`
+/// resolves `default_class` for its quote, so until this has run for a quote,
+/// every attempt to create a pool of that quote aborts with
+/// `ENoDefaultClassForQuote`. Run it once per approved quote immediately after
+/// publish, before any pool creation.
+///
+/// `quote_unit` is 10^decimals of `QuoteAsset` — 1_000_000 for CRED and USDC,
+/// 1_000_000_000 for SUI. Thresholds are quote-unit sums, so the ladder has to
+/// be scaled to the quote it prices; passing the wrong scale silently misprices
+/// every tier above the first, which is why it is an explicit argument rather
+/// than a guess.
+///
+/// Class ids are the caller's to allocate and must not collide with an existing
+/// class — `create_class` aborts on a duplicate, so a mistake here fails the
+/// transaction rather than overwriting live pricing.
+public fun bootstrap_quote<QuoteAsset>(
+    self: &mut FeePolicy,
+    coin_class_id: u16,
+    multicoin_class_id: u16,
+    quote_unit: u128,
+    cap: &TriexbookAdminCap,
+    ctx: &TxContext,
+) {
+    assert!(coin_class_id != multicoin_class_id, EDuplicateGenesisClass);
+    assert!(quote_unit > 0, EInvalidQuoteUnit);
+
+    let thresholds = genesis_thresholds(quote_unit);
+
+    self.create_class<QuoteAsset>(
+        coin_class_id,
+        thresholds,
+        coin_taker_fees(),
+        coin_maker_fees(),
+        GENESIS_CANCEL_RETENTION_BPS,
+        cap,
+        ctx,
+    );
+    self.set_default_class<QuoteAsset>(coin_class_id, cap);
+
+    self.create_class<QuoteAsset>(
+        multicoin_class_id,
+        thresholds,
+        multicoin_taker_fees(),
+        multicoin_maker_fees(),
+        GENESIS_CANCEL_RETENTION_BPS,
+        cap,
+        ctx,
+    );
+    self.set_multicoin_default_class<QuoteAsset>(multicoin_class_id, cap);
+}
+
 /// Create a pricing class denominated in `QuoteAsset`, effective immediately —
 /// a new class has no traders to surprise. Takes columns rather than tier
 /// structs because entry functions cannot accept Move structs as arguments.

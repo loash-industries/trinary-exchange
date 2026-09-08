@@ -158,6 +158,18 @@ fun test_refund_rounding_dust_favors_the_retention() {
     pool_test_utils::test_refund_rounding_dust_favors_the_retention();
 }
 
+// === Conservation of funds ===
+
+#[test]
+fun test_multi_maker_sweep_conserves_funds() {
+    pool_test_utils::test_multi_maker_sweep_conserves_funds();
+}
+
+#[test]
+fun test_dust_accumulation_stays_bounded() {
+    pool_test_utils::test_dust_accumulation_stays_bounded();
+}
+
 // === Fee tiers (TRIEX-137) ===
 
 #[test]

@@ -53,11 +53,11 @@ const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
-// Pool governance default: 2% taker fee on bids
-const FEE_BPS: u64 = 110;
+// Multicoin launch default: 2.2% taker fee on bids
+const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 // Ask makers pay the maker rate out of fill proceeds; it lands in the same reserve.
-const MAKER_FEE_BPS: u64 = 90;
+const MAKER_FEE_BPS: u64 = 180;
 
 // Large enough to cover the maximum test quote (100 × FLOAT_SCALING per item)
 const LARGE_BALANCE: u64 = 100_000_000_000_000_000;
@@ -66,27 +66,27 @@ const LARGE_BALANCE: u64 = 100_000_000_000_000_000;
 
 /// 9-decimal quote. QUOTE_UNIT = FLOAT_SCALING = 1_000_000_000.
 /// price_internal = human × 1_000_000_000
-/// 1 NFT at 100 → quote = 100_000_000_000, fee = 2_000_000_000
+/// 1 NFT at 100 → quote = 100_000_000_000, fee = 2_200_000_000
 /// Buggy (math::mul): quote = 100, fee = 2  (1_000_000_000× too small)
 public struct MQ9 has store {}
 
 /// 6-decimal quote (e.g., real USDC). QUOTE_UNIT = 1_000_000.
 /// price_internal = human × 1_000_000
-/// 1 NFT at 100 → quote = 100_000_000, fee = 2_000_000
+/// 1 NFT at 100 → quote = 100_000_000, fee = 2_200_000
 /// Buggy (math::mul): quote = 0, fee = 0  (truncated to zero)
 public struct MQ6 has store {}
 
 /// 2-decimal quote. QUOTE_UNIT = 100.
 /// price_internal = human × 100
-/// 1 NFT at 100 → quote = 10_000, fee = 200
+/// 1 NFT at 100 → quote = 10_000, fee = 220
 /// Buggy (math::mul): quote = 0, fee = 0  (truncated to zero)
 public struct MQ2 has store {}
 
 /// 1-decimal quote. QUOTE_UNIT = 10.
 /// price_internal = human × 10
-/// 1 NFT at 100 → quote = 1_000, fee = 20
+/// 1 NFT at 100 → quote = 1_000, fee = 22
 /// Buggy (math::mul): quote = 0, fee = 0  (truncated to zero)
-/// Precision floor: price × qty < 50 raw → fee truncates to 0 even with fix
+/// Precision floor: price × qty < 46 raw → fee truncates to 0 even with fix
 public struct MQ1 has store {}
 
 // ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ fun create_pool_with_quote<QuoteAsset>(
     let collection = test.take_shared<Collection>();
     registry.add_approved_quote_unchecked<QuoteAsset>(&admin_cap);
     // Register a flat multicoin class for the bespoke quote at the multicoin
-    // launch defaults (1.1% taker / 0.9% maker) the fee assertions expect.
+    // launch defaults (2.2% taker / 1.8% maker) the fee assertions expect.
     policy.create_class<QuoteAsset>(
         QUOTE_FEE_CLASS,
         vector[0],
@@ -325,7 +325,7 @@ fun test_mq9_fee_correct_not_1e9_undercharged() {
 /// 1 NFT at 100 units with 6-decimal quote.
 /// price = 100 × 1e6 = 100_000_000
 /// correct quote = 100_000_000  (price_scaling = 1)
-/// correct fee   = 100_000_000 × 200 / 10_000 = 2_000_000
+/// correct fee   = 100_000_000 × 220 / 10_000 = 2_200_000
 /// buggy quote   = math::mul(1, 100_000_000) = 0  (÷ 1e9 truncates)
 /// buggy fee     = 0  (zero fee — the mainnet symptom for CRED-like decimals)
 #[test]
@@ -359,7 +359,7 @@ fun test_mq6_fee_nonzero_not_truncated_to_zero() {
     );
 
     let expected_quote = qty * price; // = 100_000_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_000_000
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 2_200_000
 
     // The buggy path truncates 100_000_000 / 1e9 → 0
     let buggy_quote = math::mul(qty, price);
@@ -377,7 +377,7 @@ fun test_mq6_fee_nonzero_not_truncated_to_zero() {
 /// 5 NFTs at 50 units each with 6-decimal quote — multi-item fill.
 /// price = 50 × 1e6 = 50_000_000
 /// correct quote = 5 × 50_000_000 = 250_000_000
-/// correct fee   = 250_000_000 × 200 / 10_000 = 5_000_000
+/// correct fee   = 250_000_000 × 220 / 10_000 = 5_500_000
 #[test]
 fun test_mq6_multi_item_fee_captured() {
     let mut test = begin(OWNER);
@@ -409,7 +409,7 @@ fun test_mq6_multi_item_fee_captured() {
     );
 
     let expected_quote = qty * price; // = 250_000_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 5_000_000
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 5_500_000
 
     assert!(paid_fees == expected_fee, 0);
     let expected_maker_fee = expected_quote * MAKER_FEE_BPS / FEE_PRECISION;
@@ -424,7 +424,7 @@ fun test_mq6_multi_item_fee_captured() {
 /// 1 NFT at 100 units with 2-decimal quote.
 /// price = 100 × 100 = 10_000
 /// correct quote = 10_000  (price_scaling = 1)
-/// correct fee   = 10_000 × 200 / 10_000 = 200
+/// correct fee   = 10_000 × 220 / 10_000 = 220
 /// buggy quote   = math::mul(1, 10_000) = 0  (÷ 1e9 truncates)
 /// buggy fee     = 0
 #[test]
@@ -458,7 +458,7 @@ fun test_mq2_fee_nonzero_not_truncated_to_zero() {
     );
 
     let expected_quote = qty * price; // = 10_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 200
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 220
 
     let buggy_quote = math::mul(qty, price); // = 0 (10_000 / 1e9 truncates)
     assert!(buggy_quote == 0, 0);
@@ -477,7 +477,7 @@ fun test_mq2_fee_nonzero_not_truncated_to_zero() {
 /// 1 NFT at 100 units with 1-decimal quote.
 /// price = 100 × 10 = 1_000
 /// correct quote = 1_000  (price_scaling = 1)
-/// correct fee   = 1_000 × 200 / 10_000 = 20
+/// correct fee   = 1_000 × 220 / 10_000 = 22
 /// buggy quote   = math::mul(1, 1_000) = 0  (÷ 1e9 truncates)
 /// buggy fee     = 0
 #[test]
@@ -511,7 +511,7 @@ fun test_mq1_fee_nonzero_not_truncated_to_zero() {
     );
 
     let expected_quote = qty * price; // = 1_000
-    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 20
+    let expected_fee = expected_quote * FEE_BPS / FEE_PRECISION; // = 22
 
     let buggy_quote = math::mul(qty, price); // = 0 (1_000 / 1e9 truncates)
     assert!(buggy_quote == 0, 0);
@@ -527,8 +527,8 @@ fun test_mq1_fee_nonzero_not_truncated_to_zero() {
 
 /// Precision floor for MQ1: even with the fix, very low per-item prices can
 /// still produce zero fee due to integer division within fee calculation.
-/// price = 4 × 10 = 40 raw per item: quote = 40, fee = 40 × 2% = 0 (0.8 rounds down)
-/// price = 5 × 10 = 50 raw per item: quote = 50, fee = 50 × 2% = 1 (threshold ✓)
+/// price = 4 × 10 = 40 raw per item: quote = 40, fee = 40 × 2.2% = 0 (0.88 rounds down)
+/// price = 5 × 10 = 50 raw per item: quote = 50, fee = 50 × 2.2% = 1 (threshold ✓)
 /// Both fills use the same pool — only one MultiCoinPool<MQ1> can exist per registry.
 #[test]
 fun test_mq1_precision_floor_and_threshold() {
@@ -549,7 +549,8 @@ fun test_mq1_precision_floor_and_threshold() {
     // Mint enough NFTs for both fills (1 each)
     mint_and_deposit_nfts(alice_bm_id, 5, &collection_cap, &mut test);
 
-    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 110/10_000 = 0
+    // 4 raw Q1 per NFT: quote = 40, fee = 40 × 220/10_000 = 0; the maker's
+    // 40 × 180/10_000 also floors to 0, so the reserve stays empty.
     let price_low = 4 * 10u64;
     let (fees_low, reserve_low) = fill_and_get_fees<MQ1>(
         pool_id,
@@ -562,9 +563,11 @@ fun test_mq1_precision_floor_and_threshold() {
     assert!(fees_low == 0, 0);
     assert!(reserve_low == 0, 1);
 
-    // 10 raw Q1 per NFT: quote = 100, fee = 100 × 110/10_000 = 1 (non-zero)
+    // 5 raw Q1 per NFT: quote = 50, fee = 50 × 220/10_000 = 1 (non-zero). This
+    // is the smallest multiple of QUOTE_UNIT that clears the floor at 220 bps,
+    // and the maker's 50 × 180/10_000 still floors to 0.
     // Same pool and BMs — reserve accumulates from both fills (0 + 1 = 1)
-    let price_threshold = 10 * 10u64;
+    let price_threshold = 5 * 10u64;
     let (fees_threshold, reserve_threshold) = fill_and_get_fees<MQ1>(
         pool_id,
         alice_bm_id,

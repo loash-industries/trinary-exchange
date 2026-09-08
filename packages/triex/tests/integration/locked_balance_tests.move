@@ -25,9 +25,9 @@ fun test_locked_balance_ask_ok() {
     test_locked_balance(false)
 }
 
-/// Default maker rate for a volatile pool: 1.8%.
+/// Default maker rate for a volatile pool: 0.9%.
 fun maker_fee_on(quote_quantity: u64): u64 {
-    math::mul(quote_quantity, 18_000_000)
+    math::mul(quote_quantity, pool_test_utils::default_maker_fee())
 }
 
 fun test_locked_balance(is_bid: bool) {
@@ -215,8 +215,8 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     let price = 2 * constants::float_scaling();
     let quantity = 3 * constants::float_scaling();
     let quote = math::mul(price, quantity);
-    // Default maker rate at placement: 1.8% = 180 bps
-    let fee_at_default_rate = quote * 180 / 10000;
+    // Default maker rate at placement: 0.9% = 90 bps
+    let fee_at_default_rate = math::mul(quote, pool_test_utils::default_maker_fee());
 
     pool_tests::place_limit_order<SUI, USDC>(
         utils::alice(),
@@ -250,7 +250,7 @@ fun test_locked_balance_uses_snapshotted_maker_rate() {
     );
     test.next_epoch(utils::owner());
 
-    // The resting order still reports its snapshotted 1.8% rate.
+    // The resting order still reports its snapshotted 0.9% rate.
     let (_, quote_locked, _) = utils::locked_balance<SUI, USDC>(
         utils::alice(),
         pool1_id,

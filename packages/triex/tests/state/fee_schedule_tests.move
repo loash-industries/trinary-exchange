@@ -11,9 +11,16 @@ const MAX_TAKER: u64 = 1_000_000_000; // 100%
 const MAX_MAKER: u64 = 1_000_000_000; // 100%
 const FEE_MULTIPLE: u64 = 1000; // 0.01 bp
 
-/// The launch ladder from the TRIEX-137 plan, in raw units (CRED has 6
-/// decimals): 2.20%/1.80% down to 0.55%/0.40%.
-fun launch_ladder(): fee_schedule::FeeSchedule {
+/// An eight-rung ladder in raw units (6-decimal quote), 2.20%/1.80% down to
+/// 0.55%/0.40%, used here to exercise resolution and validation across a full
+/// ladder.
+///
+/// Deliberately NOT the shipped launch ladder — that one lives in
+/// `fee_policy.move` (`coin_taker_fees` and friends, written by
+/// `bootstrap_quote`) and differs in both shape and rates. Keeping a distinct
+/// fixture here means a launch re-pricing never silently rewrites what these
+/// validation tests cover.
+fun sample_ladder(): fee_schedule::FeeSchedule {
     fee_schedule::from_vectors(
         vector[
             0,
@@ -75,7 +82,7 @@ fun flat_schedule_prices_like_a_flat_fee() {
 
 #[test]
 fun zero_turnover_resolves_to_entry_rung() {
-    let (tier, taker, maker) = launch_ladder().resolve(0);
+    let (tier, taker, maker) = sample_ladder().resolve(0);
 
     assert_eq!(tier, 0);
     assert_eq!(taker, 22_000_000);
@@ -84,7 +91,7 @@ fun zero_turnover_resolves_to_entry_rung() {
 
 #[test]
 fun threshold_is_inclusive() {
-    let schedule = launch_ladder();
+    let schedule = sample_ladder();
 
     // One unit short of tier 1 stays on tier 0...
     let (tier, taker, _maker) = schedule.resolve(199_999_999);
@@ -100,7 +107,7 @@ fun threshold_is_inclusive() {
 
 #[test]
 fun resolves_to_highest_qualifying_tier() {
-    let schedule = launch_ladder();
+    let schedule = sample_ladder();
 
     // Between tier 4 and tier 5: takes tier 4, not the first that qualifies.
     let (tier, taker, maker) = schedule.resolve(99_999_999_999);
@@ -117,7 +124,7 @@ fun resolves_to_highest_qualifying_tier() {
 
 #[test]
 fun every_rung_is_reachable() {
-    let schedule = launch_ladder();
+    let schedule = sample_ladder();
     let expected_takers = vector[
         22_000_000,
         19_000_000,
@@ -141,7 +148,7 @@ fun every_rung_is_reachable() {
 
 #[test]
 fun base_rates_report_the_entry_rung() {
-    let schedule = launch_ladder();
+    let schedule = sample_ladder();
 
     assert_eq!(schedule.base_taker_fee(), 22_000_000);
     assert_eq!(schedule.base_maker_fee(), 18_000_000);
@@ -150,8 +157,8 @@ fun base_rates_report_the_entry_rung() {
 // === Validation ===
 
 #[test]
-fun launch_ladder_validates() {
-    launch_ladder().validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
+fun sample_ladder_validates() {
+    sample_ladder().validate(MIN_TAKER, MAX_TAKER, MAX_MAKER, FEE_MULTIPLE);
 }
 
 #[test]
@@ -340,7 +347,7 @@ fun maker_rate_above_cap_rejected() {
 fun saturating_turnover_resolves_to_the_top_rung() {
     // Turnover is u128 and the ring sums u64 buckets, so it cannot realistically
     // reach this — but resolution must not walk off the end regardless.
-    let (tier, taker, maker) = launch_ladder().resolve(340282366920938463463374607431768211455);
+    let (tier, taker, maker) = sample_ladder().resolve(340282366920938463463374607431768211455);
 
     assert_eq!(tier, 7);
     assert_eq!(taker, 5_500_000);

@@ -691,9 +691,9 @@ fun test_multicoin_bid_with_quote_fees_updates_vault_reserve() {
             test.ctx(),
         );
         let reserve_after = pool.quote_fee_reserve_balance();
-        // The ask maker's fee (0.9% of the filled quote) is deducted from
+        // The ask maker's fee (1.8% of the filled quote) is deducted from
         // their proceeds and lands in the same reserve as Bob's taker fee.
-        let ask_maker_fee = order_info.cumulative_quote_quantity() * 90 / 10_000;
+        let ask_maker_fee = order_info.cumulative_quote_quantity() * 180 / 10_000;
         let expected_fee = order_info.paid_fees() + order_info.maker_fees() + ask_maker_fee;
         assert!(expected_fee > 0, 0);
         assert!(reserve_after >= reserve_before, 0);

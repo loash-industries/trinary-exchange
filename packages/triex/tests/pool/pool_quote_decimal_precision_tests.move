@@ -46,7 +46,11 @@ const OWNER: address = @0x1;
 const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 
-// Fee-policy default: 2.2% taker fee on bids
+// This file's own fixture rates, not the exchange defaults: `setup_pool` below
+// builds a bespoke class at these values and registers it as the default for
+// each Q* quote type. They are chosen to sit where the decimal-precision
+// truncation boundaries this file pins are legible, so they move only if those
+// boundaries are re-derived — a coin pool's launch rate is 1.1% / 0.9%.
 const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 // Ask makers pay the maker rate out of fill proceeds; it lands in the same reserve.

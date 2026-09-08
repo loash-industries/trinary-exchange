@@ -11,128 +11,143 @@ Think of it like an airline status program, not a tax bracket.
 With a tax bracket, different slices of your income get taxed at different
 rates, all in the same paycheck. That's **not** how this works.
 
-Here, you have a *status level* — Bronze, Silver, Gold, however many levels
-the exchange defines — based on how active a trader you've been recently.
-**Whatever level you're at when you place a trade, that entire trade gets
-priced at that level's rate.** There's no blending. A whale-sized trade from
-a Bronze-level trader is charged 100% at the Bronze rate.
+Here, you have a *status level* — eight of them — based on how active a trader
+you've been recently. **Whatever level you're at when you place a trade, that
+entire trade gets priced at that level's rate.** There's no blending. A
+whale-sized trade from an entry-level trader is charged 100% at the entry rate.
 
 The trading you do *right now* helps you level up for your *next* trade —
 it doesn't retroactively discount the trade you're currently making.
+
+*(Code: `state/fee_schedule.move` — the module doc states the step-function rule
+outright.)*
 
 ## Your "activity score"
 
 Your level is based on a rolling activity score, not your all-time volume.
 
-- The exchange looks at the fees you've actually paid (or earned, if you're
-  a market maker whose order got filled) over the **trailing ~30 trading
-  epochs** — think of an epoch as roughly "one day," so about a month of
+- The exchange looks at the **fees you have actually paid** over the trailing
+  **30 epochs** — think of an epoch as roughly "one day," so about a month of
   activity.
-- Only fees from trades that actually happened count. If you place a buy
-  order and later cancel it before it fills, that never counted toward your
-  score in the first place — parking a big order and cancelling it can't be
-  used to farm a better rate.
-- The score is a rolling window, so it ages out. If you stop trading for
-  about a month, your score drains back to zero and you fall back to the
-  entry level.
+- **It counts fees, not trade size.** This trips people up: a threshold of
+  "20,000 CRED" means 20,000 CRED of *fees paid*, which at the entry rate is
+  roughly 2 million CRED of actual trading. The score is a measure of what
+  you've contributed, not what you've moved.
+- Only fees from trades that actually happened count. If you place a buy order
+  and later cancel it before it fills, that never counted toward your score —
+  parking a big order and cancelling it can't be used to farm a better rate.
+  (The protocol does keep a share of a cancelled bid's escrow as revenue, but
+  that share deliberately does *not* count toward your score either.)
+- The score is a rolling window, so it ages out. If you stop trading for about a
+  month, your score drains back to zero and you fall back to the entry level.
 
-*(Code: `fee_turnover.move` — the rolling window is `TURNOVER_WINDOW_EPOCHS`
-= 30 epochs.)*
+*(Code: `state/fee_turnover.move` — a 30-bucket ring buffer;
+`TURNOVER_WINDOW_EPOCHS = 30` in `helper/constants.move:79`. The "retention is
+revenue but not score" rule is in `state/state.move`, `recognize_retention`.)*
+
+## Your level is exchange-wide, not per pool
+
+Your activity score lives on **your own `BalanceManager`** — your account object
+— and is tracked **per quote asset**.
+
+That means trading on *any* pool quoted in CRED lifts your level on *every*
+other pool quoted in CRED, standard and multi-coin alike. Activity doesn't reset
+at the pool boundary, and you don't have to rebuild status on each new market
+you touch.
+
+The one boundary that does exist is the quote asset: your CRED score and your
+USDC score are separate ladders, because a level threshold is a sum of quote
+units and the two aren't comparable.
+
+*(Code: `balance_manager.move` — `TurnoverKey { quote }` keys the score by quote
+asset; `pool.move` / `multicoin_pool.move` read it during order placement.)*
 
 ## What determines your rate on any given trade
 
-1. Right before your order is built, the exchange checks your current
-   activity score.
-2. It finds the highest level your score qualifies for.
+1. Any fees you earned as a maker on this pool get folded into your score first.
+2. The exchange finds the highest level your score qualifies for.
 3. Your **entire** order is priced at that level's rate.
-4. *After* the trade settles, the fees involved get added to your score —
-   which might bump you up a level for your *next* trade.
+4. *Only after* the trade settles does the fee you just paid get added to your
+   score — which might bump you up a level for your *next* trade.
 
-This ordering matters: a trade can never discount itself. You always trade
-at the rate you'd already earned, and only benefit from that trade's volume
-starting with the next one.
+This ordering matters: a trade can never discount itself.
 
-*(Code: `fee_schedule.move`, `resolve()`; `state.move`,
-`resolve_trade_rates()`.)*
+One consequence worth knowing: if you place an order that rests on the book, the
+rate is **frozen onto that order at placement**. Later fee changes, and even
+your own promotion to a better level, never re-price an order that's already
+resting.
 
-## How you move up
-
-Simple: keep trading. Two kinds of activity count toward your score:
-
-- **Taker fees you pay** — when your order matches immediately against
-  existing orders on the book.
-- **Maker fees you earn out** — when an order you placed earlier sits on the
-  book and later gets filled by someone else's trade.
-
-Both count only once the trade actually executes — not when you place the
-order.
-
-## How you move down
-
-You don't get bumped down mid-trade for trading less. Instead, your score
-simply reflects a **trailing** window, so it naturally decays if your recent
-activity slows down. Go quiet for about a month and you're back to square
-one — the entry-level rate.
-
-## Levels are per pool, not exchange-wide
-
-Every trading pool — each standard pool and each multi-coin pool — has its
-**own, completely independent** fee ladder and its own copy of your activity
-score.
-
-That means:
-
-- Climbing to a high level on one pool (say, a SUI/USDC pool) gives you
-  **no** benefit on any other pool. A different pool, even one you trade
-  constantly, tracks your activity separately and starts you at its entry
-  level.
-- There's no shared or global fee schedule anywhere — an admin configures
-  each pool's ladder one pool at a time, and different pools can (and
-  typically will) end up with different numbers of levels, thresholds, and
-  rates.
-
-*(Code: `pool.move` / `multicoin_pool.move` — each `Pool` /
-`MulticoinPool` embeds its own `State`, and `state.move` embeds the
-`Governance` — which owns the fee ladder — and the `accounts` table — which
-tracks everyone's activity score — inside that same per-pool `State`. Both
-live and reset per pool.)*
+*(Code: `pool.move`, `place_order_int`; `fee_policy.move`, `resolve_with_retention()`.)*
 
 ## Who sets the levels and rates, and how
 
-The exchange's admin (holding a special admin permission) configures the fee
-ladder — how many levels there are, the activity threshold to reach each
-one, and the taker/maker rate at each level — **separately for each pool.**
+There is **one shared fee-policy object** for the whole exchange. Pools do not
+own their pricing — each pool stores only a 2-byte *class id* pointing into it.
 
-A few built-in guardrails, enforced automatically no matter what the admin
-sets:
+A **class** is a pricing group: "standard CRED pools" is a class, "multi-coin
+CRED pools" is another, and a single negotiated market-maker deal is just a class
+with one pool in it. Re-pricing a class re-prices every pool in it, in one
+transaction.
 
-- **Up to 16 levels** per trading pool.
-- **The entry level always starts at zero activity** — every trader, even a
-  brand-new one, has some tier.
-- **Thresholds must strictly increase** as you go up the ladder — no
-  duplicate or out-of-order levels.
-- **Rates can only get better (or stay the same) as you move up, never
-  worse.** More trading activity is never allowed to cost you more.
-- **Taker fees have a floor** (a minimum rate that always applies, at any
-  level) — they can never be discounted to zero. **Maker fees have no
-  floor** — a maker rate of 0% is allowed at the top of the ladder.
-- Rate changes don't take effect immediately — they're scheduled for the
-  *next* epoch, so nobody's current trade gets re-priced out from under
-  them mid-flight.
+The exchange's admin (holding `TriexbookAdminCap`) configures classes. Built-in
+guardrails, enforced no matter what the admin sets:
 
-*(Code: `governance.move`, `set_next_fee_schedule()`;
-`fee_schedule.move`, `validate()`.)*
+- **Up to 16 levels** per class.
+- **The entry level always starts at zero activity** — every trader has a tier.
+- **Thresholds must strictly increase** going up the ladder.
+- **Rates can only get better (or stay the same) as you move up, never worse.**
+  More trading activity is never allowed to cost you more.
+- **Taker fees have a floor** of 1 basis point — never discountable to zero.
+  **Maker fees have no floor**; 0% is a legal top-tier maker rate.
+- Rate changes on an existing class **take effect the next epoch**, never
+  mid-epoch, so nobody's in-flight trade is re-priced out from under them.
+
+*(Code: `fee_policy.move` — `create_class`, `update_class`, `set_default_class`;
+`state/fee_schedule.move`, `validate()`.)*
+
+## Setting the exchange up at launch
+
+The policy object **ships empty**. Until an admin configures a quote asset, *no
+pool of that quote can be created at all* — pool creation looks up that quote's
+default class and aborts if there isn't one.
+
+`fee_policy::bootstrap_quote<QuoteAsset>` does the whole setup for one quote in a
+single transaction: it creates the coin-pool class and the multi-coin class on
+the genesis ladder below, and registers both as the defaults new pools are born
+into. Run it once per approved quote, immediately after publish and before
+creating any pools.
+
+It takes the quote's decimal scale (`1_000_000` for a 6-decimal asset like CRED
+or USDC, `1_000_000_000` for SUI) because level thresholds are sums of quote
+units and have to be scaled to the asset they price.
+
+*(Code: `fee_policy.move`, `bootstrap_quote()`.)*
 
 ## The actual numbers today
 
-When a trading pool is first created, it starts on a single flat level (no
-tiers yet) at these rates, until the admin configures a real multi-level
-ladder:
+Both pool kinds launch on an **eight-level ladder** that halves the entry rate by
+the top level. Multi-coin is the premium venue; standard coin pools price at half
+of it.
 
-| Pool type | Taker fee | Maker fee |
-|---|---|---|
-| Standard pool | 2.2% | 1.8% |
-| Multi-coin pool | 1.1% | 0.9% |
+| Level | Score needed (fees paid, in quote units) | Coin pool taker / maker | Multi-coin taker / maker |
+|---|---|---|---|
+| 0 | 0 | 1.100% / 0.900% | 2.200% / 1.800% |
+| 1 | 20,000 | 1.012% / 0.828% | 2.024% / 1.656% |
+| 2 | 100,000 | 0.924% / 0.756% | 1.848% / 1.512% |
+| 3 | 500,000 | 0.836% / 0.684% | 1.672% / 1.368% |
+| 4 | 2,000,000 | 0.748% / 0.612% | 1.496% / 1.224% |
+| 5 | 10,000,000 | 0.682% / 0.558% | 1.364% / 1.116% |
+| 6 | 50,000,000 | 0.616% / 0.504% | 1.232% / 1.008% |
+| 7 | 200,000,000 | 0.550% / 0.450% | 1.100% / 0.900% |
+
+These rungs target sustained institutional flow. As a rough sense of scale, level
+1 is about 2 million quote of actual trading in a month; the upper rungs are
+deliberately far out and function as headroom rather than as levels most traders
+will see.
+
+Each rung is a fixed discount off the entry rate — 0/8/16/24/32/38/44/50 percent
+— applied to the taker and maker columns alike, so the spread between the two
+sides keeps its ratio all the way up.
 
 Bounds the admin must stay within when setting *any* level's rate:
 
@@ -140,28 +155,32 @@ Bounds the admin must stay within when setting *any* level's rate:
 |---|---|
 | Minimum taker fee (floor, all levels) | 0.01% (1 basis point) |
 | Maximum taker or maker fee | 100% |
-| Cancellation retention (share of a cancelled bid's escrow the exchange can keep) | up to 100%, defaults to 20% |
+| Rate granularity | 0.01 basis points |
+| Maximum levels per class | 16 |
+| Cancellation retention (share of a cancelled bid's escrow the exchange keeps) | up to 100%; launch default 20% |
 
-**Important caveat:** beyond that single starting level, there's no
-hard-coded "Level 2 costs X%, Level 3 costs Y%" table in the exchange's
-code. The number of levels, their activity thresholds, and their discounted
-rates are whatever the admin has actually configured for a given pool at any
-given time — the code only fixes the *rules* those levels must obey (listed
-above), not specific tier numbers beyond the starting rate.
+These launch numbers are a starting configuration, not a constant of the
+universe — an admin can restage any class for the next epoch at any time, and
+because your score is stored raw (never a cached tier), a schedule change
+re-prices everyone on their next trade with no migration.
 
-*(Code: `governance.move` — `DEFAULT_TAKER_FEE`, `DEFAULT_MAKER_FEE`,
-`DEFAULT_TAKER_FEE_MULTICOIN`, `DEFAULT_MAKER_FEE_MULTICOIN`,
-`MIN_TAKER_FEE`, `MAX_TAKER_FEE`, `MAX_MAKER_FEE`,
-`DEFAULT_CANCEL_RETENTION_BPS`, `MAX_CANCEL_RETENTION_BPS`.)*
+*(Code: `fee_policy.move` — `coin_taker_fees()`, `coin_maker_fees()`,
+`multicoin_taker_fees()`, `multicoin_maker_fees()`, `genesis_thresholds()`,
+and the `MIN_TAKER_FEE` / `MAX_TAKER_FEE` / `MAX_MAKER_FEE` /
+`FEE_MULTIPLE` / `MAX_CANCEL_RETENTION_BPS` constants;
+`MAX_FEE_TIERS` in `helper/constants.move:83`.)*
 
 ## Quick glossary
 
 | Plain English | Code term |
 |---|---|
-| Activity score | `fee_turnover` |
+| Activity score | `fee_turnover` (a `FeeTurnover` ring) |
 | Rolling ~30-day window | `TURNOVER_WINDOW_EPOCHS` |
 | Level / tier | `FeeTier` |
 | Fee ladder | `FeeSchedule` |
+| Pricing group of pools | `ClassSchedule`, keyed by a pool's `fee_class` |
+| The one shared config object | `FeePolicy` |
 | Someone who trades instantly against the book | taker |
 | Someone whose resting order gets filled later | maker |
-| Admin sets next level's rates | `set_next_epoch_fee_schedule` |
+| Admin sets up a quote at launch | `bootstrap_quote` |
+| Admin re-prices a class (next epoch) | `update_class` |

@@ -31,8 +31,8 @@ const ALICE: address = @0xAAAA;
 const BOB: address = @0xBBBB;
 const ASSET_GOLD: u64 = 1;
 
-// Matches quote_fee: FEE_PRECISION = 10_000, default pool fee = 200 bps (2%).
-const FEE_BPS: u64 = 110;
+// Matches quote_fee: FEE_PRECISION = 10_000, multicoin taker default 220 bps (2.2%).
+const FEE_BPS: u64 = 220;
 const FEE_PRECISION: u64 = 10_000;
 
 /// A full bid fill at 100 "USDC"/item must produce the correct cumulative_quote
@@ -40,7 +40,7 @@ const FEE_PRECISION: u64 = 10_000;
 ///
 /// price_scaling = 1 (fix):
 ///   quote     = 1 × 100 × FLOAT_SCALING = 100 × FLOAT_SCALING
-///   paid_fees = quote × 200 / 10_000    =   2 × FLOAT_SCALING
+///   paid_fees = quote × 220 / 10_000    = 2.2 × FLOAT_SCALING
 ///
 /// math::mul (bug, FLOAT_SCALING divisor):
 ///   quote     = 1 × 100 × FLOAT_SCALING / FLOAT_SCALING = 100
@@ -153,7 +153,7 @@ fun test_full_bid_fill_produces_correct_paid_fees() {
 
         // price_scaling = 1  →  quote = qty × price = 1 × 100 × FLOAT_SCALING
         let expected_quote = qty * price;
-        // paid_fees = quote × fee_bps / fee_precision = expected_quote × 200 / 10_000
+        // paid_fees = quote × fee_bps / fee_precision = expected_quote × 220 / 10_000
         let expected_fees = expected_quote * FEE_BPS / FEE_PRECISION;
 
         assert!(order_info.status() == constants::filled(), 0);
@@ -290,8 +290,8 @@ fun test_modify_bid_order_refunds_correct_quote_amount() {
     // price_scaling = 1  →  principal = cancel_qty × price = 5 × 5 × FLOAT_SCALING = 25 × FLOAT_SCALING
     // math::mul (bug)    →  principal = math::mul(5, 5 × FLOAT_SCALING) = 25
     let cancelled_quote = cancel_qty * price; // = 25 × FLOAT_SCALING = 25_000_000_000
-    // Multicoin maker rate is 0.9%, so 25 quote escrows 0.225; 80% comes back.
-    let released_escrow = cancelled_quote * 9 / 1000;
+    // Multicoin maker rate is 1.8%, so 25 quote escrows 0.45; 80% comes back.
+    let released_escrow = cancelled_quote * 18 / 1000;
     let actual_refund = balance_after_modify - balance_after_bid;
     let (escrow_refund, _) = quote_fee::split_released_fee(released_escrow, 2000);
     let expected_refund = cancelled_quote + escrow_refund;
@@ -428,8 +428,8 @@ fun test_vault_fee_reserve_correct_after_fill() {
 
         // Vault must hold the correct fees, not the undercharged amount.
         // The reserve holds Bob's taker fee plus Alice's ask-maker fee
-        // (0.9% of the same quote), deducted from her proceeds.
-        let expected_maker_fees = expected_quote * 90 / FEE_PRECISION;
+        // (1.8% of the same quote), deducted from her proceeds.
+        let expected_maker_fees = expected_quote * 180 / FEE_PRECISION;
         assert!(
             pool.quote_fee_reserve_balance() == expected_fees + expected_maker_fees,
             0,
@@ -680,20 +680,20 @@ fun test_trade_nft_for_100_billion_cred() {
 
         // price_scaling = 1: quote = qty × price (direct product, no FLOAT_SCALING division)
         let expected_quote = qty * price; // = 100_000_000_000_000_000
-        // Use u128 intermediate: 1e17 × 200 = 2e19 overflows u64 but fits in u128.
+        // Use u128 intermediate: 1e17 × 220 = 2.2e19 overflows u64 but fits in u128.
         let expected_fee =
-            (((expected_quote as u128) * (FEE_BPS as u128)) / (FEE_PRECISION as u128)) as u64; // = 2_000_000_000_000_000
+            (((expected_quote as u128) * (FEE_BPS as u128)) / (FEE_PRECISION as u128)) as u64; // = 2_200_000_000_000_000
 
         // Buggy path: math::mul divides by FLOAT_SCALING, giving 1e9× smaller values
         let buggy_quote = math::mul(qty, price); // = 100_000_000 (1e8, not 1e17)
-        let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2_000_000 (not 2e15)
+        let buggy_fee = buggy_quote * FEE_BPS / FEE_PRECISION; // = 2_200_000 (not 2.2e15)
 
         assert!(order_info.status() == constants::filled(), 0);
         assert!(order_info.cumulative_quote_quantity() == expected_quote, 1);
         assert!(order_info.paid_fees() == expected_fee, 2);
-        // The reserve also holds the ask maker's 0.9% fee on the same quote
+        // The reserve also holds the ask maker's 1.8% fee on the same quote
         let expected_maker_fee =
-            (((expected_quote as u128) * 90) / (FEE_PRECISION as u128)) as u64;
+            (((expected_quote as u128) * 180) / (FEE_PRECISION as u128)) as u64;
         assert!(pool.quote_fee_reserve_balance() == expected_fee + expected_maker_fee, 3);
         // The fix captures FLOAT_SCALING× more fee than the bug
         assert!(expected_fee / buggy_fee == constants::float_scaling(), 4);
@@ -832,16 +832,16 @@ fun test_fee_large_quote_no_u64_overflow() {
         let quote = qty * price; // = 170_000_000_000_000_000
 
         // Prove that naive u64 multiplication would overflow.
-        let u128_product = (quote as u128) * (FEE_BPS as u128); // = 18_700_000_000_000_000_000
+        let u128_product = (quote as u128) * (FEE_BPS as u128); // = 37_400_000_000_000_000_000
         assert!(u128_product > (constants::max_u64() as u128), 0);
 
         // The u128 path gives the correct truncated fee.
-        let expected_fee = (u128_product / (FEE_PRECISION as u128)) as u64; // = 1_870_000_000_000_000
+        let expected_fee = (u128_product / (FEE_PRECISION as u128)) as u64; // = 3_740_000_000_000_000
 
         assert!(order_info.status() == constants::filled(), 1);
         assert!(order_info.paid_fees() == expected_fee, 2);
-        // The reserve also holds the ask maker's 0.9% fee on the same quote
-        let expected_maker_fee = (((quote as u128) * 90) / (FEE_PRECISION as u128)) as u64;
+        // The reserve also holds the ask maker's 1.8% fee on the same quote
+        let expected_maker_fee = (((quote as u128) * 180) / (FEE_PRECISION as u128)) as u64;
         assert!(pool.quote_fee_reserve_balance() == expected_fee + expected_maker_fee, 3);
 
         return_shared(pool);
@@ -857,11 +857,12 @@ fun test_fee_large_quote_no_u64_overflow() {
 /// Regression guard: fee = quote × fee_rate / FEE_PRECISION truncates to zero when
 /// quote × fee_rate < FEE_PRECISION, regardless of the arithmetic width used.
 ///
-/// With fee_rate = 200 (2%) and FEE_PRECISION = 10_000:
-///   minimum non-zero fee requires: quote × 200 ≥ 10_000  →  quote ≥ 50
+/// With fee_rate = 220 (2.2%, the multicoin entry tier) and
+/// FEE_PRECISION = 10_000:
+///   minimum non-zero fee requires: quote × 220 ≥ 10_000  →  quote ≥ 46
 ///
-///   quote = 49: 49 × 200 / 10_000 = 9_800 / 10_000 = 0  (truncated)
-///   quote = 50: 50 × 200 / 10_000 = 10_000 / 10_000 = 1  (minimum non-zero)
+///   quote = 45: 45 × 220 / 10_000 =  9_900 / 10_000 = 0  (truncated)
+///   quote = 46: 46 × 220 / 10_000 = 10_120 / 10_000 = 1  (minimum non-zero)
 ///
 /// Uses price_internal = 1 (minimum valid price) so quote = qty exactly.
 /// Both fills share the same pool since only one MultiCoinPool<CRED> can exist per registry.
@@ -896,10 +897,14 @@ fun test_fee_truncation_floor_and_threshold() {
 
     // price = 1 raw CRED/NFT so that quote = qty exactly; easy to reason about.
     let price = 1u64;
-    let qty_below: u64 = 90; // quote = 90 → fee = 90 × 110 / 10_000 = 0 (truncated)
-    let qty_threshold: u64 = 91; // quote = 91 → fee = 1 (minimum non-zero)
+    // At 220 bps the truncation floor sits at 45: 45 × 220 / 10_000 = 0.99.
+    // One more unit clears it, so 45/46 pins the same floor-and-threshold pair
+    // that 90/91 pinned at 110 bps. The maker's 180 bps still floors to 0 on
+    // both, so the reserve only ever sees the taker fee.
+    let qty_below: u64 = 45; // quote = 45 → fee = 45 × 220 / 10_000 = 0 (truncated)
+    let qty_threshold: u64 = 46; // quote = 46 → fee = 1 (minimum non-zero)
 
-    // Alice needs 90 + 91 = 181 NFTs; Bob needs 90 + 92 = 182 raw CRED.
+    // Alice needs 45 + 46 = 91 NFTs; Bob needs 45 + 47 = 92 raw CRED.
     let alice_bm_id = mc_utils::create_balance_manager_with_funds(ALICE, 0, 0, &mut test);
     let bob_bm_id = mc_utils::create_balance_manager_with_funds(BOB, 0, 200, &mut test);
 
@@ -924,7 +929,7 @@ fun test_fee_truncation_floor_and_threshold() {
         return_shared(alice_bm);
     };
 
-    // ── Fill 1: quote = 49, fee truncates to 0 ──────────────────────────────────
+    // ── Fill 1: quote = 45, fee truncates to 0 ──────────────────────────────────
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<CRED>>(pool_id);
@@ -971,7 +976,7 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 0, 0); // 90 × 110 / 10_000 = 0
+        assert!(info.paid_fees() == 0, 0); // 45 × 220 / 10_000 = 0
         assert!(pool.quote_fee_reserve_balance() == 0, 1);
 
         return_shared(pool);
@@ -980,7 +985,7 @@ fun test_fee_truncation_floor_and_threshold() {
         return_shared(bob_bm);
     };
 
-    // ── Fill 2: quote = 50, fee = 1 (minimum non-zero) ─────────────────────────
+    // ── Fill 2: quote = 46, fee = 1 (minimum non-zero) ─────────────────────────
     test.next_tx(ALICE);
     {
         let mut pool = test.take_shared_by_id<MultiCoinPool<CRED>>(pool_id);
@@ -1027,7 +1032,7 @@ fun test_fee_truncation_floor_and_threshold() {
             test.ctx(),
         );
 
-        assert!(info.paid_fees() == 1, 2); // 91 × 110 / 10_000 = 1
+        assert!(info.paid_fees() == 1, 2); // 46 × 220 / 10_000 = 1
         assert!(pool.quote_fee_reserve_balance() == 1, 3); // cumulative: 0 + 1
 
         return_shared(pool);
@@ -1070,8 +1075,8 @@ fun test_multicoin_locked_balance_uses_snapshotted_maker_rate() {
     let price = 1_000_000u64;
     let qty = 1u64;
     let quote = qty * price;
-    // Multicoin default maker rate at placement: 0.9% = 90 bps
-    let fee_at_default_rate = quote * 90 / 10_000;
+    // Multicoin default maker rate at placement: 1.8% = 180 bps
+    let fee_at_default_rate = quote * 180 / 10_000;
 
     test.next_tx(ALICE);
     {
