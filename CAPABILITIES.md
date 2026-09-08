@@ -11,16 +11,16 @@ proof-of-ownership tokens.
 
 | Capability | Package / Module | Held by | Purpose |
 |---|---|---|---|
-| `TriexbookAdminCap` | `triexbook::registry` | Operator (package publisher) | Protocol administration |
+| `TriexAdminCap` | `triex::registry` | Operator (package publisher) | Protocol administration |
 | `TreasuryCap<CRED>` | `token::cred` (wrapped in `ProtectedTreasury`) | Nobody — locked in a shared object | CRED supply control (burn-only) |
-| `TradeCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Trade on behalf of a TradingAccount |
-| `DepositCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Deposit into a TradingAccount |
-| `WithdrawCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Withdraw from a TradingAccount |
+| `TradeCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Trade on behalf of a TradingAccount |
+| `DepositCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Deposit into a TradingAccount |
+| `WithdrawCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Withdraw from a TradingAccount |
 | `UpgradeCap` (implicit) | Sui framework | Operator (package publisher) | Upgrade the published packages |
 
 ---
 
-## 1. `TriexbookAdminCap` — the operator's protocol cap
+## 1. `TriexAdminCap` — the operator's protocol cap
 
 Defined in [`registry.move`](packages/triex/sources/registry.move). Minted exactly
 once in the package `init` and transferred to the publisher (the operator). It
@@ -28,9 +28,9 @@ has `key, store`, so it can be transferred, moved to a multisig, or locked in a
 timelock wrapper later.
 
 Every admin entry point takes it as a read-only reference (`_cap:
-&TriexbookAdminCap`). The operator's powers fall into three modules:
+&TriexAdminCap`). The operator's powers fall into three modules:
 
-### Registry administration (`triexbook::registry`)
+### Registry administration (`triex::registry`)
 
 | Function | What the operator can do |
 |---|---|
@@ -39,7 +39,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
 | `init_trading_account_map` | One-time creation of the owner → trading-account-IDs table on the registry. Idempotent. |
 
-### Pool administration (`triexbook::pool` — the pair-based order book)
+### Pool administration (`triex::pool` — the pair-based order book)
 
 | Function | What the operator can do |
 |---|---|
@@ -54,7 +54,7 @@ Disabled (commented-out) admin features that may return in future versions:
 EWMA volatility controls (`enable_ewma_state`, `set_ewma_params`) and
 tick/min-size adjustment.
 
-### MultiCoinPool administration (`triexbook::multicoin_pool`)
+### MultiCoinPool administration (`triex::multicoin_pool`)
 
 Mirrors the pool module, per collection asset:
 
@@ -131,7 +131,7 @@ the private `create_coin`. Consequences for the operator:
   CRED is a fixed-supply, deflationary (burn-only) token by construction.
 - The operator's CRED position is whatever remains of the initial mint it
   received at publish time — an ordinary token holding, not a capability.
-- `triexbook::pool::burn_cred` and `triexbook::multicoin_pool::burn_cred`
+- `triex::pool::burn_cred` and `triex::multicoin_pool::burn_cred`
   (tagged `#feat:rebate`) route pool-held CRED into this burn function,
   wiring the exchange's rebate/burn mechanics to the treasury.
 
@@ -158,7 +158,7 @@ The owner can revoke any of the three at any time with `revoke_trade_cap`
 account's allow-list — the revoked cap object becomes inert).
 
 **Operator relevance:** these caps give the *operator qua operator* no power.
-The `TriexbookAdminCap` cannot mint, use, or revoke them. Trinary Exchange
+The `TriexAdminCap` cannot mint, use, or revoke them. Trinary Exchange
 would only hold one if a user explicitly minted and transferred it (e.g., a
 custody or market-making arrangement), in which case the operator acts as that
 user's delegate with exactly the granted scope — and the user can revoke it
@@ -172,13 +172,13 @@ These are not defined in this repo but exist for every published Sui package,
 and they bound every guarantee above:
 
 - **`UpgradeCap`** — issued to the publisher for each of `token` and
-  `triexbook`. Whoever holds it can upgrade the package (within Sui's
+  `triex`. Whoever holds it can upgrade the package (within Sui's
   compatibility rules, which allow *adding* new public functions). An upgrade
   to `token` could, in principle, add a function that borrows the locked
   `TreasuryCap` and mints — so the "no mint" guarantee is really "no mint
   unless the operator upgrades the token package." Operators wanting to make
   fixed supply trustless should burn the `token` package's `UpgradeCap` or
-  transfer it to an immutable address. Similarly, the `triexbook`
+  transfer it to an immutable address. Similarly, the `triex`
   `UpgradeCap` plus the AdminCap's `enable_version` is the intended path for
   protocol upgrades (new version published → `enable_version` →
   `update_pool_allowed_versions` on each pool).
@@ -189,7 +189,7 @@ and they bound every guarantee above:
 
 ## Summary: the operator's actual power surface
 
-With the `TriexbookAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
+With the `TriexAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
 
 1. **Collect revenue** — sweep trading fees from every pool and redirect
    pool-creation fees.

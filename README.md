@@ -8,10 +8,10 @@ on-chain Move packages that power the exchange and CRED, its native fee currency
 
 | Package | Path | Description |
 | --- | --- | --- |
-| `triexbook` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), trading account, multi-coin pool, and admin controls. |
+| `triex` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), trading account, multi-coin pool, and admin controls. |
 | `token` | [`packages/token/`](packages/token/) | The `CRED` token (`cred.move`) — a neutral trading currency used to pay trading fees. It is not a governance token and confers no voting or staking rights. |
 
-`triexbook` depends on `token` via a local path (`token = { local = "../token" }`),
+`triex` depends on `token` via a local path (`token = { local = "../token" }`),
 so the two packages must remain siblings in this repo. It also pulls in the external
 [`multicoin`](https://github.com/Algorithmic-Warfare/multicoin) package as a git
 dependency.
@@ -46,7 +46,7 @@ Each package is a standard Sui Move package. From a package directory:
 # Build
 sui move build
 
-# Run the Move unit tests (triexbook)
+# Run the Move unit tests (triex)
 cd packages/triex
 sui move test
 
@@ -75,7 +75,7 @@ trinary-exchange/
     ├── token/            # CRED token package
     │   ├── Move.toml
     │   └── sources/cred.move
-    └── triexbook/        # Core CLOB exchange package
+    └── triex/        # Core CLOB exchange package
         ├── Move.toml
         ├── sources/          # book, state, vault, pool, multicoin_pool, registry, ...
         ├── tests/            # Move unit + integration tests
@@ -92,7 +92,7 @@ your own risk. See [`CAPABILITIES.md`](CAPABILITIES.md) for the operator trust m
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). The `triexbook` package is a modified
+Apache-2.0 — see [LICENSE](LICENSE). The `triex` package is a modified
 derivative of [DeepBook v3](https://github.com/MystenLabs/deepbookv3),
 Copyright (c) Mysten Labs, Inc. (Apache-2.0); see the notice of changes in
 [`packages/triex/README.md`](packages/triex/README.md#license).
