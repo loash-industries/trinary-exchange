@@ -244,6 +244,23 @@ public(package) fun resolve(
     schedule.resolve(turnover)
 }
 
+/// Same resolution as `resolve`, plus the class's cancel retention rate, out
+/// of a single class-table borrow. Order placement needs both in the same
+/// breath; resolving them separately would borrow the same class twice.
+public(package) fun resolve_with_retention(
+    self: &FeePolicy,
+    class_id: u16,
+    turnover: u128,
+    epoch: u64,
+): (u64, u64, u64, u64) {
+    assert!(self.classes.contains(class_id), EClassDoesNotExist);
+    let class = &self.classes[class_id];
+    let schedule = if (epoch >= class.effective_epoch) &class.next else &class.current;
+    let (tier, taker_fee, maker_fee) = schedule.resolve(turnover);
+
+    (tier, taker_fee, maker_fee, class.cancel_retention_bps)
+}
+
 /// Class a permissionless coin pool quoted in `quote` is born into.
 public(package) fun default_class(self: &FeePolicy, quote: TypeName): u16 {
     assert!(self.default_classes.contains(quote), ENoDefaultClassForQuote);

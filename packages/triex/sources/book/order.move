@@ -212,17 +212,17 @@ public(package) fun modify(self: &mut Order, new_quantity: u64, timestamp: u64) 
 /// The fee half only ever applies to bids — asks lock nothing. The caller
 /// must move the same quote out of the fee reserve before settling, since
 /// settled quote is paid from the pool balance.
+/// `fee_refund` is the refundable half of `released_fee_split` for the same
+/// `cancel_quantity` — callers that also need the retained half (every real
+/// one does, to know how much to unlock from the reserve) compute the split
+/// once themselves and pass the refund share in here, rather than this
+/// function deriving it again from the maker fee rate.
 public(package) fun calculate_cancel_refund(
     self: &Order,
-    maker_fee: u64,
+    fee_refund: u64,
     cancel_quantity: Option<u64>,
     price_scaling: u64,
 ): Balances {
-    let (fee_refund, _retained) = self.released_fee_split(
-        maker_fee,
-        cancel_quantity,
-        price_scaling,
-    );
     let cancel_quantity = cancel_quantity.get_with_default(
         self.quantity - self.filled_quantity,
     );

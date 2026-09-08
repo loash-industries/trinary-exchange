@@ -551,12 +551,13 @@ fun calculate_cancel_refund_includes_refundable_escrow() {
     let principal = 200 * constants::float_scaling();
     let refund = 288 * constants::float_scaling() / 100;
 
+    let (fee_refund, _retained) = order.released_fee_split(
+        order.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
     assert_eq!(
-        order.calculate_cancel_refund(
-            order.maker_fee_rate(),
-            option::none(),
-            constants::float_scaling(),
-        ),
+        order.calculate_cancel_refund(fee_refund, option::none(), constants::float_scaling()),
         balances::new(0, principal + refund, 0),
     );
 }
@@ -569,19 +570,25 @@ fun calculate_cancel_refund_honors_snapshotted_retention() {
     let escrow = 36 * constants::float_scaling() / 10;
 
     let free = bid_with_escrow(0);
+    let (free_fee_refund, _free_retained) = free.released_fee_split(
+        free.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
     assert_eq!(
-        free.calculate_cancel_refund(
-            free.maker_fee_rate(),
-            option::none(),
-            constants::float_scaling(),
-        ),
+        free.calculate_cancel_refund(free_fee_refund, option::none(), constants::float_scaling()),
         balances::new(0, principal + escrow, 0),
     );
 
     let punitive = bid_with_escrow(10000);
+    let (punitive_fee_refund, _punitive_retained) = punitive.released_fee_split(
+        punitive.maker_fee_rate(),
+        option::none(),
+        constants::float_scaling(),
+    );
     assert_eq!(
         punitive.calculate_cancel_refund(
-            punitive.maker_fee_rate(),
+            punitive_fee_refund,
             option::none(),
             constants::float_scaling(),
         ),
@@ -607,14 +614,6 @@ fun calculate_cancel_refund_ask_gets_no_fee_refund() {
         constants::max_u64(),
     );
 
-    assert_eq!(
-        order.calculate_cancel_refund(
-            order.maker_fee_rate(),
-            option::none(),
-            constants::float_scaling(),
-        ),
-        balances::new(100 * constants::float_scaling(), 0, 0),
-    );
     let (refund, retained) = order.released_fee_split(
         order.maker_fee_rate(),
         option::none(),
@@ -622,6 +621,10 @@ fun calculate_cancel_refund_ask_gets_no_fee_refund() {
     );
     assert_eq!(refund, 0);
     assert_eq!(retained, 0);
+    assert_eq!(
+        order.calculate_cancel_refund(refund, option::none(), constants::float_scaling()),
+        balances::new(100 * constants::float_scaling(), 0, 0),
+    );
 }
 
 #[test]

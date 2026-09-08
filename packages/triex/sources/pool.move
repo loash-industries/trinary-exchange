@@ -1642,12 +1642,11 @@ fun place_order_int<BaseAsset, QuoteAsset>(
         // the freshly effective schedule with no promotion step here.
         let pending = pool_inner.state.take_pending_turnover(balance_manager.id(), ctx);
         let turnover = balance_manager.fold_fee_turnover<QuoteAsset>(pending, ctx);
-        let (_tier, taker_fee_rate, maker_fee_rate) = policy.resolve(
+        let (_tier, taker_fee_rate, maker_fee_rate, cancel_retention_bps) = policy.resolve_with_retention(
             pool_inner.fee_class,
             turnover,
             ctx.epoch(),
         );
-        let cancel_retention_bps = policy.cancel_retention_bps(pool_inner.fee_class);
         let mut order_info = order_info::new(
             pool_inner.pool_id,
             balance_manager.id(),

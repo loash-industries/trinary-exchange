@@ -218,7 +218,12 @@ public(package) fun process_create(
     let fills = order_info.fills_ref();
     let mut fee_flows = self.process_fills(fills, ctx);
 
-    self.update_account(order_info.balance_manager_id(), ctx);
+    // The taker's account already exists: every real call site resolves this
+    // account's tier via `take_pending_turnover` before pricing the order,
+    // which creates it if needed. Re-checking here would be a second
+    // `contains` + borrow of the same table entry for nothing — callers that
+    // skip that step (tests) go through `process_create_for_testing` instead,
+    // which does the same guard `take_pending_turnover` would have.
     let account = &mut self.accounts[order_info.balance_manager_id()];
     // let account_volume = account.total_volume();
     // let account_stake = account.active_stake();
@@ -268,12 +273,11 @@ public(package) fun process_create(
 
     // Ask-taker fees were deducted from settled proceeds rather than paid in;
     // together with the ask-maker fill deductions collected above they must be
-    // moved into the vault's fee reserve by the caller.
+    // moved into the vault's fee reserve by the caller. Merges into an
+    // existing entry on self-trade, where the taker is also one of the
+    // makers charged above.
     if (!order_info.is_bid() && order_info.paid_fees() > 0) {
-        fee_flows.proceeds.push_back(ProceedsFee {
-            balance_manager_id: order_info.balance_manager_id(),
-            amount: order_info.paid_fees(),
-        });
+        add_proceeds_fee(&mut fee_flows.proceeds, order_info.balance_manager_id(), order_info.paid_fees());
     };
 
     (settled, owed, fee_flows)
@@ -309,16 +313,12 @@ public(package) fun process_cancel(
     self.update_account(balance_manager_id, ctx);
     order.set_canceled();
 
-    let balances = order.calculate_cancel_refund(
-        order.maker_fee_rate(),
-        option::none(),
-        price_scaling,
-    );
     let (refunded, retained) = order.released_fee_split(
         order.maker_fee_rate(),
         option::none(),
         price_scaling,
     );
+    let balances = order.calculate_cancel_refund(refunded, option::none(), price_scaling);
 
     let account = &mut self.accounts[balance_manager_id];
     account.remove_order(order.order_id());
@@ -345,13 +345,13 @@ public(package) fun process_modify(
     self.history.update(pool_id, ctx);
     self.update_account(balance_manager_id, ctx);
 
-    let balances = order.calculate_cancel_refund(
+    let (refunded, retained) = order.released_fee_split(
         order.maker_fee_rate(),
         option::some(cancel_quantity),
         price_scaling,
     );
-    let (refunded, retained) = order.released_fee_split(
-        order.maker_fee_rate(),
+    let balances = order.calculate_cancel_refund(
+        refunded,
         option::some(cancel_quantity),
         price_scaling,
     );
@@ -591,10 +591,11 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
             fill.set_fill_maker_fee(&balances::new(0, maker_fee, 0));
             if (fill.taker_is_bid()) {
                 if (maker_fee > 0) {
-                    ask_maker_fees.push_back(ProceedsFee {
-                        balance_manager_id: maker,
-                        amount: maker_fee,
-                    });
+                    // One taker sweep can fill several resting orders from the
+                    // same maker; fold them into one entry so settlement does
+                    // one reserve deposit and emits one event per account
+                    // charged, not one per fill.
+                    add_proceeds_fee(&mut ask_maker_fees, maker, maker_fee);
                 };
             } else {
                 // A bid maker paid this at placement; the fill is what turns
@@ -644,6 +645,24 @@ fun process_fills(self: &mut State, fills: &mut vector<Fill>, ctx: &TxContext): 
     FeeFlows { proceeds: ask_maker_fees, recognized: recognized + expiry_retained, refunded }
 }
 
+/// Credit `amount` to `balance_manager_id`'s entry in `fees`, merging into an
+/// existing entry rather than appending a duplicate. Keeps proceeds fees to
+/// one entry per account charged no matter how many fills produced them, so
+/// the caller does one reserve deposit and emits one event per account.
+fun add_proceeds_fee(fees: &mut vector<ProceedsFee>, balance_manager_id: ID, amount: u64) {
+    let mut i = 0;
+    let n = fees.length();
+    while (i < n) {
+        let entry = &mut fees[i];
+        if (entry.balance_manager_id == balance_manager_id) {
+            entry.amount = entry.amount + amount;
+            return
+        };
+        i = i + 1;
+    };
+    fees.push_back(ProceedsFee { balance_manager_id, amount });
+}
+
 /// Record escrow the protocol kept on a cancel, modify-down or expiry as
 /// collected fees. It is realized revenue the moment the order resolves, so
 /// leaving it out would make the epoch fee totals understate what the pool
@@ -681,6 +700,10 @@ public fun total_fees_collected_for_testing(self: &State): Balances {
 /// Process an order at explicit rates. Rate resolution lives at the pool
 /// layer now (`FeePolicy` + the trader's `BalanceManager` ring), so state
 /// tests that do not care about tiers pass the rates directly.
+///
+/// `process_create` no longer creates the taker's account itself — the real
+/// trade path guarantees it exists via `take_pending_turnover` beforehand, so
+/// this wrapper does the same guard for tests that call straight in.
 public fun process_create_for_testing(
     self: &mut State,
     order_info: &mut OrderInfo,
@@ -689,5 +712,6 @@ public fun process_create_for_testing(
     pool_id: ID,
     ctx: &TxContext,
 ): (Balances, Balances, FeeFlows) {
+    self.update_account(order_info.balance_manager_id(), ctx);
     self.process_create(order_info, taker_fee, maker_fee, pool_id, ctx)
 }
