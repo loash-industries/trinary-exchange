@@ -6,267 +6,267 @@
 /// Users with non zero stake can create proposals and vote on them. Winning
 /// proposals are used to set the trade parameters for the next epoch.
 /// #feat:gov #feat:stake
-module triexbook::governance {
-    use sui::event;
-    use triexbook::trade_params::{Self, TradeParams};
+module triexbook::governance;
 
-    // use triexbook::{constants, math}; // #feat:gov #feat:stake - DISABLED (used for voting power calculations)
+use sui::event;
+use triexbook::trade_params::{Self, TradeParams};
 
-    // === Errors ===
-    const EInvalidMakerFee: u64 = 1;
-    const EInvalidTakerFee: u64 = 2;
-    // const EProposalDoesNotExist: u64 = 3; // #feat:gov - DISABLED
-    // const EMaxProposalsReachedNotEnoughVotes: u64 = 4; // #feat:gov - DISABLED
-    // 5 was EWhitelistedPoolCannotChange, removed with the whitelisted flag; the
-    // gap is deliberate so the surviving codes keep their values.
-    const EInvalidCancelRetention: u64 = 7;
-    // const EInvalidFeeRate: u64 = 6;
+// use triexbook::{constants, math}; // #feat:gov #feat:stake - DISABLED (used for voting power calculations)
 
-    // === Constants ===
-    const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
-    const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
-    // Maker rates may be zero; only takers keep a floor. The caps bound what the
-    // admin can ever set, independent of the launch defaults below.
-    const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
-    const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+// === Errors ===
+const EInvalidMakerFee: u64 = 1;
+const EInvalidTakerFee: u64 = 2;
+// const EProposalDoesNotExist: u64 = 3; // #feat:gov - DISABLED
+// const EMaxProposalsReachedNotEnoughVotes: u64 = 4; // #feat:gov - DISABLED
+// 5 was EWhitelistedPoolCannotChange, removed with the whitelisted flag; the
+// gap is deliberate so the surviving codes keep their values.
+const EInvalidCancelRetention: u64 = 7;
+// const EInvalidFeeRate: u64 = 6;
 
-    /// Share of released bid-maker escrow the protocol keeps on cancel, modify-down
-    /// or expiry. Full basis points, so the cap is a 100% retention (no refund).
-    const MAX_CANCEL_RETENTION_BPS: u64 = 10000;
-    const DEFAULT_CANCEL_RETENTION_BPS: u64 = 2000; // 20% retained, 80% refunded
+// === Constants ===
+const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
+const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
+// Maker rates may be zero; only takers keep a floor. The caps bound what the
+// admin can ever set, independent of the launch defaults below.
+const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
 
-    const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
-    const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
+/// Share of released bid-maker escrow the protocol keeps on cancel, modify-down
+/// or expiry. Full basis points, so the cap is a 100% retention (no refund).
+const MAX_CANCEL_RETENTION_BPS: u64 = 10000;
+const DEFAULT_CANCEL_RETENTION_BPS: u64 = 2000; // 20% retained, 80% refunded
 
-    const DEFAULT_TAKER_FEE_MULTICOIN: u64 = 11000000; // 110 basis points (1.1%)
-    const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9000000; // 90 basis points (0.9%)
+const DEFAULT_TAKER_FEE: u64 = 22000000; // 220 basis points (2.2%)
+const DEFAULT_MAKER_FEE: u64 = 18000000; // 180 basis points (1.8%)
 
-    // const MAX_PROPOSALS: u64 = 100; // #feat:gov - DISABLED
-    // const VOTING_POWER_THRESHOLD: u64 = 100_000_000_000; // 100k cred // #feat:stake #feat:gov - DISABLED
+const DEFAULT_TAKER_FEE_MULTICOIN: u64 = 11000000; // 110 basis points (1.1%)
+const DEFAULT_MAKER_FEE_MULTICOIN: u64 = 9000000; // 90 basis points (0.9%)
 
-    // === Structs ===
-    // `Proposal` struct that holds the parameters of a proposal and its current
-    // total votes.
-    // #feat:gov - DISABLED
-    // public struct Proposal has copy, drop, store {
-    //     // stake_required: u64,
-    //     // taker_fee: u64,
-    //     // maker_fee: u64, // #feat:fee_gov
-    //     fee: u64,
-    //     votes: u64,
-    // }
+// const MAX_PROPOSALS: u64 = 100; // #feat:gov - DISABLED
+// const VOTING_POWER_THRESHOLD: u64 = 100_000_000_000; // 100k cred // #feat:stake #feat:gov - DISABLED
 
-    /// Details of a pool. This is refreshed every epoch by the first
-    /// `State` action against this pool.
-    /// Simplified to admin-controlled fee setting (proposal/voting system disabled).
-    public struct Governance has store {
-        /// Tracks refreshes.
-        epoch: u64,
-        // List of proposals for the current epoch. // #feat:gov - DISABLED
-        // proposals: VecMap<ID, Proposal>,
-        /// Trade parameters for the current epoch.
-        trade_params: TradeParams,
-        /// Trade parameters for the next epoch.
-        next_trade_params: TradeParams,
-        // All voting power from the current stakes. // #feat:stake #feat:gov - DISABLED
-        // voting_power: u64,
-        // Quorum for the current epoch. // #feat:gov - DISABLED
-        // quorum: u64,
+// === Structs ===
+// `Proposal` struct that holds the parameters of a proposal and its current
+// total votes.
+// #feat:gov - DISABLED
+// public struct Proposal has copy, drop, store {
+//     // stake_required: u64,
+//     // taker_fee: u64,
+//     // maker_fee: u64, // #feat:fee_gov
+//     fee: u64,
+//     votes: u64,
+// }
+
+/// Details of a pool. This is refreshed every epoch by the first
+/// `State` action against this pool.
+/// Simplified to admin-controlled fee setting (proposal/voting system disabled).
+public struct Governance has store {
+    /// Tracks refreshes.
+    epoch: u64,
+    // List of proposals for the current epoch. // #feat:gov - DISABLED
+    // proposals: VecMap<ID, Proposal>,
+    /// Trade parameters for the current epoch.
+    trade_params: TradeParams,
+    /// Trade parameters for the next epoch.
+    next_trade_params: TradeParams,
+    // All voting power from the current stakes. // #feat:stake #feat:gov - DISABLED
+    // voting_power: u64,
+    // Quorum for the current epoch. // #feat:gov - DISABLED
+    // quorum: u64,
+}
+
+/// Event emitted when trade parameters are updated.
+public struct TradeParamsUpdateEvent has copy, drop {
+    taker_fee: u64,
+    maker_fee: u64,
+}
+
+// === Public-Package Functions ===
+public(package) fun empty(ctx: &TxContext): Governance {
+    new_governance(
+        DEFAULT_TAKER_FEE,
+        DEFAULT_MAKER_FEE,
+        DEFAULT_CANCEL_RETENTION_BPS,
+        ctx,
+    )
+}
+
+public(package) fun empty_multicoin(ctx: &TxContext): Governance {
+    new_governance(
+        DEFAULT_TAKER_FEE_MULTICOIN,
+        DEFAULT_MAKER_FEE_MULTICOIN,
+        DEFAULT_CANCEL_RETENTION_BPS,
+        ctx,
+    )
+}
+
+fun new_governance(
+    taker_fee: u64,
+    maker_fee: u64,
+    cancel_retention_bps: u64,
+    ctx: &TxContext,
+): Governance {
+    Governance {
+        epoch: ctx.epoch(),
+        // proposals: vec_map::empty(), // #feat:gov - DISABLED
+        trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
+        next_trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
+        // voting_power: 0, // #feat:stake #feat:gov - DISABLED
+        // quorum: 0, // #feat:gov - DISABLED
     }
+}
 
-    /// Event emitted when trade parameters are updated.
-    public struct TradeParamsUpdateEvent has copy, drop {
-        taker_fee: u64,
-        maker_fee: u64,
-    }
+#[test_only]
+public fun destroy_for_testing(self: Governance) {
+    let Governance {
+        epoch: _,
+        trade_params: _,
+        next_trade_params: _,
+    } = self;
+}
 
-    // === Public-Package Functions ===
-    public(package) fun empty(ctx: &TxContext): Governance {
-        new_governance(
-            DEFAULT_TAKER_FEE,
-            DEFAULT_MAKER_FEE,
-            DEFAULT_CANCEL_RETENTION_BPS,
-            ctx,
-        )
-    }
+// #feat:gov - DISABLED
+// public(package) fun quorum(self: &Governance): u64 {
+//     self.quorum
+// }
 
-    public(package) fun empty_multicoin(ctx: &TxContext): Governance {
-        new_governance(
-            DEFAULT_TAKER_FEE_MULTICOIN,
-            DEFAULT_MAKER_FEE_MULTICOIN,
-            DEFAULT_CANCEL_RETENTION_BPS,
-            ctx,
-        )
-    }
+/// Update the governance state. This is called at the start of every epoch.
+public(package) fun update(self: &mut Governance, ctx: &TxContext) {
+    let epoch = ctx.epoch();
+    if (self.epoch == epoch) return;
 
-    fun new_governance(
-        taker_fee: u64,
-        maker_fee: u64,
-        cancel_retention_bps: u64,
-        ctx: &TxContext,
-    ): Governance {
-        Governance {
-            epoch: ctx.epoch(),
-            // proposals: vec_map::empty(), // #feat:gov - DISABLED
-            trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
-            next_trade_params: trade_params::new(taker_fee, maker_fee, cancel_retention_bps),
-            // voting_power: 0, // #feat:stake #feat:gov - DISABLED
-            // quorum: 0, // #feat:gov - DISABLED
-        }
-    }
+    self.epoch = epoch;
+    // self.quorum = math::mul(self.voting_power, constants::half()); // #feat:gov - DISABLED
+    // self.proposals = vec_map::empty(); // #feat:gov - DISABLED
+    self.trade_params = self.next_trade_params;
 
-    #[test_only]
-    public fun destroy_for_testing(self: Governance) {
-        let Governance {
-            epoch: _,
-            trade_params: _,
-            next_trade_params: _,
-        } = self;
-    }
+    event::emit(TradeParamsUpdateEvent {
+        taker_fee: self.trade_params.taker_fee(),
+        maker_fee: self.trade_params.maker_fee(),
+    });
+}
 
-    // #feat:gov - DISABLED
-    // public(package) fun quorum(self: &Governance): u64 {
-    //     self.quorum
-    // }
+// Add a new proposal to governance.
+// Check if proposer already voted, if so will give error.
+// If proposer has not voted, and there are already MAX_PROPOSALS proposals,
+// remove the proposal with the lowest votes if it has less votes than the
+// voting power.
+// Validation of the account adding is done in `State`.
+// #feat:gov #feat:stake - DISABLED
+// public(package) fun add_proposal(
+//     self: &mut Governance,
+//     // taker_fee: u64,
+//     // maker_fee: u64,
+//     // stake_required: u64,// #feat:fee_gov
+//     fee: u64,
+//     stake_amount: u64,
+//     balance_manager_id: ID,
+// ) {
+//     assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
+//     // #feat:fee_gov
+//     // assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
+//     // assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
+//     assert!(fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
+//
+//     // Validate fee ranges based on stable vs volatile pool
+//     if (self.stable) {
+//         assert!(fee >= MIN_FEE_RATE_STABLE, EInvalidTakerFee);
+//         assert!(fee <= MAX_FEE_RATE_STABLE, EInvalidTakerFee);
+//     } else {
+//         assert!(fee >= MIN_TAKER_VOLATILE, EInvalidTakerFee);
+//         assert!(fee <= MAX_TAKER_VOLATILE, EInvalidTakerFee);
+//     };
+//
+//     let voting_power = stake_to_voting_power(stake_amount);
+//     if (self.proposals.length() == MAX_PROPOSALS) {
+//         self.remove_lowest_proposal(voting_power);
+//     };
+//     // #feat:fee_gov
+//     // let new_proposal = new_proposal(taker_fee, maker_fee, stake_required);
+//     let new_proposal = new_proposal(fee);
+//     self.proposals.insert(balance_manager_id, new_proposal);
+// }
 
-    /// Update the governance state. This is called at the start of every epoch.
-    public(package) fun update(self: &mut Governance, ctx: &TxContext) {
-        let epoch = ctx.epoch();
-        if (self.epoch == epoch) return;
+// Vote on a proposal. Validation of the account and stake is done in `State`.
+// If `from_proposal_id` is some, the account is removing their vote from that
+// proposal.
+// If `to_proposal_id` is some, the account is voting for that proposal.
+// #feat:gov #feat:stake - DISABLED
+// public(package) fun adjust_vote(
+//     self: &mut Governance,
+//     from_proposal_id: Option<ID>,
+//     to_proposal_id: Option<ID>,
+//     stake_amount: u64,
+// ) {
+//     let votes = stake_to_voting_power(stake_amount);
+//
+//     if (
+//         from_proposal_id.is_some() && self
+//             .proposals
+//             .contains(from_proposal_id.borrow())
+//     ) {
+//         let proposal = &mut self.proposals[from_proposal_id.borrow()];
+//         proposal.votes = proposal.votes - votes;
+//         if (proposal.votes + votes > self.quorum && proposal.votes < self.quorum) {
+//             self.next_trade_params = self.trade_params;
+//         };
+//     };
+//
+//     to_proposal_id.do_ref!(|proposal_id| {
+//         assert!(self.proposals.contains(proposal_id), EProposalDoesNotExist);
+//
+//         let proposal = &mut self.proposals[proposal_id];
+//         proposal.votes = proposal.votes + votes;
+//         if (proposal.votes > self.quorum) {
+//             self.next_trade_params = proposal.to_trade_params();
+//         };
+//     });
+// }
 
-        self.epoch = epoch;
-        // self.quorum = math::mul(self.voting_power, constants::half()); // #feat:gov - DISABLED
-        // self.proposals = vec_map::empty(); // #feat:gov - DISABLED
-        self.trade_params = self.next_trade_params;
+// Adjust the total voting power by adding and removing stake. For example, if
+// an account's
+// stake goes from 2000 to 3000, then `stake_before` is 2000 and `stake_after`
+// is 3000.
+// Validation of inputs done in `State`.
+// #feat:gov #feat:stake - DISABLED
+// public(package) fun adjust_voting_power(
+//     self: &mut Governance,
+//     stake_before: u64,
+//     stake_after: u64,
+// ) {
+//     self.voting_power =
+//         self.voting_power +
+//         stake_to_voting_power(stake_after) -
+//         stake_to_voting_power(stake_before);
+// }
 
-        event::emit(TradeParamsUpdateEvent {
-            taker_fee: self.trade_params.taker_fee(),
-            maker_fee: self.trade_params.maker_fee(),
-        });
-    }
+public(package) fun trade_params(self: &Governance): TradeParams {
+    self.trade_params
+}
 
-    // Add a new proposal to governance.
-    // Check if proposer already voted, if so will give error.
-    // If proposer has not voted, and there are already MAX_PROPOSALS proposals,
-    // remove the proposal with the lowest votes if it has less votes than the
-    // voting power.
-    // Validation of the account adding is done in `State`.
-    // #feat:gov #feat:stake - DISABLED
-    // public(package) fun add_proposal(
-    //     self: &mut Governance,
-    //     // taker_fee: u64,
-    //     // maker_fee: u64,
-    //     // stake_required: u64,// #feat:fee_gov
-    //     fee: u64,
-    //     stake_amount: u64,
-    //     trading_account_id: ID,
-    // ) {
-    //     assert!(!self.whitelisted, EWhitelistedPoolCannotChange);
-    //     // #feat:fee_gov
-    //     // assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
-    //     // assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
-    //     assert!(fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
-    //
-    //     // Validate fee ranges based on stable vs volatile pool
-    //     if (self.stable) {
-    //         assert!(fee >= MIN_FEE_RATE_STABLE, EInvalidTakerFee);
-    //         assert!(fee <= MAX_FEE_RATE_STABLE, EInvalidTakerFee);
-    //     } else {
-    //         assert!(fee >= MIN_TAKER_VOLATILE, EInvalidTakerFee);
-    //         assert!(fee <= MAX_TAKER_VOLATILE, EInvalidTakerFee);
-    //     };
-    //
-    //     let voting_power = stake_to_voting_power(stake_amount);
-    //     if (self.proposals.length() == MAX_PROPOSALS) {
-    //         self.remove_lowest_proposal(voting_power);
-    //     };
-    //     // #feat:fee_gov
-    //     // let new_proposal = new_proposal(taker_fee, maker_fee, stake_required);
-    //     let new_proposal = new_proposal(fee);
-    //     self.proposals.insert(trading_account_id, new_proposal);
-    // }
+public(package) fun next_trade_params(self: &Governance): TradeParams {
+    self.next_trade_params
+}
 
-    // Vote on a proposal. Validation of the account and stake is done in `State`.
-    // If `from_proposal_id` is some, the account is removing their vote from that
-    // proposal.
-    // If `to_proposal_id` is some, the account is voting for that proposal.
-    // #feat:gov #feat:stake - DISABLED
-    // public(package) fun adjust_vote(
-    //     self: &mut Governance,
-    //     from_proposal_id: Option<ID>,
-    //     to_proposal_id: Option<ID>,
-    //     stake_amount: u64,
-    // ) {
-    //     let votes = stake_to_voting_power(stake_amount);
-    //
-    //     if (
-    //         from_proposal_id.is_some() && self
-    //             .proposals
-    //             .contains(from_proposal_id.borrow())
-    //     ) {
-    //         let proposal = &mut self.proposals[from_proposal_id.borrow()];
-    //         proposal.votes = proposal.votes - votes;
-    //         if (proposal.votes + votes > self.quorum && proposal.votes < self.quorum) {
-    //             self.next_trade_params = self.trade_params;
-    //         };
-    //     };
-    //
-    //     to_proposal_id.do_ref!(|proposal_id| {
-    //         assert!(self.proposals.contains(proposal_id), EProposalDoesNotExist);
-    //
-    //         let proposal = &mut self.proposals[proposal_id];
-    //         proposal.votes = proposal.votes + votes;
-    //         if (proposal.votes > self.quorum) {
-    //             self.next_trade_params = proposal.to_trade_params();
-    //         };
-    //     });
-    // }
+/// Admin function to set trade parameters for the next epoch.
+/// Replaces the proposal/voting system with direct admin control.
+public(package) fun set_next_trade_params(
+    self: &mut Governance,
+    taker_fee: u64,
+    maker_fee: u64,
+    cancel_retention_bps: u64,
+) {
+    assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
+    assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
 
-    // Adjust the total voting power by adding and removing stake. For example, if
-    // an account's
-    // stake goes from 2000 to 3000, then `stake_before` is 2000 and `stake_after`
-    // is 3000.
-    // Validation of inputs done in `State`.
-    // #feat:gov #feat:stake - DISABLED
-    // public(package) fun adjust_voting_power(
-    //     self: &mut Governance,
-    //     stake_before: u64,
-    //     stake_after: u64,
-    // ) {
-    //     self.voting_power =
-    //         self.voting_power +
-    //         stake_to_voting_power(stake_after) -
-    //         stake_to_voting_power(stake_before);
-    // }
+    // Maker rates have no floor (zero is allowed); takers keep theirs.
+    assert!(taker_fee >= MIN_TAKER_FEE, EInvalidTakerFee);
+    assert!(taker_fee <= MAX_TAKER_FEE, EInvalidTakerFee);
+    assert!(maker_fee <= MAX_MAKER_FEE, EInvalidMakerFee);
+    // A zero retention refunds the whole escrow; the cap keeps all of it.
+    assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
 
-    public(package) fun trade_params(self: &Governance): TradeParams {
-        self.trade_params
-    }
-
-    public(package) fun next_trade_params(self: &Governance): TradeParams {
-        self.next_trade_params
-    }
-
-    /// Admin function to set trade parameters for the next epoch.
-    /// Replaces the proposal/voting system with direct admin control.
-    public(package) fun set_next_trade_params(
-        self: &mut Governance,
-        taker_fee: u64,
-        maker_fee: u64,
-        cancel_retention_bps: u64,
-    ) {
-        assert!(taker_fee % FEE_MULTIPLE == 0, EInvalidTakerFee);
-        assert!(maker_fee % FEE_MULTIPLE == 0, EInvalidMakerFee);
-
-        // Maker rates have no floor (zero is allowed); takers keep theirs.
-        assert!(taker_fee >= MIN_TAKER_FEE, EInvalidTakerFee);
-        assert!(taker_fee <= MAX_TAKER_FEE, EInvalidTakerFee);
-        assert!(maker_fee <= MAX_MAKER_FEE, EInvalidMakerFee);
-        // A zero retention refunds the whole escrow; the cap keeps all of it.
-        assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
-
-        self.next_trade_params = trade_params::new(taker_fee, maker_fee, cancel_retention_bps);
-    }
+    self.next_trade_params = trade_params::new(taker_fee, maker_fee, cancel_retention_bps);
 }
 
 // === Private Functions ===

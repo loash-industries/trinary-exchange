@@ -13,9 +13,9 @@ proof-of-ownership tokens.
 |---|---|---|---|
 | `TriexbookAdminCap` | `triexbook::registry` | Operator (package publisher) | Protocol administration |
 | `TreasuryCap<CRED>` | `token::cred` (wrapped in `ProtectedTreasury`) | Nobody — locked in a shared object | CRED supply control (burn-only) |
-| `TradeCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Trade on behalf of a TradingAccount |
-| `DepositCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Deposit into a TradingAccount |
-| `WithdrawCap` | `triexbook::trading_account` | Whoever a TradingAccount owner delegates to | Withdraw from a TradingAccount |
+| `TradeCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Trade on behalf of a BalanceManager |
+| `DepositCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Deposit into a BalanceManager |
+| `WithdrawCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Withdraw from a BalanceManager |
 | `UpgradeCap` (implicit) | Sui framework | Operator (package publisher) | Upgrade the published packages |
 
 ---
@@ -37,7 +37,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | `set_treasury_address` | Redirect where pool-creation fees are sent. Defaults to the publisher. |
 | `enable_version` / `disable_version` | Control which package versions may interact with the protocol. The current version cannot be disabled. These two functions are themselves exempt from version checks, so an admin can always recover from a bad version state. |
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
-| `init_trading_account_map` | One-time creation of the owner → trading-account-IDs table on the registry. Idempotent. |
+| `init_balance_manager_map` | One-time creation of the owner → balance-manager-IDs table on the registry. Idempotent. |
 
 ### Pool administration (`triexbook::pool` — the pair-based order book)
 
@@ -67,7 +67,7 @@ Mirrors the pool module, per collection asset:
 
 The cap's financial reach is limited to **fee revenue and fee rates**. It cannot:
 
-- Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
+- Touch user funds held in any `BalanceManager` (deposit, withdraw, or freeze them)
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled)
@@ -117,22 +117,22 @@ the private `create_coin`. Consequences for the operator:
 
 ---
 
-## 3. TradingAccount delegation caps — user-level, not operator-level
+## 3. BalanceManager delegation caps — user-level, not operator-level
 
-Defined in [`trading_account.move`](packages/triex/sources/trading_account.move).
-A `TradingAccount` is a shared object holding a user's balances across all
+Defined in [`balance_manager.move`](packages/triex/sources/balance_manager.move).
+A `BalanceManager` is a shared object holding a user's balances across all
 pools. Its **owner** can mint up to 1,000 delegation caps (combined) tied to
-that specific account (each cap records its `trading_account_id`):
+that specific manager (each cap records its `balance_manager_id`):
 
 | Capability | Minted by | Grants the holder |
 |---|---|---|
-| `TradeCap` | `mint_trade_cap` | Generate a `TradeProof` (`generate_proof_as_trader`) to place/cancel orders and settle against the account's balances. Cannot deposit or withdraw. |
-| `DepositCap` | `mint_deposit_cap` | `deposit_with_cap` / `deposit_multicoin_with_cap` — add funds to the account. Cannot withdraw or trade. |
-| `WithdrawCap` | `mint_withdraw_cap` | `withdraw_with_cap` / `withdraw_multicoin_with_cap` — pull funds out of the account. Cannot trade. |
+| `TradeCap` | `mint_trade_cap` | Generate a `TradeProof` (`generate_proof_as_trader`) to place/cancel orders and settle against the manager's balances. Cannot deposit or withdraw. |
+| `DepositCap` | `mint_deposit_cap` | `deposit_with_cap` / `deposit_multicoin_with_cap` — add funds to the manager. Cannot withdraw or trade. |
+| `WithdrawCap` | `mint_withdraw_cap` | `withdraw_with_cap` / `withdraw_multicoin_with_cap` — pull funds out of the manager. Cannot trade. |
 
 The owner can revoke any of the three at any time with `revoke_trade_cap`
 (despite the name, it revokes all three kinds by removing the cap ID from the
-account's allow-list — the revoked cap object becomes inert).
+manager's allow-list — the revoked cap object becomes inert).
 
 **Operator relevance:** these caps give the *operator qua operator* no power.
 The `TriexbookAdminCap` cannot mint, use, or revoke them. Trinary Exchange
@@ -180,5 +180,5 @@ With the `TriexbookAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
    trust everything else rests on.
 
 It cannot custody or move user balances, interfere with user orders, delegate
-itself into a user's TradingAccount, or mint CRED (absent a token package
+itself into a user's BalanceManager, or mint CRED (absent a token package
 upgrade).

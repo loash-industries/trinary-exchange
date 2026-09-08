@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// CredBook utility functions.
-module triexbook::utils {
-
-}
+module triexbook::utils;
 
 // /// Pop elements from the back of `v` until its length equals `n`,
 // /// returning the elements that were popped in the order they
