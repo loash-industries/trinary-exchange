@@ -7742,6 +7742,87 @@ public(package) fun test_fill_accrues_turnover_to_both_sides() {
     end(test);
 }
 
+/// The twin of `test_fill_accrues_turnover_to_both_sides` for the other taker
+/// direction: a bid taker pays its fee via the `fee_deposit` settlement path
+/// (added to what it owes) rather than out of proceeds. Both mechanisms sit
+/// upstream of the same unconditional `record_fee_turnover` call, but that is
+/// an implementation detail worth pinning from both directions rather than
+/// trusting by symmetry.
+public(package) fun test_bid_taker_fill_accrues_turnover() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 100 * constants::float_scaling();
+    // 200 notional: maker 1.8% = 3.6, taker 2.2% = 4.4.
+    let expected_maker_fee = 36 * constants::float_scaling() / 10;
+    let expected_taker_fee = 44 * constants::float_scaling() / 10;
+
+    // Alice rests an ask.
+    place_limit_order<SUI, USDC>(
+        ALICE,
+        pool_id,
+        balance_manager_id_alice,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        false,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    // Bob crosses it as a bid taker — fee paid via the deposit path, not
+    // carved out of proceeds.
+    place_limit_order<SUI, USDC>(
+        BOB,
+        pool_id,
+        balance_manager_id_bob,
+        constants::no_restriction(),
+        constants::self_matching_allowed(),
+        price,
+        quantity,
+        true,
+        constants::max_u64(),
+        &mut test,
+    );
+
+    test.next_tx(ALICE);
+    {
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let alice = test.take_shared_by_id<BalanceManager>(balance_manager_id_alice);
+        let bob = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+
+        // Ask maker's fee is deducted from fill proceeds, not escrowed, so it
+        // is turnover the instant the fill recognizes it.
+        assert_eq!(pool.account_fee_turnover(&alice, test.ctx()), expected_maker_fee as u128);
+        // Bob paid his taker fee on top of the quote he owed.
+        assert_eq!(pool.account_fee_turnover(&bob, test.ctx()), expected_taker_fee as u128);
+
+        return_shared(bob);
+        return_shared(alice);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
 /// Crossing a threshold discounts the *next* order, never the one that crossed.
 public(package) fun test_tier_discount_applies_from_the_next_order() {
     let mut test = begin(OWNER);

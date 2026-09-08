@@ -171,6 +171,11 @@ fun test_fill_accrues_turnover_to_both_sides() {
 }
 
 #[test]
+fun test_bid_taker_fill_accrues_turnover() {
+    pool_test_utils::test_bid_taker_fill_accrues_turnover();
+}
+
+#[test]
 fun test_tier_discount_applies_from_the_next_order() {
     pool_test_utils::test_tier_discount_applies_from_the_next_order();
 }
