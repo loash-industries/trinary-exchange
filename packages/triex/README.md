@@ -193,6 +193,22 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
   performs a fixed amount of work, and is read by subtracting it from one that
   does strictly more.
 
+  They cover the whole order lifecycle: **creating** (`bench_depth_10/40/80`,
+  which also give the cost curve against book depth), **matching**
+  (`bench_taker_sweeps_*` for a crossing limit order, `bench_market_sweeps_10`
+  for a market order, `bench_swap_base_for_quote_10` for the manager-less swap),
+  **modifying** (`bench_modify_at_depth_80`) and **cancelling**
+  (`bench_cancel_at_depth_80` for one order, `bench_cancel_all_at_depth_80` for
+  `cancel_all_orders`, which loops open orders over an O(depth) cancel and is
+  the most expensive call the pool exposes). `bench_ladder_1_tier` against
+  `bench_ladder_8_tiers` prices tier resolution.
+
+  Benchmarks that difference against each other must do identical work apart
+  from the operation being measured — same order quantities, same book shape.
+  `bench_modify_at_depth_80` and `bench_cancel_*_at_depth_80` are built to
+  subtract `bench_depth_80`; the three consuming benchmarks subtract
+  `bench_makers_10`.
+
   The numbers are **Move VM gas** (instruction and memory cost), not Sui
   computation + storage fees. Use them to compare operations against each other
   and to watch cost grow with book depth; they will not predict a mainnet fee.

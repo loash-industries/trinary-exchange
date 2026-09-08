@@ -36,8 +36,13 @@ BENCHES=(
   bench_depth_40
   bench_depth_80
   bench_cancel_at_depth_80
+  bench_cancel_all_at_depth_80
+  bench_modify_at_depth_80
+  bench_makers_10
   bench_taker_sweeps_01
   bench_taker_sweeps_10
+  bench_market_sweeps_10
+  bench_swap_base_for_quote_10
   bench_ladder_1_tier
   bench_ladder_8_tiers
 )
@@ -121,6 +126,11 @@ done
 base="$(get bench_baseline)"
 d10="$(get bench_depth_10)"; d40="$(get bench_depth_40)"; d80="$(get bench_depth_80)"
 cancel80="$(get bench_cancel_at_depth_80)"
+cancelall80="$(get bench_cancel_all_at_depth_80)"
+modify80="$(get bench_modify_at_depth_80)"
+m10="$(get bench_makers_10)"
+mkt10="$(get bench_market_sweeps_10)"
+swap10="$(get bench_swap_base_for_quote_10)"
 s1="$(get bench_taker_sweeps_01)"; s10="$(get bench_taker_sweeps_10)"
 l1="$(get bench_ladder_1_tier)"; l8="$(get bench_ladder_8_tiers)"
 
@@ -136,12 +146,29 @@ if [[ -n "$base" && -n "$d10" && -n "$d40" && -n "$d80" ]]; then
   echo "  (rising with depth means order placement is O(book depth))"
 fi
 
+echo
+echo "order lifecycle at book depth 80 (each minus the 80-order baseline):"
 if [[ -n "$d80" && -n "$cancel80" ]]; then
-  printf '\ncancel of the worst-priced order at depth 80: %d\n' $(( cancel80 - d80 ))
+  printf '  cancel one (worst-priced)   %10d\n' $(( cancel80 - d80 ))
+fi
+if [[ -n "$d80" && -n "$modify80" ]]; then
+  printf '  modify one down             %10d\n' $(( modify80 - d80 ))
+fi
+if [[ -n "$d80" && -n "$cancelall80" ]]; then
+  printf '  cancel all 80              %10d  (%d each)\n' \
+    $(( cancelall80 - d80 )) $(( (cancelall80 - d80) / 80 ))
 fi
 
 if [[ -n "$s1" && -n "$s10" ]]; then
   printf '\nmarginal cost per additional fill in one order: %d\n' $(( (s10 - s1) / 9 ))
+fi
+
+if [[ -n "$m10" ]]; then
+  echo
+  echo "consuming a 10-order book, by entry point (each minus that book):"
+  [[ -n "$s10"   ]] && printf '  crossing limit order       %10d\n' $(( s10 - m10 ))
+  [[ -n "$mkt10" ]] && printf '  market order               %10d\n' $(( mkt10 - m10 ))
+  [[ -n "$swap10" ]] && printf '  manager-less swap          %10d\n' $(( swap10 - m10 ))
 fi
 
 if [[ -n "$l1" && -n "$l8" ]]; then

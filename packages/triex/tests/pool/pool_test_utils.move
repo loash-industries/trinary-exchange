@@ -8872,3 +8872,287 @@ public(package) fun test_schedule_setter_rejects_rising_taker_rate() {
         2000,
     );
 }
+
+/// Ten bids resting at one price. Baseline for the benchmarks below that then
+/// consume this book, so their differentials price the consuming call alone.
+public(package) fun bench_makers_10() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < 10) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    end(test);
+}
+
+/// Same book as `bench_makers_10`, consumed by a market order instead of a
+/// crossing limit order. Differencing the two against that baseline prices the
+/// market-order path against the limit path.
+public(package) fun bench_market_sweeps_10() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    let balance_manager_id_bob = create_acct_and_share_with_funds(
+        BOB,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < 10) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(balance_manager_id_bob);
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.place_market_order(
+            &mut balance_manager,
+            &trade_proof,
+            constants::self_matching_allowed(),
+            quantity * 10,
+            false,
+            &clock,
+            test.ctx(),
+        );
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// Same book again, consumed by the manager-less swap. That path mints a
+/// temporary balance manager, trades, withdraws and deletes it, so the
+/// differential is what anonymous flow pays for the convenience.
+public(package) fun bench_swap_base_for_quote_10() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    let price = 2 * constants::float_scaling();
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < 10) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    test.next_tx(BOB);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let (base_out, quote_out, cred_out) = pool.swap_exact_base_for_quote<SUI, USDC>(
+            mint_for_testing<SUI>(quantity * 10, test.ctx()),
+            mint_for_testing<CRED>(0, test.ctx()),
+            0,
+            &clock,
+            test.ctx(),
+        );
+        destroy(base_out);
+        destroy(quote_out);
+        destroy(cred_out);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// 80 resting bids, then modify the worst-priced one down. Like the cancel
+/// benchmark this hits the linear scan over both book sides, and it releases
+/// escrow on cancel terms — the path a modify-to-minimum would take.
+public(package) fun bench_modify_at_depth_80() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    // Same quantity as `bench_depth_80`, so subtracting that baseline leaves
+    // only the modify.
+    let quantity = 1 * constants::float_scaling();
+    let mut first_order_id = 0;
+    let mut i = 0;
+    while (i < 80) {
+        let order_info = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (i + 1) * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        if (i == 0) first_order_id = order_info.order_id();
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.modify_order(
+            &mut balance_manager,
+            &trade_proof,
+            first_order_id,
+            quantity / 2,
+            &clock,
+            test.ctx(),
+        );
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
+
+/// 80 resting bids, then cancel every one of them in a single call.
+/// `cancel_all_orders` loops the account's open orders and each iteration runs
+/// an O(depth) `cancel_order`, so this is the most expensive user-facing call
+/// the pool exposes.
+public(package) fun bench_cancel_all_at_depth_80() {
+    let mut test = begin(OWNER);
+    let registry_id = setup_test(OWNER, &mut test);
+    let balance_manager_id_alice = create_acct_and_share_with_funds(
+        ALICE,
+        1000000 * constants::float_scaling(),
+        &mut test,
+    );
+    let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        ALICE,
+        registry_id,
+        balance_manager_id_alice,
+        &mut test,
+    );
+    create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+    let quantity = 1 * constants::float_scaling();
+    let mut i = 0;
+    while (i < 80) {
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            balance_manager_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            (i + 1) * constants::float_scaling(),
+            quantity,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+        i = i + 1;
+    };
+
+    test.next_tx(ALICE);
+    {
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+        let clock = test.take_shared<Clock>();
+        let mut balance_manager = test.take_shared_by_id<BalanceManager>(
+            balance_manager_id_alice,
+        );
+        let trade_proof = balance_manager.generate_proof_as_owner(test.ctx());
+        pool.cancel_all_orders(&mut balance_manager, &trade_proof, &clock, test.ctx());
+        return_shared(balance_manager);
+        return_shared(clock);
+        return_shared(pool);
+    };
+
+    end(test);
+}
