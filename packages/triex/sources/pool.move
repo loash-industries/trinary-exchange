@@ -417,11 +417,28 @@ public fun swap_exact_quantity_with_manager<BaseAsset, QuoteAsset>(
 
     let is_bid = quote_quantity > 0;
     if (is_bid) {
-        (adjusted_base_quantity, _) = self.get_quantity_out_input_fee(0, quote_quantity, clock)
+        // Sized at this account's own taker rate, not the entry rung: the bid
+        // path reserves part of the input for the fee, so quoting a rate higher
+        // than the one settlement charges leaves a tier-discounted trader
+        // systematically under-filled.
+        (adjusted_base_quantity, _) =
+            self.get_quantity_out_for_account(
+                balance_manager,
+                0,
+                quote_quantity,
+                clock,
+                ctx,
+            )
     } else {
         // Query how much base will actually be consumed when selling base for quote
         // get_quantity_out returns (base_remaining, quote_out, cred_fee) for is_bid=false
-        let (base_remaining, _) = self.get_quantity_out_input_fee(base_quantity, 0, clock);
+        let (base_remaining, _) = self.get_quantity_out_for_account(
+            balance_manager,
+            base_quantity,
+            0,
+            clock,
+            ctx,
+        );
         adjusted_base_quantity = base_quantity - base_remaining;
     };
 
@@ -1101,6 +1118,11 @@ public fun get_quantity_out<BaseAsset, QuoteAsset>(
 /// Dry run to determine the quantity out for a given base or quote quantity.
 /// Only one out of base or quote quantity should be non-zero.
 /// Returns the (base_quantity_out, quote_quantity_out) using quote-denominated fees.
+///
+/// Prices at the entry rung, which is what an account with no turnover pays and
+/// what a manager-less `swap_exact_quantity` is charged (its temporary balance
+/// manager has no history). A trader who holds a tier pays less than this quotes
+/// — use `get_quantity_out_for_account` to price against their own rate.
 public fun get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
     self: &Pool<BaseAsset, QuoteAsset>,
     base_quantity: u64,
@@ -1116,6 +1138,36 @@ public fun get_quantity_out_input_fee<BaseAsset, QuoteAsset>(
             base_quantity,
             quote_quantity,
             trade_specific_taker_fee,
+            clock.timestamp_ms(),
+        )
+}
+
+/// Dry run priced at the rate this balance manager actually trades at, rather
+/// than the entry rung.
+///
+/// Settlement resolves the taker rate from the account's trailing turnover
+/// (`state::resolve_trade_rates`), so quoting off the entry rung overstates the
+/// fee for anyone who has earned a tier. That matters beyond the quote itself:
+/// `swap_exact_quantity_with_manager` sizes its bid from this number, so an
+/// entry-rung quote makes a discounted trader under-fill by the tier gap.
+public fun get_quantity_out_for_account<BaseAsset, QuoteAsset>(
+    self: &Pool<BaseAsset, QuoteAsset>,
+    balance_manager: &BalanceManager,
+    base_quantity: u64,
+    quote_quantity: u64,
+    clock: &Clock,
+    ctx: &TxContext,
+): (u64, u64) {
+    let self = self.load_inner();
+    let (_tier, taker_fee, _maker_fee) = self
+        .state
+        .account_tier_rates(balance_manager.id(), ctx);
+    self
+        .book
+        .get_quantity_out(
+            base_quantity,
+            quote_quantity,
+            taker_fee,
             clock.timestamp_ms(),
         )
 }
@@ -1349,8 +1401,9 @@ public fun trade_params_for_account<BaseAsset, QuoteAsset>(
     ctx: &TxContext,
 ): (u64, u64) {
     let self = self.load_inner();
-    let turnover = self.state.account_fee_turnover(balance_manager.id(), ctx);
-    let (_tier, taker_fee, maker_fee) = self.state.fee_schedule().resolve(turnover);
+    let (_tier, taker_fee, maker_fee) = self
+        .state
+        .account_tier_rates(balance_manager.id(), ctx);
 
     (taker_fee, maker_fee)
 }

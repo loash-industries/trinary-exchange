@@ -214,12 +214,26 @@ public(package) fun resolve_trade_rates(
 ///
 /// Resolves against turnover as of the current epoch rather than as of the
 /// account's last touch, so a dormant account is not reported holding a tier
-/// that has already aged out from under it.
+/// that has already aged out from under it. Both halves are resolved as of
+/// `ctx.epoch()`: `fee_schedule_at` picks up a schedule the epoch rollover has
+/// not promoted yet, matching what `resolve_trade_rates` would charge.
 public(package) fun account_fee_tier(self: &State, balance_manager_id: ID, ctx: &TxContext): u64 {
-    let turnover = self.account_fee_turnover(balance_manager_id, ctx);
-    let (tier, _taker_fee, _maker_fee) = self.governance.fee_schedule().resolve(turnover);
+    let (tier, _taker_fee, _maker_fee) = self.account_tier_rates(balance_manager_id, ctx);
 
     tier
+}
+
+/// The tier index and the (taker, maker) rates this account trades at, as of
+/// the current epoch. Single source for every read-only tier view, so the
+/// pools cannot drift from `state` or from each other.
+public(package) fun account_tier_rates(
+    self: &State,
+    balance_manager_id: ID,
+    ctx: &TxContext,
+): (u64, u64, u64) {
+    let turnover = self.account_fee_turnover(balance_manager_id, ctx);
+
+    self.governance.fee_schedule_at(ctx.epoch()).resolve(turnover)
 }
 
 /// Fees an account has paid across the trailing window, as of the current

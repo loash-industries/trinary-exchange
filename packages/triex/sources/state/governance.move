@@ -279,8 +279,33 @@ public(package) fun next_trade_params(self: &Governance): TradeParams {
     self.next_trade_params
 }
 
+/// Epoch the current `trade_params` / `fee_schedule` belong to. Read-only
+/// callers compare this against `ctx.epoch()` to tell whether `update` still
+/// owes them a promotion — they hold `&Governance` and cannot roll it
+/// themselves.
+public(package) fun epoch(self: &Governance): u64 {
+    self.epoch
+}
+
 public(package) fun fee_schedule(self: &Governance): &FeeSchedule {
     &self.fee_schedule
+}
+
+/// The ladder that prices trades in `epoch`: the current one, or the pending
+/// one when the rollover has not been applied yet.
+///
+/// `update` promotes `next_fee_schedule` on the first state-mutating call of a
+/// new epoch, but views take `&Governance` and cannot trigger that. Reading
+/// `fee_schedule` directly would report last epoch's ladder until someone
+/// trades, while the turnover half of the same view is already epoch-fresh via
+/// `fee_turnover::total_at` — so the two halves would disagree, and the view
+/// would quote a rate the next trade will not charge.
+public(package) fun fee_schedule_at(self: &Governance, epoch: u64): &FeeSchedule {
+    if (epoch > self.epoch) {
+        &self.next_fee_schedule
+    } else {
+        &self.fee_schedule
+    }
 }
 
 public(package) fun next_fee_schedule(self: &Governance): &FeeSchedule {

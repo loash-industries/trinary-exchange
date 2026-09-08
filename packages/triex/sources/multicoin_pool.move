@@ -484,9 +484,23 @@ fun swap_exact_quantity_with_manager<QuoteAsset>(
 
     let is_bid = quote_quantity > 0;
     if (is_bid) {
-        (adjusted_base_quantity, _) = self.get_quantity_out_input_fee(0, quote_quantity, clock)
+        // Sized at this account's own taker rate — see the twin in `pool`.
+        (adjusted_base_quantity, _) =
+            self.get_quantity_out_for_account(
+                balance_manager,
+                0,
+                quote_quantity,
+                clock,
+                ctx,
+            )
     } else {
-        let (base_remaining, _) = self.get_quantity_out_input_fee(base_quantity, 0, clock);
+        let (base_remaining, _) = self.get_quantity_out_for_account(
+            balance_manager,
+            base_quantity,
+            0,
+            clock,
+            ctx,
+        );
         adjusted_base_quantity = base_quantity - base_remaining;
     };
 
@@ -875,6 +889,30 @@ public fun get_quantity_out_input_fee<QuoteAsset>(
         )
 }
 
+/// Dry run priced at the rate this balance manager actually trades at, rather
+/// than the entry rung. See `pool::get_quantity_out_for_account`.
+public fun get_quantity_out_for_account<QuoteAsset>(
+    self: &MultiCoinPool<QuoteAsset>,
+    balance_manager: &BalanceManager,
+    base_quantity: u64,
+    quote_quantity: u64,
+    clock: &Clock,
+    ctx: &TxContext,
+): (u64, u64) {
+    let self_inner = self.load_inner();
+    let (_tier, taker_fee, _maker_fee) = self_inner
+        .state
+        .account_tier_rates(balance_manager.id(), ctx);
+    self_inner
+        .book
+        .get_quantity_out(
+            base_quantity,
+            quote_quantity,
+            taker_fee,
+            clock.timestamp_ms(),
+        )
+}
+
 /// Returns the order_id for all open orders for the balance_manager in the pool.
 public fun account_open_orders<QuoteAsset>(
     self: &MultiCoinPool<QuoteAsset>,
@@ -1060,8 +1098,9 @@ public fun trade_params_for_account<QuoteAsset>(
     ctx: &TxContext,
 ): (u64, u64) {
     let pool_inner = self.load_inner();
-    let turnover = pool_inner.state.account_fee_turnover(balance_manager.id(), ctx);
-    let (_tier, taker_fee, maker_fee) = pool_inner.state.fee_schedule().resolve(turnover);
+    let (_tier, taker_fee, maker_fee) = pool_inner
+        .state
+        .account_tier_rates(balance_manager.id(), ctx);
 
     (taker_fee, maker_fee)
 }
