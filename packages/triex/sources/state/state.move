@@ -30,17 +30,17 @@ module triexbook::state {
     }
 
     /// A quote fee taken out of trade proceeds rather than paid in with the order,
-    /// tagged with the balance manager that was charged. Ask takers and ask makers
+    /// tagged with the trading account that was charged. Ask takers and ask makers
     /// both pay this way, and one transaction can charge several makers, so the
     /// portions stay separate: each reaches the fee reserve attributed to the
     /// account that actually paid it.
     public struct ProceedsFee has copy, drop, store {
-        balance_manager_id: ID,
+        trading_account_id: ID,
         amount: u64,
     }
 
-    public(package) fun balance_manager_id(self: &ProceedsFee): ID {
-        self.balance_manager_id
+    public(package) fun trading_account_id(self: &ProceedsFee): ID {
+        self.trading_account_id
     }
 
     public(package) fun amount(self: &ProceedsFee): u64 {
@@ -68,7 +68,7 @@ module triexbook::state {
     /// the vault event can be tied back to the `OrderExpired` for that order.
     public struct RefundedFee has copy, drop, store {
         order_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         amount: u64,
     }
 
@@ -76,8 +76,8 @@ module triexbook::state {
         self.order_id
     }
 
-    public(package) fun refund_balance_manager_id(self: &RefundedFee): ID {
-        self.balance_manager_id
+    public(package) fun refund_trading_account_id(self: &RefundedFee): ID {
+        self.trading_account_id
     }
 
     public(package) fun refund_amount(self: &RefundedFee): u64 {
@@ -115,7 +115,7 @@ module triexbook::state {
     // #feat:stake - DISABLED
     // public struct StakeEvent has copy, drop {
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     epoch: u64,
     //     amount: u64,
     //     stake: bool,
@@ -124,7 +124,7 @@ module triexbook::state {
     // #feat:gov - DISABLED
     // public struct ProposalEvent has copy, drop {
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     epoch: u64,
     //     // taker_fee: u64,
     //     // maker_fee: u64,
@@ -135,7 +135,7 @@ module triexbook::state {
     // #feat:gov - DISABLED
     // public struct VoteEvent has copy, drop {
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     epoch: u64,
     //     from_proposal_id: Option<ID>,
     //     to_proposal_id: ID,
@@ -145,7 +145,7 @@ module triexbook::state {
     // #feat:rebate
     // public struct RebateEventV2 has copy, drop {
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     epoch: u64,
     //     claim_amount: Balances,
     // }
@@ -153,7 +153,7 @@ module triexbook::state {
     // #feat:rebate
     // public struct RebateEvent has copy, drop {
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     epoch: u64,
     //     claim_amount: u64,
     // }
@@ -163,7 +163,7 @@ module triexbook::state {
     }
 
     /// Drain this account's pending maker-fee credits for folding into the ring
-    /// on the owner's `BalanceManager`. Creates the account if it does not exist,
+    /// on the owner's `TradingAccount`. Creates the account if it does not exist,
     /// so the trade path has one call site for both.
     ///
     /// Called before the order is priced: the fold must land before the turnover
@@ -171,12 +171,12 @@ module triexbook::state {
     /// them.
     public(package) fun take_pending_turnover(
         self: &mut State,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         ctx: &TxContext,
     ): vector<EpochAmount> {
-        self.update_account(balance_manager_id, ctx);
+        self.update_account(trading_account_id, ctx);
 
-        self.accounts[balance_manager_id].take_pending_turnover()
+        self.accounts[trading_account_id].take_pending_turnover()
     }
 
     /// Sum of this account's pending credits still inside the window, for views
@@ -184,12 +184,12 @@ module triexbook::state {
     /// actually resolve against. An account that has never made here has none.
     public(package) fun pending_turnover_total(
         self: &State,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         ctx: &TxContext,
     ): u128 {
-        if (!self.accounts.contains(balance_manager_id)) return 0;
+        if (!self.accounts.contains(trading_account_id)) return 0;
 
-        self.accounts[balance_manager_id].pending_turnover_total(ctx.epoch())
+        self.accounts[trading_account_id].pending_turnover_total(ctx.epoch())
     }
 
     /// Up until this point, an OrderInfo object has been created and potentially
@@ -223,7 +223,7 @@ module triexbook::state {
         // `contains` + borrow of the same table entry for nothing — callers that
         // skip that step (tests) go through `process_create_for_testing` instead,
         // which does the same guard `take_pending_turnover` would have.
-        let account = &mut self.accounts[order_info.balance_manager_id()];
+        let account = &mut self.accounts[order_info.trading_account_id()];
         // let account_volume = account.total_volume();
         // let account_stake = account.active_stake();
 
@@ -262,7 +262,7 @@ module triexbook::state {
         );
         // The taker fee is revenue the moment it is charged and counts toward the
         // taker's tier, but the ring it counts into lives on their
-        // `BalanceManager` — the pool credits it there after this returns. Maker
+        // `TradingAccount` — the pool credits it there after this returns. Maker
         // fees are queued in `process_fills`, at fill rather than at placement —
         // escrow a bid maker can still cancel out of must not buy tier progress.
         let (old_settled, old_owed) = account.settle();
@@ -278,7 +278,7 @@ module triexbook::state {
         if (!order_info.is_bid() && order_info.paid_fees() > 0) {
             add_proceeds_fee(
                 &mut fee_flows.proceeds,
-                order_info.balance_manager_id(),
+                order_info.trading_account_id(),
                 order_info.paid_fees(),
             );
         };
@@ -288,10 +288,10 @@ module triexbook::state {
 
     public(package) fun withdraw_settled_amounts(
         self: &mut State,
-        balance_manager_id: ID,
+        trading_account_id: ID,
     ): (Balances, Balances) {
-        if (self.accounts.contains(balance_manager_id)) {
-            let account = &mut self.accounts[balance_manager_id];
+        if (self.accounts.contains(trading_account_id)) {
+            let account = &mut self.accounts[trading_account_id];
 
             account.settle()
         } else {
@@ -307,13 +307,13 @@ module triexbook::state {
     public(package) fun process_cancel(
         self: &mut State,
         order: &mut Order,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         pool_id: ID,
         price_scaling: u64,
         ctx: &TxContext,
     ): (Balances, Balances, FeeRelease) {
         self.history.update(pool_id, ctx);
-        self.update_account(balance_manager_id, ctx);
+        self.update_account(trading_account_id, ctx);
         order.set_canceled();
 
         let (refunded, retained) = order.released_fee_split(
@@ -323,7 +323,7 @@ module triexbook::state {
         );
         let balances = order.calculate_cancel_refund(refunded, option::none(), price_scaling);
 
-        let account = &mut self.accounts[balance_manager_id];
+        let account = &mut self.accounts[trading_account_id];
         account.remove_order(order.order_id());
         account.add_settled_balances(balances);
 
@@ -338,7 +338,7 @@ module triexbook::state {
     /// modify-to-minimum-then-cancel cannot dodge the retention.
     public(package) fun process_modify(
         self: &mut State,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         cancel_quantity: u64,
         order: &Order,
         pool_id: ID,
@@ -346,7 +346,7 @@ module triexbook::state {
         ctx: &TxContext,
     ): (Balances, Balances, FeeRelease) {
         self.history.update(pool_id, ctx);
-        self.update_account(balance_manager_id, ctx);
+        self.update_account(trading_account_id, ctx);
 
         let (refunded, retained) = order.released_fee_split(
             order.maker_fee_rate(),
@@ -359,9 +359,9 @@ module triexbook::state {
             price_scaling,
         );
 
-        self.accounts[balance_manager_id].add_settled_balances(balances);
+        self.accounts[trading_account_id].add_settled_balances(balances);
 
-        let (settled, owed) = self.accounts[balance_manager_id].settle();
+        let (settled, owed) = self.accounts[trading_account_id].settle();
         self.recognize_retention(retained);
 
         (settled, owed, FeeRelease { refunded, retained })
@@ -372,25 +372,25 @@ module triexbook::state {
     // public(package) fun process_stake(
     //     self: &mut State,
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     new_stake: u64,
     //     ctx: &TxContext,
     // ): (Balances, Balances) {
     //     self.governance.update(ctx);
     //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    //     self.update_account(balance_manager_id, ctx);
+    //     self.update_account(trading_account_id, ctx);
     //
-    //     let (stake_before, stake_after) = self.accounts[balance_manager_id].add_stake(new_stake);
+    //     let (stake_before, stake_after) = self.accounts[trading_account_id].add_stake(new_stake);
     //     self.governance.adjust_voting_power(stake_before, stake_after);
     //     event::emit(StakeEvent {
     //         pool_id,
-    //         balance_manager_id,
+    //         trading_account_id,
     //         epoch: ctx.epoch(),
     //         amount: new_stake,
     //         stake: true,
     //     });
     //
-    //     self.accounts[balance_manager_id].settle()
+    //     self.accounts[trading_account_id].settle()
     // }
 
     // Process unstake transaction.
@@ -399,14 +399,14 @@ module triexbook::state {
     // public(package) fun process_unstake(
     //     self: &mut State,
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     ctx: &TxContext,
     // ): (Balances, Balances) {
     //     self.governance.update(ctx);
     //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    //     self.update_account(balance_manager_id, ctx);
+    //     self.update_account(trading_account_id, ctx);
     //
-    //     let account = &mut self.accounts[balance_manager_id];
+    //     let account = &mut self.accounts[trading_account_id];
     //     let active_stake = account.active_stake();
     //     let inactive_stake = account.inactive_stake();
     //     let voted_proposal = account.voted_proposal();
@@ -415,7 +415,7 @@ module triexbook::state {
     //     self.governance.adjust_vote(voted_proposal, option::none(), active_stake);
     //     event::emit(StakeEvent {
     //         pool_id,
-    //         balance_manager_id,
+    //         trading_account_id,
     //         epoch: ctx.epoch(),
     //         amount: active_stake + inactive_stake,
     //         stake: false,
@@ -429,7 +429,7 @@ module triexbook::state {
     // public(package) fun process_proposal(
     //     self: &mut State,
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     // taker_fee: u64,
     //     // maker_fee: u64,
     //     // stake_required: u64, // #feat:fee_gov
@@ -438,8 +438,8 @@ module triexbook::state {
     // ) {
     //     self.governance.update(ctx);
     //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    //     self.update_account(balance_manager_id, ctx);
-    //     let account = &mut self.accounts[balance_manager_id];
+    //     self.update_account(trading_account_id, ctx);
+    //     let account = &mut self.accounts[trading_account_id];
     //     let stake = account.active_stake();
     //     let proposal_created = account.created_proposal();
     //
@@ -455,13 +455,13 @@ module triexbook::state {
     //             fee,
     //             // stake_required, // #feat:fee_gov
     //             stake,
-    //             balance_manager_id,
+    //             trading_account_id,
     //         );
-    //     self.process_vote(pool_id, balance_manager_id, balance_manager_id, ctx);
+    //     self.process_vote(pool_id, trading_account_id, trading_account_id, ctx);
     //
     //     event::emit(ProposalEvent {
     //         pool_id,
-    //         balance_manager_id,
+    //         trading_account_id,
     //         epoch: ctx.epoch(),
     //         // taker_fee,
     //         // maker_fee,
@@ -475,15 +475,15 @@ module triexbook::state {
     // public(package) fun process_vote(
     //     self: &mut State,
     //     pool_id: ID,
-    //     balance_manager_id: ID,
+    //     trading_account_id: ID,
     //     proposal_id: ID,
     //     ctx: &TxContext,
     // ) {
     //     self.governance.update(ctx);
     //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    //     self.update_account(balance_manager_id, ctx);
+    //     self.update_account(trading_account_id, ctx);
     //
-    //     let account = &mut self.accounts[balance_manager_id];
+    //     let account = &mut self.accounts[trading_account_id];
     //     assert!(account.active_stake() > 0, ENoStake);
     //
     //     let prev_proposal = account.set_voted_proposal(option::some(proposal_id));
@@ -497,7 +497,7 @@ module triexbook::state {
     //
     //     event::emit(VoteEvent {
     //         pool_id,
-    //         balance_manager_id,
+    //         trading_account_id,
     //         epoch: ctx.epoch(),
     //         from_proposal_id: prev_proposal,
     //         to_proposal_id: proposal_id,
@@ -511,33 +511,33 @@ module triexbook::state {
     // public(package) fun process_claim_rebates<BaseAsset, QuoteAsset>(
     //     self: &mut State,
     //     pool_id: ID,
-    //     balance_manager: &BalanceManager,
+    //     trading_account: &TradingAccount,
     //     ctx: &TxContext,
     // ): (Balances, Balances) {
-    //     let balance_manager_id = balance_manager.id();
+    //     let trading_account_id = trading_account.id();
     //     self.governance.update(ctx);
     //     self.history.update(self.governance.trade_params(), pool_id, ctx);
-    //     self.update_account(balance_manager_id, ctx);
+    //     self.update_account(trading_account_id, ctx);
     //
-    //     let account = &mut self.accounts[balance_manager_id];
+    //     let account = &mut self.accounts[trading_account_id];
     //     let claim_amount = account.claim_rebates();
     //     event::emit(RebateEventV2 {
     //         pool_id,
-    //         balance_manager_id,
+    //         trading_account_id,
     //         epoch: ctx.epoch(),
     //         claim_amount,
     //     });
-    //     balance_manager.emit_balance_event(
+    //     trading_account.emit_balance_event(
     //         type_name::with_defining_ids<CRED>(),
     //         claim_amount.cred(),
     //         true,
     //     );
-    //     balance_manager.emit_balance_event(
+    //     trading_account.emit_balance_event(
     //         type_name::with_defining_ids<BaseAsset>(),
     //         claim_amount.base(),
     //         true,
     //     );
-    //     balance_manager.emit_balance_event(
+    //     trading_account.emit_balance_event(
     //         type_name::with_defining_ids<QuoteAsset>(),
     //         claim_amount.quote(),
     //         true,
@@ -546,12 +546,12 @@ module triexbook::state {
     //     account.settle()
     // }
 
-    public(package) fun account_exists(self: &State, balance_manager_id: ID): bool {
-        self.accounts.contains(balance_manager_id)
+    public(package) fun account_exists(self: &State, trading_account_id: ID): bool {
+        self.accounts.contains(trading_account_id)
     }
 
-    public(package) fun account(self: &State, balance_manager_id: ID): &Account {
-        &self.accounts[balance_manager_id]
+    public(package) fun account(self: &State, trading_account_id: ID): &Account {
+        &self.accounts[trading_account_id]
     }
 
     public(package) fun history_mut(self: &mut State): &mut History {
@@ -580,7 +580,7 @@ module triexbook::state {
         let num_fills = fills.length();
         while (i < num_fills) {
             let fill = &mut fills[i];
-            let maker = fill.balance_manager_id();
+            let maker = fill.trading_account_id();
             self.update_account(maker, ctx);
 
             let mut maker_fee_earned = 0;
@@ -619,7 +619,7 @@ module triexbook::state {
                 if (refund > 0) {
                     refunded.push_back(RefundedFee {
                         order_id: fill.maker_order_id(),
-                        balance_manager_id: maker,
+                        trading_account_id: maker,
                         amount: refund,
                     });
                 };
@@ -631,7 +631,7 @@ module triexbook::state {
             // Queued at fill, never at placement: a bid maker's escrow is
             // refundable until it trades, so counting it earlier would let resting
             // orders buy tier progress and cancel out. Expired fills charge nothing
-            // and so queue nothing. The maker's `BalanceManager` is not in this
+            // and so queue nothing. The maker's `TradingAccount` is not in this
             // transaction, so the credit waits here until their own next one
             // against this pool folds it into their ring.
             account.add_pending_turnover(ctx.epoch(), maker_fee_earned);
@@ -648,22 +648,22 @@ module triexbook::state {
         FeeFlows { proceeds: ask_maker_fees, recognized: recognized + expiry_retained, refunded }
     }
 
-    /// Credit `amount` to `balance_manager_id`'s entry in `fees`, merging into an
+    /// Credit `amount` to `trading_account_id`'s entry in `fees`, merging into an
     /// existing entry rather than appending a duplicate. Keeps proceeds fees to
     /// one entry per account charged no matter how many fills produced them, so
     /// the caller does one reserve deposit and emits one event per account.
-    fun add_proceeds_fee(fees: &mut vector<ProceedsFee>, balance_manager_id: ID, amount: u64) {
+    fun add_proceeds_fee(fees: &mut vector<ProceedsFee>, trading_account_id: ID, amount: u64) {
         let mut i = 0;
         let n = fees.length();
         while (i < n) {
             let entry = &mut fees[i];
-            if (entry.balance_manager_id == balance_manager_id) {
+            if (entry.trading_account_id == trading_account_id) {
                 entry.amount = entry.amount + amount;
                 return
             };
             i = i + 1;
         };
-        fees.push_back(ProceedsFee { balance_manager_id, amount });
+        fees.push_back(ProceedsFee { trading_account_id, amount });
     }
 
     /// Record escrow the protocol kept on a cancel, modify-down or expiry as
@@ -677,12 +677,12 @@ module triexbook::state {
     }
 
     /// If account doesn't exist, create it. Update account volumes and rebates.
-    fun update_account(self: &mut State, balance_manager_id: ID, ctx: &TxContext) {
-        if (!self.accounts.contains(balance_manager_id)) {
-            self.accounts.add(balance_manager_id, account::empty(ctx));
+    fun update_account(self: &mut State, trading_account_id: ID, ctx: &TxContext) {
+        if (!self.accounts.contains(trading_account_id)) {
+            self.accounts.add(trading_account_id, account::empty(ctx));
         };
         // #feat:rebate
-        // let account = &mut self.accounts[balance_manager_id];
+        // let account = &mut self.accounts[trading_account_id];
         // let (prev_epoch, maker_volume, _active_stake) = account.update(ctx);
         // if (prev_epoch > 0 && maker_volume > 0) {
         //     // #feat:rebate - removed active_stake > 0 requirement
@@ -701,7 +701,7 @@ module triexbook::state {
 
     #[test_only]
     /// Process an order at explicit rates. Rate resolution lives at the pool
-    /// layer now (`FeePolicy` + the trader's `BalanceManager` ring), so state
+    /// layer now (`FeePolicy` + the trader's `TradingAccount` ring), so state
     /// tests that do not care about tiers pass the rates directly.
     ///
     /// `process_create` no longer creates the taker's account itself — the real
@@ -715,7 +715,7 @@ module triexbook::state {
         pool_id: ID,
         ctx: &TxContext,
     ): (Balances, Balances, FeeFlows) {
-        self.update_account(order_info.balance_manager_id(), ctx);
+        self.update_account(order_info.trading_account_id(), ctx);
         self.process_create(order_info, taker_fee, maker_fee, pool_id, ctx)
     }
 }

@@ -22,7 +22,7 @@ module triexbook::state_tests {
     // const POOL_ID: address = @0x1;
 
     // Rate resolution lives at the pool layer now (`FeePolicy` + the trader's
-    // `BalanceManager` ring), so state takes pre-resolved rates. These are the
+    // `TradingAccount` ring), so state takes pre-resolved rates. These are the
     // launch-default coin-pool rates the deleted internal resolution produced.
     const TAKER_FEE: u64 = 22_000_000; // 2.2%
     const MAKER_FEE: u64 = 18_000_000; // 1.8%
@@ -153,7 +153,7 @@ module triexbook::state_tests {
         let proceeds_fees = fee_flows.proceeds();
         assert!(proceeds_fees.length() == 1, 0);
         assert!(proceeds_fees[0].amount() == 44_044, 0);
-        assert!(proceeds_fees[0].balance_manager_id() == id_from_address(BOB), 0);
+        assert!(proceeds_fees[0].trading_account_id() == id_from_address(BOB), 0);
         // The fixture's makers were built with a zero snapshotted maker rate, so
         // they locked nothing at placement and these fills earn nothing out.
         assert!(fee_flows.recognized() == 0, 0);
@@ -200,14 +200,14 @@ module triexbook::state_tests {
         let mut state = state::empty(test.ctx());
         let price = 1 * constants::usdc_unit();
         let quantity = 10 * constants::sui_unit();
-        let balance_manager_id = id_from_address(ALICE);
+        let trading_account_id = id_from_address(ALICE);
         let order_type = 0;
         let market_order = false;
         let expire_timestamp = 1;
         let fill_limit_reached = false;
         let order_inserted = true;
         let mut order_info1 = create_order_info(
-            balance_manager_id,
+            trading_account_id,
             ALICE,
             order_type,
             price,
@@ -310,14 +310,14 @@ module triexbook::state_tests {
         test.next_tx(ALICE);
         let taker_price = 1 * constants::usdc_unit();
         let taker_quantity = 10 * constants::sui_unit();
-        let balance_manager_id = id_from_address(BOB);
+        let trading_account_id = id_from_address(BOB);
         let order_type = 0;
         let market_order = false;
         let expire_timestamp = constants::max_u64();
         let fill_limit_reached = false;
         let order_inserted = true;
         let mut taker_order = create_order_info(
-            balance_manager_id,
+            trading_account_id,
             BOB,
             order_type,
             taker_price,
@@ -1663,7 +1663,7 @@ module triexbook::state_tests {
         let refunds = flows.refunded();
         assert_eq!(refunds.length(), 1);
         assert_eq!(refunds[0].refund_amount(), refund);
-        assert_eq!(refunds[0].refund_balance_manager_id(), id_from_address(ALICE));
+        assert_eq!(refunds[0].refund_trading_account_id(), id_from_address(ALICE));
         assert_eq!(refunds[0].refund_order_id(), order.order_id());
         assert_eq!(flows.recognized(), retained);
 
@@ -1684,9 +1684,9 @@ module triexbook::state_tests {
     // === Pending turnover ledger ===
     // Maker fees recognized at fill count toward the maker's exchange-wide
     // turnover, but the fill runs in the taker's transaction, which does not
-    // carry the maker's `BalanceManager`. The credit therefore queues on the
+    // carry the maker's `TradingAccount`. The credit therefore queues on the
     // maker's pool account until their own next transaction drains it for
-    // folding into the BM-hosted ring.
+    // folding into the TA-hosted ring.
 
     #[test]
     fun maker_fill_queues_pending_turnover() {

@@ -293,7 +293,7 @@ module triexbook::account_tests {
     // === Pending turnover ledger ===
     // Maker-fee credits recognized at fill wait on the account — tagged with the
     // epoch they were earned in — until the owner's next transaction drains them
-    // into the ring on their `BalanceManager`.
+    // into the ring on their `TradingAccount`.
 
     #[test]
     fun pending_turnover_merges_credits_earned_in_the_same_epoch() {

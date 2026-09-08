@@ -21,9 +21,9 @@ module triexbook::fee_turnover {
 
     // === Structs ===
     /// A fee credit tagged with the epoch it was earned in. Maker fees are
-    /// recognized in transactions that do not carry the maker's `BalanceManager`,
+    /// recognized in transactions that do not carry the maker's `TradingAccount`,
     /// so pools hold them as pending entries of this shape until the maker's own
-    /// next transaction folds them into the BM-hosted ring — see `record_at`.
+    /// next transaction folds them into the TA-hosted ring — see `record_at`.
     public struct EpochAmount has copy, drop, store {
         epoch: u64,
         amount: u64,

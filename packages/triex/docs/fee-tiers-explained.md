@@ -47,7 +47,7 @@ revenue but not score" rule is in `state/state.move`, `recognize_retention`.)*
 
 ## Your level is exchange-wide, not per pool
 
-Your activity score lives on **your own `BalanceManager`** — your account object
+Your activity score lives on **your own `TradingAccount`** — your account object
 — and is tracked **per quote asset**.
 
 That means trading on *any* pool quoted in CRED lifts your level on *every*
@@ -59,7 +59,7 @@ The one boundary that does exist is the quote asset: your CRED score and your
 USDC score are separate ladders, because a level threshold is a sum of quote
 units and the two aren't comparable.
 
-*(Code: `balance_manager.move` — `TurnoverKey { quote }` keys the score by quote
+*(Code: `trading_account.move` — `TurnoverKey { quote }` keys the score by quote
 asset; `pool.move` / `multicoin_pool.move` read it during order placement.)*
 
 ## What determines your rate on any given trade

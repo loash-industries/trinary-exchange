@@ -6,7 +6,7 @@ module triexbook::integration_master_trader_permission_tests {
     use sui::{sui::SUI, test_scenario::{begin, end}};
     use token::cred::CRED;
     use triexbook::{
-        balance_manager_tests::{Self as balance_manager_tests, USDC},
+        trading_account_tests::{Self as trading_account_tests, USDC},
         constants,
         integration_test_utils::{Self as utils, ExpectedBalances},
         math,
@@ -37,17 +37,17 @@ module triexbook::integration_master_trader_permission_tests {
         test_trader_permission_and_modify_returned(NoErrorCredAsBase)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::balance_manager::EInvalidOwner)]
+    #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidOwner)]
     fun test_trader_permission_and_modify_returned_invalid_owner_e() {
         test_trader_permission_and_modify_returned(EInvalidOwner)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::balance_manager::ECapNotInList)]
+    #[test, expected_failure(abort_code = ::triexbook::trading_account::ECapNotInList)]
     fun test_trader_permission_and_modify_trader_not_in_list_e() {
         test_trader_permission_and_modify_returned(ECapNotInListAbort)
     }
 
-    #[test, expected_failure(abort_code = ::triexbook::balance_manager::EInvalidTrader)]
+    #[test, expected_failure(abort_code = ::triexbook::trading_account::EInvalidTrader)]
     fun test_trader_permission_invalid_trader_e() {
         test_trader_permission_and_modify_returned(EInvalidTraderAbort)
     }
@@ -58,12 +58,12 @@ module triexbook::integration_master_trader_permission_tests {
         pool_tests::set_time(0, &mut test);
         let starting_balance = 10000 * constants::float_scaling();
 
-        let owner_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let owner_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::owner(),
             starting_balance,
             &mut test,
         );
-        let alice_balance_manager_id = balance_manager_tests::create_acct_and_share_with_funds(
+        let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::alice(),
             starting_balance,
             &mut test,
@@ -79,7 +79,7 @@ module triexbook::integration_master_trader_permission_tests {
             pool_tests::setup_reference_pool_cred_as_base<CRED, SUI>(
                 utils::owner(),
                 registry_id,
-                owner_balance_manager_id,
+                owner_trading_account_id,
                 constants::cred_multiplier(),
                 &mut test,
             )
@@ -87,26 +87,26 @@ module triexbook::integration_master_trader_permission_tests {
             pool_tests::setup_reference_pool<SUI, CRED>(
                 utils::owner(),
                 registry_id,
-                owner_balance_manager_id,
+                owner_trading_account_id,
                 constants::cred_multiplier(),
                 &mut test,
             )
         };
 
-        // Bob tries to authorize himself on Alice's balance manager, will error.
+        // Bob tries to authorize himself on Alice's trading account, will error.
         if (error_code == EInvalidOwner) {
             utils::authorize_trader(
                 utils::bob(),
-                alice_balance_manager_id,
+                alice_trading_account_id,
                 utils::bob(),
                 &mut test,
             );
         };
 
-        // Alice gives Bob permission to trade on her balance manager.
+        // Alice gives Bob permission to trade on her trading account.
         let bob_trade_cap_id = utils::authorize_trader(
             utils::alice(),
-            alice_balance_manager_id,
+            alice_trading_account_id,
             utils::bob(),
             &mut test,
         );
@@ -120,11 +120,11 @@ module triexbook::integration_master_trader_permission_tests {
         let maker_fee = constants::maybe_apply_fee(is_bid);
         let mut alice_balance: ExpectedBalances = utils::expected_balances_all(starting_balance);
 
-        // Bob places an order with quantity 10 in SUI/USDC pool at a price of 2 using Alice's balance manager.
+        // Bob places an order with quantity 10 in SUI/USDC pool at a price of 2 using Alice's trading account.
         let order_info = pool_tests::place_limit_order<SUI, USDC>(
             utils::bob(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -151,7 +151,7 @@ module triexbook::integration_master_trader_permission_tests {
                 math::mul(math::mul(maker_fee, constants::cred_multiplier()), quantity),
             );
         };
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         let quantity = 5 * constants::float_scaling();
 
@@ -159,7 +159,7 @@ module triexbook::integration_master_trader_permission_tests {
         pool_tests::place_limit_order<SUI, USDC>(
             utils::owner(),
             pool1_id,
-            owner_balance_manager_id,
+            owner_trading_account_id,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -179,7 +179,7 @@ module triexbook::integration_master_trader_permission_tests {
         pool_tests::modify_order<SUI, USDC>(
             utils::bob(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_info.order_id(),
             new_quantity,
             &mut test,
@@ -205,13 +205,13 @@ module triexbook::integration_master_trader_permission_tests {
                 ),
             );
         };
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         // Alice cancels the order herself, should get correct refund of remaining quantity.
         pool_tests::cancel_order<SUI, USDC>(
             utils::alice(),
             pool1_id,
-            alice_balance_manager_id,
+            alice_trading_account_id,
             order_info.order_id(),
             &mut test,
         );
@@ -236,27 +236,27 @@ module triexbook::integration_master_trader_permission_tests {
                 ),
             );
         };
-        utils::check_balance(alice_balance_manager_id, &alice_balance, &mut test);
+        utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         // Alice revokes Bob's trading permission.
-        utils::remove_trader(utils::alice(), alice_balance_manager_id, bob_trade_cap_id, &mut test);
+        utils::remove_trader(utils::alice(), alice_trading_account_id, bob_trade_cap_id, &mut test);
 
         // Alice revokes Bob's trading permission again, removing a trader not in list will error.
         if (error_code == ECapNotInListAbort) {
             utils::remove_trader(
                 utils::alice(),
-                alice_balance_manager_id,
+                alice_trading_account_id,
                 bob_trade_cap_id,
                 &mut test,
             );
         };
 
-        // Bob tries to place an order using Alice's balance manager, will error.
+        // Bob tries to place an order using Alice's trading account, will error.
         if (error_code == EInvalidTraderAbort) {
             pool_tests::place_limit_order<SUI, USDC>(
                 utils::bob(),
                 pool1_id,
-                alice_balance_manager_id,
+                alice_trading_account_id,
                 order_type,
                 constants::self_matching_allowed(),
                 price,

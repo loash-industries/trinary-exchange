@@ -6,8 +6,8 @@ module triexbook::integration_test_utils {
     use sui::{clock::Clock, sui::SUI, test_scenario::{Scenario, return_shared}};
     use token::cred::{Self as cred, ProtectedTreasury};
     use triexbook::{
-        balance_manager::{Self as balance_manager, BalanceManager},
-        balance_manager_tests::{SPAM, USDC},
+        trading_account::{Self as trading_account, TradingAccount},
+        trading_account_tests::{SPAM, USDC},
         balances::Balances,
         constants,
         pool::{Self as pool, Pool},
@@ -92,19 +92,19 @@ module triexbook::integration_test_utils {
 
     public fun authorize_trader(
         sender: address,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         trader: address,
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
         {
-            let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id,
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
             );
-            let trade_cap = balance_manager.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(test.ctx());
             let trade_cap_id = object::id(&trade_cap);
             transfer::public_transfer(trade_cap, trader);
-            return_shared(balance_manager);
+            return_shared(trading_account);
 
             trade_cap_id
         }
@@ -112,17 +112,17 @@ module triexbook::integration_test_utils {
 
     public fun remove_trader(
         sender: address,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         trade_cap_id: ID,
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
         {
-            let mut balance_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id,
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
             );
-            balance_manager.revoke_trade_cap(&trade_cap_id, test.ctx());
-            return_shared(balance_manager);
+            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
+            return_shared(trading_account);
         }
     }
 
@@ -176,8 +176,8 @@ module triexbook::integration_test_utils {
 
     public fun execute_cross_trading<BaseAsset, QuoteAsset>(
         pool_id: ID,
-        balance_manager_id_1: ID,
-        balance_manager_id_2: ID,
+        trading_account_id_1: ID,
+        trading_account_id_2: ID,
         order_type: u8,
         price: u64,
         quantity: u64,
@@ -188,7 +188,7 @@ module triexbook::integration_test_utils {
         pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
             ALICE,
             pool_id,
-            balance_manager_id_1,
+            trading_account_id_1,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -200,7 +200,7 @@ module triexbook::integration_test_utils {
         pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
             BOB,
             pool_id,
-            balance_manager_id_2,
+            trading_account_id_2,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -212,7 +212,7 @@ module triexbook::integration_test_utils {
         pool_tests::place_limit_order<BaseAsset, QuoteAsset>(
             ALICE,
             pool_id,
-            balance_manager_id_1,
+            trading_account_id_1,
             order_type,
             constants::self_matching_allowed(),
             price,
@@ -224,7 +224,7 @@ module triexbook::integration_test_utils {
         withdraw_settled_amounts<BaseAsset, QuoteAsset>(
             BOB,
             pool_id,
-            balance_manager_id_2,
+            trading_account_id_2,
             test,
         );
     }
@@ -261,39 +261,39 @@ module triexbook::integration_test_utils {
     public fun withdraw_settled_amounts<BaseAsset, QuoteAsset>(
         sender: address,
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
         {
-            let mut my_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id,
+            let mut my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
             );
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let trade_proof = my_manager.generate_proof_as_owner(test.ctx());
+            let trade_proof = my_trading_account.generate_proof_as_owner(test.ctx());
             pool::withdraw_settled_amounts<BaseAsset, QuoteAsset>(
                 &mut pool,
-                &mut my_manager,
+                &mut my_trading_account,
                 &trade_proof,
             );
-            return_shared(my_manager);
+            return_shared(my_trading_account);
             return_shared(pool);
         }
     }
 
     public fun check_balance(
-        balance_manager_id: ID,
+        trading_account_id: ID,
         expected_balances: &ExpectedBalances,
         test: &mut Scenario,
     ) {
         test.next_tx(OWNER);
         {
-            let my_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id,
+            let my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
             );
-            let sui = balance_manager::balance<SUI>(&my_manager);
-            let usdc = balance_manager::balance<USDC>(&my_manager);
-            let spam = balance_manager::balance<SPAM>(&my_manager);
+            let sui = trading_account::balance<SUI>(&my_trading_account);
+            let usdc = trading_account::balance<USDC>(&my_trading_account);
+            let spam = trading_account::balance<SPAM>(&my_trading_account);
 
             // WARNING: this helper asserts nothing. Every `ExpectedBalances` the
             // `master_*` suites thread into it is dead weight — the same defect
@@ -329,21 +329,21 @@ module triexbook::integration_test_utils {
                 std::debug::print(&expected_balances.spam);
             };
 
-            return_shared(my_manager);
+            return_shared(my_trading_account);
         }
     }
 
     public fun check_locked_balance<BaseAsset, QuoteAsset>(
         sender: address,
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         expected_balances: &ExpectedBalances,
         test: &mut Scenario,
     ) {
         let (base, quote, cred) = locked_balance<BaseAsset, QuoteAsset>(
             sender,
             pool_id,
-            balance_manager_id,
+            trading_account_id,
             test,
         );
         assert!(base == expected_balances.sui, 0);
@@ -405,21 +405,21 @@ module triexbook::integration_test_utils {
     public fun locked_balance<BaseAsset, QuoteAsset>(
         sender: address,
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         test: &mut Scenario,
     ): (u64, u64, u64) {
         test.next_tx(sender);
         {
             let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let my_manager = test.take_shared_by_id<BalanceManager>(
-                balance_manager_id,
+            let my_trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id,
             );
             let (base, quote, cred) = pool::locked_balance<BaseAsset, QuoteAsset>(
                 &pool,
-                &my_manager,
+                &my_trading_account,
             );
             return_shared(pool);
-            return_shared(my_manager);
+            return_shared(my_trading_account);
 
             (base, quote, cred)
         }

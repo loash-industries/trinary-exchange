@@ -7,7 +7,7 @@ module triexbook::vault {
     use std::type_name::{Self, TypeName};
     use sui::{balance::{Self, Balance}, coin::{Self, Coin}, event};
     use token::cred::CRED;
-    use triexbook::{balance_manager::{TradeProof, BalanceManager}, balances::Balances};
+    use triexbook::{trading_account::{TradeProof, TradingAccount}, balances::Balances};
 
     // === Errors ===
     const EInsufficientFeeReserve: u64 = 0;
@@ -53,7 +53,7 @@ module triexbook::vault {
     /// the order fills.
     public struct QuoteFeeDeposit has copy, drop {
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         taker_fee_amount: u64,
         maker_fee_amount: u64,
         timestamp: u64,
@@ -61,14 +61,14 @@ module triexbook::vault {
 
     public(package) fun new_quote_fee_deposit(
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         taker_fee_amount: u64,
         maker_fee_amount: u64,
         timestamp: u64,
     ): QuoteFeeDeposit {
         QuoteFeeDeposit {
             pool_id,
-            balance_manager_id,
+            trading_account_id,
             taker_fee_amount,
             maker_fee_amount,
             timestamp,
@@ -80,25 +80,25 @@ module triexbook::vault {
     ): (ID, ID, u64, u64, u64) {
         let QuoteFeeDeposit {
             pool_id,
-            balance_manager_id,
+            trading_account_id,
             taker_fee_amount,
             maker_fee_amount,
             timestamp,
         } = deposit;
-        (pool_id, balance_manager_id, taker_fee_amount, maker_fee_amount, timestamp)
+        (pool_id, trading_account_id, taker_fee_amount, maker_fee_amount, timestamp)
     }
 
     public(package) fun emit_pool_fees_deposited<QuoteAsset>(
         pool_id: ID,
         amount: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         timestamp: u64,
     ) {
         event::emit(PoolFeesDeposited {
             pool_id,
             quote_type: type_name::with_defining_ids<QuoteAsset>(),
             amount,
-            balance_manager_id,
+            trading_account_id,
             timestamp,
         });
     }
@@ -107,14 +107,14 @@ module triexbook::vault {
     /// Fields of a `PoolFeesRefunded` for tests asserting that a refund is
     /// attributable to the order and maker it belongs to.
     public fun refunded_event_parts(self: &PoolFeesRefunded): (u64, u64, ID) {
-        (self.order_id, self.amount, self.balance_manager_id)
+        (self.order_id, self.amount, self.trading_account_id)
     }
 
     public(package) fun emit_pool_fees_refunded<QuoteAsset>(
         pool_id: ID,
         order_id: u64,
         amount: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         timestamp: u64,
     ) {
         event::emit(PoolFeesRefunded {
@@ -122,7 +122,7 @@ module triexbook::vault {
             quote_type: type_name::with_defining_ids<QuoteAsset>(),
             order_id,
             amount,
-            balance_manager_id,
+            trading_account_id,
             timestamp,
         });
     }
@@ -145,7 +145,7 @@ module triexbook::vault {
         pool_id: ID,
         quote_type: TypeName,
         amount: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         timestamp: u64,
     }
 
@@ -162,7 +162,7 @@ module triexbook::vault {
         quote_type: TypeName,
         order_id: u64,
         amount: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         timestamp: u64,
     }
 
@@ -239,14 +239,14 @@ module triexbook::vault {
     /// payable: settled quote comes from the pool balance, so crediting settled
     /// balances alone would pay the refund out of other users' principal.
     ///
-    /// Must run before `settle_balance_manager` for the same transaction. The
+    /// Must run before `settle_trading_account` for the same transaction. The
     /// reserve is guaranteed to cover this — `locked_maker_fees` never exceeds
     /// the reserve, and the amount released never exceeds what the order locked.
     public(package) fun unlock_quote_fees<BaseAsset, QuoteAsset>(
         self: &mut Vault<BaseAsset, QuoteAsset>,
         pool_id: ID,
         order_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         amount: u64,
         timestamp: u64,
     ) {
@@ -260,7 +260,7 @@ module triexbook::vault {
             pool_id,
             order_id,
             amount,
-            balance_manager_id,
+            trading_account_id,
             timestamp,
         );
     }
@@ -275,30 +275,30 @@ module triexbook::vault {
         }
     }
 
-    /// Transfer any settled amounts for the `balance_manager`.
-    public(package) fun settle_balance_manager<BaseAsset, QuoteAsset>(
+    /// Transfer any settled amounts for the `trading_account`.
+    public(package) fun settle_trading_account<BaseAsset, QuoteAsset>(
         self: &mut Vault<BaseAsset, QuoteAsset>,
         balances_out: Balances,
         balances_in: Balances,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         quote_fee_deposit: Option<QuoteFeeDeposit>,
     ) {
-        balance_manager.validate_proof(trade_proof);
+        trading_account.validate_proof(trade_proof);
         if (balances_out.base() > balances_in.base()) {
             let balance = self.base_balance.split(balances_out.base() - balances_in.base());
-            balance_manager.deposit_with_proof(trade_proof, balance);
+            trading_account.deposit_with_proof(trade_proof, balance);
         };
         if (balances_out.quote() > balances_in.quote()) {
             let balance = self.quote_balance.split(balances_out.quote() - balances_in.quote());
-            balance_manager.deposit_with_proof(trade_proof, balance);
+            trading_account.deposit_with_proof(trade_proof, balance);
         };
         if (balances_out.cred() > balances_in.cred()) {
             let balance = self.cred_balance.split(balances_out.cred() - balances_in.cred());
-            balance_manager.deposit_with_proof(trade_proof, balance);
+            trading_account.deposit_with_proof(trade_proof, balance);
         };
         if (balances_in.base() > balances_out.base()) {
-            let balance = balance_manager.withdraw_with_proof(
+            let balance = trading_account.withdraw_with_proof(
                 trade_proof,
                 balances_in.base() - balances_out.base(),
                 false,
@@ -306,7 +306,7 @@ module triexbook::vault {
             self.base_balance.join(balance);
         };
         if (balances_in.quote() > balances_out.quote()) {
-            let balance = balance_manager.withdraw_with_proof(
+            let balance = trading_account.withdraw_with_proof(
                 trade_proof,
                 balances_in.quote() - balances_out.quote(),
                 false,
@@ -315,7 +315,7 @@ module triexbook::vault {
         };
         // Fee escrow is carved out of the pool's quote balance rather than out of
         // the marginal withdrawal above. The quote a user owes (fees included) is
-        // retained by the pool either way — withdrawn from their balance manager,
+        // retained by the pool either way — withdrawn from their trading account,
         // or netted against settled balances the pool therefore never paid out —
         // so the fee is covered even when prior settled balances cover the order
         // outright and nothing is withdrawn at all.
@@ -323,14 +323,14 @@ module triexbook::vault {
             let deposit = quote_fee_deposit.destroy_some();
             let (
                 pool_id,
-                balance_manager_id,
+                trading_account_id,
                 taker_fee_amount,
                 maker_fee_amount,
                 timestamp,
             ) = quote_fee_deposit_into_parts(deposit);
             self.move_quote_to_fee_reserve(
                 pool_id,
-                balance_manager_id,
+                trading_account_id,
                 taker_fee_amount + maker_fee_amount,
                 timestamp,
             );
@@ -341,7 +341,7 @@ module triexbook::vault {
             option::destroy_none(quote_fee_deposit);
         };
         if (balances_in.cred() > balances_out.cred()) {
-            let balance = balance_manager.withdraw_with_proof(
+            let balance = trading_account.withdraw_with_proof(
                 trade_proof,
                 balances_in.cred() - balances_out.cred(),
                 false,
@@ -350,12 +350,12 @@ module triexbook::vault {
         };
     }
 
-    /// Transfer any settled amounts for the `balance_manager`.
-    public(package) fun settle_balance_manager_permissionless<BaseAsset, QuoteAsset>(
+    /// Transfer any settled amounts for the `trading_account`.
+    public(package) fun settle_trading_account_permissionless<BaseAsset, QuoteAsset>(
         self: &mut Vault<BaseAsset, QuoteAsset>,
         balances_out: Balances,
         balances_in: Balances,
-        balance_manager: &mut BalanceManager,
+        trading_account: &mut TradingAccount,
     ) {
         assert!(
             balances_in.base() == 0 && balances_in.quote() == 0 && balances_in.cred() == 0,
@@ -369,15 +369,15 @@ module triexbook::vault {
 
         if (balances_out.base() > 0) {
             let balance = self.base_balance.split(balances_out.base());
-            balance_manager.deposit_permissionless(balance);
+            trading_account.deposit_permissionless(balance);
         };
         if (balances_out.quote() > 0) {
             let balance = self.quote_balance.split(balances_out.quote());
-            balance_manager.deposit_permissionless(balance);
+            trading_account.deposit_permissionless(balance);
         };
         if (balances_out.cred() > 0) {
             let balance = self.cred_balance.split(balances_out.cred());
-            balance_manager.deposit_permissionless(balance);
+            trading_account.deposit_permissionless(balance);
         };
     }
 
@@ -470,14 +470,14 @@ module triexbook::vault {
     public(package) fun move_quote_to_fee_reserve<BaseAsset, QuoteAsset>(
         self: &mut Vault<BaseAsset, QuoteAsset>,
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         amount: u64,
         timestamp: u64,
     ) {
         if (amount == 0) return;
         let fee_balance = self.quote_balance.split(amount);
         self.quote_fee_reserve.join(fee_balance);
-        emit_pool_fees_deposited<QuoteAsset>(pool_id, amount, balance_manager_id, timestamp);
+        emit_pool_fees_deposited<QuoteAsset>(pool_id, amount, trading_account_id, timestamp);
     }
 
     /// Deposit quote fees into the fee reserve bucket

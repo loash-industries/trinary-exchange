@@ -14,7 +14,7 @@ module triexbook::fill {
         // Execution price
         execution_price: u64,
         // account_id of the maker order
-        balance_manager_id: ID,
+        trading_account_id: ID,
         // Whether the maker order is expired
         expired: bool,
         // Whether the maker order is fully filled
@@ -49,8 +49,8 @@ module triexbook::fill {
         self.execution_price
     }
 
-    public fun balance_manager_id(self: &Fill): ID {
-        self.balance_manager_id
+    public fun trading_account_id(self: &Fill): ID {
+        self.trading_account_id
     }
 
     public fun expired(self: &Fill): bool {
@@ -101,7 +101,7 @@ module triexbook::fill {
     public(package) fun new(
         maker_order_id: u64,
         execution_price: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         expired: bool,
         completed: bool,
         original_maker_quantity: u64,
@@ -115,7 +115,7 @@ module triexbook::fill {
         Fill {
             maker_order_id,
             execution_price,
-            balance_manager_id,
+            trading_account_id,
             expired,
             completed,
             original_maker_quantity,

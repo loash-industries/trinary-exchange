@@ -34,7 +34,7 @@ module triexbook::order_info {
         // ID of the order within the pool
         order_id: u64,
         // ID of the account the order uses
-        balance_manager_id: ID,
+        trading_account_id: ID,
         // Trader of the order
         trader: address,
         // Order type, NO_RESTRICTION, IMMEDIATE_OR_CANCEL, FILL_OR_KILL, POST_ONLY
@@ -93,14 +93,14 @@ module triexbook::order_info {
         maker_fee: u64,
         base_quantity: u64,
         quote_quantity: u64,
-        maker_balance_manager_id: ID,
-        taker_balance_manager_id: ID,
+        maker_trading_account_id: ID,
+        taker_trading_account_id: ID,
         timestamp: u64,
     }
 
     /// Emitted when a maker order is injected into the order book.
     public struct OrderPlaced has copy, drop, store {
-        balance_manager_id: ID,
+        trading_account_id: ID,
         pool_id: ID,
         order_id: u64,
         trader: address,
@@ -118,7 +118,7 @@ module triexbook::order_info {
     /// this same `order_id`. Both are zero for an expired ask, which escrows
     /// nothing.
     public struct OrderExpired has copy, drop, store {
-        balance_manager_id: ID,
+        trading_account_id: ID,
         pool_id: ID,
         order_id: u64,
         trader: address, // trader that expired the order
@@ -142,7 +142,7 @@ module triexbook::order_info {
     public struct OrderFullyFilled has copy, drop, store {
         pool_id: ID,
         order_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         original_quantity: u64,
         is_bid: bool,
         timestamp: u64,
@@ -157,8 +157,8 @@ module triexbook::order_info {
         self.order_id
     }
 
-    public fun balance_manager_id(self: &OrderInfo): ID {
-        self.balance_manager_id
+    public fun trading_account_id(self: &OrderInfo): ID {
+        self.trading_account_id
     }
 
     public fun trader(self: &OrderInfo): address {
@@ -236,7 +236,7 @@ module triexbook::order_info {
     // === Public-Package Functions ===
     public(package) fun new(
         pool_id: ID,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         trader: address,
         order_type: u8,
         self_matching_option: u8,
@@ -254,7 +254,7 @@ module triexbook::order_info {
         OrderInfo {
             pool_id,
             order_id: 0,
-            balance_manager_id,
+            trading_account_id,
             trader,
             order_type,
             self_matching_option,
@@ -400,7 +400,7 @@ module triexbook::order_info {
     public(package) fun to_order(self: &OrderInfo): Order {
         order::new(
             self.order_id,
-            self.balance_manager_id,
+            self.trading_account_id,
             self.price,
             self.is_bid,
             self.original_quantity,
@@ -488,13 +488,13 @@ module triexbook::order_info {
 
         if (self.self_matching_option() == constants::cancel_taker()) {
             assert!(
-                maker.balance_manager_id() != self.balance_manager_id(),
+                maker.trading_account_id() != self.trading_account_id(),
                 ESelfMatchingCancelTaker,
             );
         };
         let expire_maker =
             self.self_matching_option() == constants::cancel_maker() &&
-        maker.balance_manager_id() == self.balance_manager_id();
+        maker.trading_account_id() == self.trading_account_id();
         let fill = maker.generate_fill(
             timestamp,
             self.remaining_quantity(),
@@ -524,7 +524,7 @@ module triexbook::order_info {
             if (fill.completed()) {
                 self.emit_order_fully_filled(
                     fill.maker_order_id(),
-                    fill.balance_manager_id(),
+                    fill.trading_account_id(),
                     fill.original_maker_quantity(),
                     !fill.taker_is_bid(),
                     timestamp,
@@ -533,7 +533,7 @@ module triexbook::order_info {
             if (!fill.expired()) {
                 event::emit(self.order_filled_from_fill(fill, timestamp));
             } else {
-                let cancel_maker = self.balance_manager_id() == fill.balance_manager_id();
+                let cancel_maker = self.trading_account_id() == fill.trading_account_id();
                 if (cancel_maker) {
                     self.emit_order_canceled_maker_from_fill(fill, timestamp);
                 } else {
@@ -546,7 +546,7 @@ module triexbook::order_info {
 
     public(package) fun emit_order_placed(self: &OrderInfo) {
         event::emit(OrderPlaced {
-            balance_manager_id: self.balance_manager_id,
+            trading_account_id: self.trading_account_id,
             pool_id: self.pool_id,
             order_id: self.order_id,
             is_bid: self.is_bid,
@@ -566,7 +566,7 @@ module triexbook::order_info {
         if (self.status == constants::filled()) {
             self.emit_order_fully_filled(
                 self.order_id,
-                self.balance_manager_id,
+                self.trading_account_id,
                 self.original_quantity,
                 self.is_bid,
                 timestamp,
@@ -577,7 +577,7 @@ module triexbook::order_info {
     public(package) fun emit_order_fully_filled(
         self: &OrderInfo,
         order_id: u64,
-        balance_manager_id: ID,
+        trading_account_id: ID,
         original_quantity: u64,
         is_bid: bool,
         timestamp: u64,
@@ -585,7 +585,7 @@ module triexbook::order_info {
         event::emit(OrderFullyFilled {
             pool_id: self.pool_id,
             order_id,
-            balance_manager_id,
+            trading_account_id,
             original_quantity,
             is_bid,
             timestamp,
@@ -612,15 +612,15 @@ module triexbook::order_info {
             maker_fee: fill.maker_fee(),
             base_quantity: fill.base_quantity(),
             quote_quantity: fill.quote_quantity(),
-            maker_balance_manager_id: fill.balance_manager_id(),
-            taker_balance_manager_id: self.balance_manager_id,
+            maker_trading_account_id: fill.trading_account_id(),
+            taker_trading_account_id: self.trading_account_id,
             timestamp,
         }
     }
 
     fun order_expired_from_fill(self: &OrderInfo, fill: &Fill, timestamp: u64): OrderExpired {
         OrderExpired {
-            balance_manager_id: fill.balance_manager_id(),
+            trading_account_id: fill.trading_account_id(),
             pool_id: self.pool_id,
             order_id: fill.maker_order_id(),
             trader: self.trader(),
@@ -636,7 +636,7 @@ module triexbook::order_info {
 
     fun emit_order_canceled_maker_from_fill(self: &OrderInfo, fill: &Fill, timestamp: u64) {
         order::emit_cancel_maker(
-            fill.balance_manager_id(),
+            fill.trading_account_id(),
             self.pool_id,
             fill.maker_order_id(),
             self.trader(),
