@@ -162,7 +162,60 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 - [`build_scripts/verify-bytecode-meter.sh`](build_scripts/verify-bytecode-meter.sh)
   — runs `sui client verify-bytecode-meter` over every compiled module to
-  confirm the package stays within Sui's bytecode metering limits.
+  confirm the package stays within Sui's bytecode metering limits. This is a
+  publish-time check on module complexity; it says nothing about what a function
+  costs to call. Needs a reachable fullnode, since it fetches the protocol
+  config over RPC.
+
+  **Currently cannot run on sui 1.74.1.** `sui move build` emits Move bytecode
+  version 7 with the Sui flavor (header magic `deadc0de`) and the CLI's meter
+  cannot deserialize it — `--module` reports `BAD_MAGIC`, `--package` panics as
+  unimplemented, both on untouched modules. There is no sound workaround:
+  rewriting the header to the plain Move magic only advances the failure to
+  `UNKNOWN_VERSION`, and metering doctored bytecode would not describe what
+  actually publishes. The script detects this and explains it rather than
+  failing cryptically. Bytecode metering is unverified until the CLI reads v7.
+
+- [`build_scripts/gas-benchmark.sh`](build_scripts/gas-benchmark.sh) — measures
+  what user-facing operations actually cost. `sui move test --gas-limit N`
+  aborts a test that spends more than `N`, so the smallest `N` a benchmark
+  survives is exactly the gas it needs; the script binary-searches that per
+  benchmark and prints a table plus the differentials.
+
+  ```
+  ./build_scripts/gas-benchmark.sh              # everything (~10 min)
+  ./build_scripts/gas-benchmark.sh bench_depth  # only matching benchmarks
+  PRECISION=20 ./build_scripts/gas-benchmark.sh # 5% instead of 1%, faster
+  ```
+
+  Benchmarks live in [`tests/gas_benchmarks.move`](tests/gas_benchmarks.move)
+  with bodies in `pool_test_utils`. They are not correctness tests — each just
+  performs a fixed amount of work, and is read by subtracting it from one that
+  does strictly more.
+
+  They cover the whole order lifecycle: **creating** (`bench_depth_10/40/80`,
+  which also give the cost curve against book depth), **matching**
+  (`bench_taker_sweeps_*` for a crossing limit order, `bench_market_sweeps_10`
+  for a market order, `bench_swap_base_for_quote_10` for the manager-less swap),
+  **modifying** (`bench_modify_at_depth_80`) and **cancelling**
+  (`bench_cancel_at_depth_80` for one order, `bench_cancel_all_at_depth_80` for
+  `cancel_all_orders`, which loops open orders over an O(depth) cancel and is
+  the most expensive call the pool exposes). `bench_ladder_1_tier` against
+  `bench_ladder_8_tiers` prices tier resolution.
+
+  Benchmarks that difference against each other must do identical work apart
+  from the operation being measured — same order quantities, same book shape.
+  `bench_modify_at_depth_80` and `bench_cancel_*_at_depth_80` are built to
+  subtract `bench_depth_80`; the three consuming benchmarks subtract
+  `bench_makers_10`.
+
+  The numbers are **Move VM gas** (instruction and memory cost), not Sui
+  computation + storage fees. Use them to compare operations against each other
+  and to watch cost grow with book depth; they will not predict a mainnet fee.
+  Getting real fees means publishing to a network and reading `gasUsed` from
+  transaction effects, which this package is not yet set up for — neither
+  `token` nor the `multicoin` git dependency declares a `localnet` environment,
+  so a local publish fails on the dependency graph before it reaches the chain.
 
 ## Deployments
 
