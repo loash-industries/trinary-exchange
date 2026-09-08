@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Fee turnover module tracks how much an account has paid in fees over a
 /// trailing window of epochs, which is the metric a `FeeSchedule` resolves a
 /// trader's tier against.

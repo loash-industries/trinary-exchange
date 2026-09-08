@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Fee schedule module holds the tier ladder a pool prices trades against.
 ///
 /// A schedule is a step function, not a set of marginal brackets: an order is

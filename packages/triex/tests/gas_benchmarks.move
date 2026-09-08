@@ -1,6 +1,3 @@
-// Copyright (c) Mysten Labs, Inc.
-// SPDX-License-Identifier: Apache-2.0
-
 /// Gas benchmarks, not correctness tests.
 ///
 /// Each benchmark performs a fixed amount of work. `build_scripts/gas-benchmark.sh`
