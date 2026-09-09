@@ -11,7 +11,7 @@ The package ships two parallel pool implementations:
 
 | | Standard pool | MultiCoin pool |
 | --- | --- | --- |
-| Module | `triexbook::pool` | `triexbook::multicoin_pool` |
+| Module | `triex::pool` | `triex::multicoin_pool` |
 | Pool type | `Pool<BaseAsset, QuoteAsset>` | `MultiCoinPool<QuoteAsset>` |
 | Base asset | A Sui `Coin<BaseAsset>` type | A [multicoin](https://github.com/Algorithmic-Warfare/multicoin) balance identified at runtime by `(collection_id, asset_id)` |
 | Vault storage | `Balance<BaseAsset>` + `Balance<QuoteAsset>` | Dual storage: quote/CRED in Sui `Balance`s, base in a dynamic object field keyed by `(collection_id, asset_id)` |
@@ -32,18 +32,18 @@ order:
    trade parameters, and fee accounting. Processes each action's
    results and computes settlement amounts.
 3. **Vault** (`sources/vault/`) — holds the pool's assets and settles the
-   computed balances against the user's `BalanceManager` at the end of the
+   computed balances against the user's `TradingAccount` at the end of the
    action.
 
 Two shared objects sit alongside the pools:
 
 - **`Registry`** (`sources/registry.move`) — singleton created at publish
   time. Tracks all pools (preventing duplicates per asset pair), the treasury
-  address, allowed package versions, approved quote/stable coins, and the
-  `TriexbookAdminCap` capability that gates all admin functions.
-- **`BalanceManager`** (`sources/balance_manager.move`) — holds all of one
+  address, allowed package versions, approved quote coins, and the
+  `TriexAdminCap` capability that gates all admin functions.
+- **`TradingAccount`** (`sources/trading_account.move`) — holds all of one
   account's balances (both regular coins and multicoin assets) and is passed
-  into nearly every exchange interaction; one manager works across all pools.
+  into nearly every exchange interaction; one account works across all pools.
   The owner authorizes each action with a `TradeProof`, generated either
   directly (`generate_proof_as_owner`) or by a delegated trader holding a
   `TradeCap` (`generate_proof_as_trader`). Scoped `DepositCap` /
@@ -51,8 +51,8 @@ Two shared objects sit alongside the pools:
 
 ## Trading interface
 
-The public entry points live in `triexbook::pool` and
-`triexbook::multicoin_pool` (mirrored signatures):
+The public entry points live in `triex::pool` and
+`triex::multicoin_pool` (mirrored signatures):
 
 - **Pool creation** — `create_permissionless_pool` (burns a CRED creation
   fee), plus admin-gated `create_pool_admin` / `unregister_pool_admin`.
@@ -62,15 +62,15 @@ The public entry points live in `triexbook::pool` and
   and `POST_ONLY`, plus self-matching options (allow, cancel-taker,
   cancel-maker) and expiry timestamps.
 - **Swaps** — `swap_exact_base_for_quote`, `swap_exact_quote_for_base`, and
-  `..._with_manager` variants for one-shot taker trades without maintaining
-  resting orders.
+  `..._with_trading_account` variants for one-shot taker trades without
+  maintaining resting orders.
 - **Settlement** — `withdraw_settled_amounts` (and a
   `withdraw_settled_amounts_permissionless` variant) to move settled funds
-  from the pool back to a `BalanceManager`.
+  from the pool back to a `TradingAccount`.
 - **Queries** — `mid_price`, `get_quantity_out`, `get_level2_range`,
   `get_level2_ticks_from_mid`, `account_open_orders`, `locked_balance`,
   `vault_balances`, and paginated order iteration via
-  `triexbook::order_query` (`OrderPage`).
+  `triex::order_query` (`OrderPage`).
 
 ### Fees
 
@@ -82,14 +82,32 @@ Pools support two fee modes:
   used only to pay fees and confers no voting or staking rights.
 - **Quote fees** — the `..._with_quote_fees` order variants accrue fees in
   the pool's quote currency into a `quote_fee_reserve`
-  (`triexbook::quote_fee`), which the admin sweeps with
-  `withdraw_pool_fees`.
+  (`triex::quote_fee`), which the admin sweeps with
+  `withdraw_pool_fees`. A bid maker's fee is *escrow*, not revenue, until
+  their order resolves: `locked_maker_fees` tracks it and the sweep is capped
+  at `withdrawable_pool_fees` (reserve minus escrow), so an admin can never
+  spend a fee still backing an open order.
 
-Trade parameters are admin-set per epoch (`set_next_epoch_fee`); the original
+Trade parameters carry separate taker and maker rates (coin pools default to
+taker 2.2% / maker 1.8%; multicoin pools to taker 1.1% / maker 0.9%) and are
+admin-set per epoch
+(`set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps)`); each order
+snapshots the maker rate and the retention rate at placement and settles
+against them for its lifetime. Cancelling, modifying down or expiring a
+resting bid refunds `10000 - cancel_retention_bps` of the escrow on the
+released quantity (default 80%) and keeps the rest as revenue, so an
+unexecuted order costs only the retention plus gas. `OrderCanceled`,
+`OrderModified` and `OrderExpired` carry both halves of that split, and the
+vault's `PoolFeesRefunded` carries the same `order_id`, so a refund is always
+attributable to the order and the maker it belongs to. Fees are charged
+on both sides of a trade, always denominated in quote: bid takers pay on top
+of the quote they owe and bid makers lock their fee at placement, while ask
+takers and ask makers have theirs deducted from the quote proceeds at fill
+time. The original
 DeepBook stake/proposal/vote system, flash loans, and referral system are
 present in the source but disabled (commented out) — none of them are part of
 this protocol. An optional
-EWMA state (`triexbook::ewma`) tracks smoothed reference gas price mean and
+EWMA state (`triex::ewma`) tracks smoothed reference gas price mean and
 variance and can add a taker-fee penalty when the current gas price's z-score
 signals congestion.
 
@@ -106,8 +124,8 @@ after upgrades.
 sources/
 ├── pool.move             # Public trading interface (standard pools)
 ├── multicoin_pool.move   # Public trading interface (multicoin pools)
-├── balance_manager.move  # BalanceManager + TradeCap/DepositCap/WithdrawCap
-├── registry.move         # Pool registry, TriexbookAdminCap, versioning
+├── trading_account.move  # TradingAccount + TradeCap/DepositCap/WithdrawCap
+├── registry.move         # Pool registry, TriexAdminCap, versioning
 ├── order_query.move      # Paginated order iteration (OrderPage)
 ├── book/                 # Order book: book, order, order_info, fill
 ├── state/                # state, account, history, governance, trade_params,
@@ -144,7 +162,60 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 - [`build_scripts/verify-bytecode-meter.sh`](build_scripts/verify-bytecode-meter.sh)
   — runs `sui client verify-bytecode-meter` over every compiled module to
-  confirm the package stays within Sui's bytecode metering limits.
+  confirm the package stays within Sui's bytecode metering limits. This is a
+  publish-time check on module complexity; it says nothing about what a function
+  costs to call. Needs a reachable fullnode, since it fetches the protocol
+  config over RPC.
+
+  **Currently cannot run on sui 1.74.1.** `sui move build` emits Move bytecode
+  version 7 with the Sui flavor (header magic `deadc0de`) and the CLI's meter
+  cannot deserialize it — `--module` reports `BAD_MAGIC`, `--package` panics as
+  unimplemented, both on untouched modules. There is no sound workaround:
+  rewriting the header to the plain Move magic only advances the failure to
+  `UNKNOWN_VERSION`, and metering doctored bytecode would not describe what
+  actually publishes. The script detects this and explains it rather than
+  failing cryptically. Bytecode metering is unverified until the CLI reads v7.
+
+- [`build_scripts/gas-benchmark.sh`](build_scripts/gas-benchmark.sh) — measures
+  what user-facing operations actually cost. `sui move test --gas-limit N`
+  aborts a test that spends more than `N`, so the smallest `N` a benchmark
+  survives is exactly the gas it needs; the script binary-searches that per
+  benchmark and prints a table plus the differentials.
+
+  ```
+  ./build_scripts/gas-benchmark.sh              # everything (~10 min)
+  ./build_scripts/gas-benchmark.sh bench_depth  # only matching benchmarks
+  PRECISION=20 ./build_scripts/gas-benchmark.sh # 5% instead of 1%, faster
+  ```
+
+  Benchmarks live in [`tests/gas_benchmarks.move`](tests/gas_benchmarks.move)
+  with bodies in `pool_test_utils`. They are not correctness tests — each just
+  performs a fixed amount of work, and is read by subtracting it from one that
+  does strictly more.
+
+  They cover the whole order lifecycle: **creating** (`bench_depth_10/40/80`,
+  which also give the cost curve against book depth), **matching**
+  (`bench_taker_sweeps_*` for a crossing limit order, `bench_market_sweeps_10`
+  for a market order, `bench_swap_base_for_quote_10` for the manager-less swap),
+  **modifying** (`bench_modify_at_depth_80`) and **cancelling**
+  (`bench_cancel_at_depth_80` for one order, `bench_cancel_all_at_depth_80` for
+  `cancel_all_orders`, which loops open orders over an O(depth) cancel and is
+  the most expensive call the pool exposes). `bench_ladder_1_tier` against
+  `bench_ladder_8_tiers` prices tier resolution.
+
+  Benchmarks that difference against each other must do identical work apart
+  from the operation being measured — same order quantities, same book shape.
+  `bench_modify_at_depth_80` and `bench_cancel_*_at_depth_80` are built to
+  subtract `bench_depth_80`; the three consuming benchmarks subtract
+  `bench_makers_10`.
+
+  The numbers are **Move VM gas** (instruction and memory cost), not Sui
+  computation + storage fees. Use them to compare operations against each other
+  and to watch cost grow with book depth; they will not predict a mainnet fee.
+  Getting real fees means publishing to a network and reading `gasUsed` from
+  transaction effects, which this package is not yet set up for — neither
+  `token` nor the `multicoin` git dependency declares a `localnet` environment,
+  so a local publish fails on the dependency graph before it reaches the chain.
 
 ## Deployments
 
@@ -169,7 +240,7 @@ and license headers are retained in the source files.
 
 **Notice of changes** (per Apache-2.0 §4(b)): the Move sources in this package
 have been modified from the original DeepBook v3 code. Notable changes include
-renaming the package and modules to `triexbook`, replacing the DEEP token with
+renaming the package and modules to `triex`, replacing the DEEP token with
 the `CRED` token, adding the MultiCoin pool/vault variants
 (`multicoin_pool`, `multicoin_vault`) with runtime-identified base assets and
 adjusted price scaling, adding quote-denominated fee collection
