@@ -564,11 +564,11 @@ module triex::integration_multicoin_pool_price_scaling_tests {
         let pool_id = {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut reg = test.take_shared_by_id<Registry>(registry_id);
-            let mut policy = test.take_shared<FeePolicy>();
+            let policy = test.take_shared<FeePolicy>();
             let collection = test.take_shared<Collection>();
             let id = multicoin_pool::create_pool_admin<CRED>(
                 &mut reg,
-                &mut policy,
+                &policy,
                 &collection,
                 ASSET_GOLD,
                 &admin_cap,
@@ -726,11 +726,11 @@ module triex::integration_multicoin_pool_price_scaling_tests {
         let pool_id = {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut reg = test.take_shared_by_id<Registry>(registry_id);
-            let mut policy = test.take_shared<FeePolicy>();
+            let policy = test.take_shared<FeePolicy>();
             let collection = test.take_shared<Collection>();
             let id = multicoin_pool::create_pool_admin<CRED>(
                 &mut reg,
-                &mut policy,
+                &policy,
                 &collection,
                 ASSET_GOLD,
                 &admin_cap,
@@ -874,11 +874,11 @@ module triex::integration_multicoin_pool_price_scaling_tests {
         let pool_id = {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut reg = test.take_shared_by_id<Registry>(registry_id);
-            let mut policy = test.take_shared<FeePolicy>();
+            let policy = test.take_shared<FeePolicy>();
             let collection = test.take_shared<Collection>();
             let id = multicoin_pool::create_pool_admin<CRED>(
                 &mut reg,
-                &mut policy,
+                &policy,
                 &collection,
                 ASSET_GOLD,
                 &admin_cap,

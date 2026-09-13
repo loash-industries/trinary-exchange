@@ -252,18 +252,17 @@ module triex::fee_policy_operator_share_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
 
-        assert!(!policy.has_operator_beneficiary(a_collection()));
         assert_eq!(policy.operator_beneficiary(a_collection()), option::none());
 
-        policy.register_operator_beneficiary(a_collection(), @0xB0B);
+        policy.register_operator_beneficiary_for_testing(a_collection(), @0xB0B);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
 
         // A later registration cannot re-point it.
-        policy.register_operator_beneficiary(a_collection(), @0xBAD);
+        policy.register_operator_beneficiary_for_testing(a_collection(), @0xBAD);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
 
         // And collections are independent.
-        assert!(!policy.has_operator_beneficiary(another_collection()));
+        assert!(policy.operator_beneficiary(another_collection()).is_none());
 
         destroy(policy);
         end(test);
@@ -275,17 +274,17 @@ module triex::fee_policy_operator_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.register_operator_beneficiary(a_collection(), @0xB0B);
+        policy.register_operator_beneficiary_for_testing(a_collection(), @0xB0B);
         policy.destroy_operator_beneficiary(a_collection(), &cap);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::none());
 
         // Destroying what is not there is a no-op, not an abort — payout
         // tooling must be able to run it idempotently.
         policy.destroy_operator_beneficiary(a_collection(), &cap);
-        assert!(!policy.has_operator_beneficiary(a_collection()));
+        assert!(policy.operator_beneficiary(a_collection()).is_none());
 
         // After a destroy, the next registration may pin a fresh address.
-        policy.register_operator_beneficiary(a_collection(), @0xCAFE);
+        policy.register_operator_beneficiary_for_testing(a_collection(), @0xCAFE);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xCAFE));
 
         destroy(cap);

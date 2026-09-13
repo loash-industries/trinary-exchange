@@ -41,7 +41,7 @@ module triex::quote_fee {
         (refund, basis - refund)
     }
 
-    #[test_only]
+    /// 100.00% in basis points — the denominator for every bps split.
     public fun fee_precision(): u64 {
         FEE_PRECISION
     }

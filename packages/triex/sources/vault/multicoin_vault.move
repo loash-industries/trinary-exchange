@@ -14,6 +14,7 @@ module triex::multicoin_vault {
     use triex::{
         balances::Balances,
         constants,
+        quote_fee,
         trading_account::{TradeProof, TradingAccount},
         vault
     };
@@ -178,10 +179,6 @@ module triex::multicoin_vault {
         (reserve - encumbered) as u64
     }
 
-    fun bps_precision(): u128 {
-        10000
-    }
-
     #[test_only]
     /// Mark quote already in the reserve as bid-maker escrow, standing in for a
     /// placement, so the locked-fee arithmetic can be exercised directly.
@@ -232,12 +229,15 @@ module triex::multicoin_vault {
         amount: u64,
         operator_bps: u64,
     ) {
-        // Belt over the policy's write-time assert and read-time clamp: a rate
-        // above the ceiling must not mint a claim above it.
-        assert!(operator_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
         if (amount == 0 || operator_bps == 0) return;
+        // Belt over the policy's write-time assert and read-time clamp: a rate
+        // above the ceiling must not mint a claim above it. Checked only when a
+        // claim would actually be minted, so the default feature-off path
+        // (bps = 0) pays nothing for it.
+        assert!(operator_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
 
-        let owed = (((amount as u128) * (operator_bps as u128)) / bps_precision()) as u64;
+        let owed =
+            (((amount as u128) * (operator_bps as u128)) / (quote_fee::fee_precision() as u128)) as u64;
         self.operator_owed = self.operator_owed + owed;
     }
 

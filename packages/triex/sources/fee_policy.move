@@ -606,13 +606,7 @@ module triex::fee_policy {
         // that nobody notices until an operator asks where their payment is.
         assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
-        let key = OperatorShareAssignmentKey { collection_id };
-        if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, key)) {
-            let assigned: &mut u16 = df::borrow_mut(&mut self.id, key);
-            *assigned = class_id;
-        } else {
-            df::add(&mut self.id, key, class_id);
-        };
+        upsert(&mut self.id, OperatorShareAssignmentKey { collection_id }, class_id);
 
         event::emit(OperatorShareClassAssigned { collection_id, class_id });
     }
@@ -626,13 +620,7 @@ module triex::fee_policy {
     ) {
         assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
-        let key = DefaultOperatorShareKey {};
-        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, key)) {
-            let current: &mut u16 = df::borrow_mut(&mut self.id, key);
-            *current = class_id;
-        } else {
-            df::add(&mut self.id, key, class_id);
-        };
+        upsert(&mut self.id, DefaultOperatorShareKey {}, class_id);
     }
 
     /// The share rate applying to revenue this collection's pools recognize in
@@ -690,15 +678,19 @@ module triex::fee_policy {
     /// link a module.
     public fun set_operator_adapter<W: drop>(self: &mut FeePolicy, _cap: &TriexAdminCap) {
         let adapter = type_name::with_defining_ids<W>();
-        let key = AuthorizedAdapterKey {};
-        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
-            let current: &mut TypeName = df::borrow_mut(&mut self.id, key);
-            *current = adapter;
-        } else {
-            df::add(&mut self.id, key, adapter);
-        };
+        upsert(&mut self.id, AuthorizedAdapterKey {}, adapter);
 
         event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
+    }
+
+    /// Set `key` to `value`, present or not — the dynamic-field upsert every
+    /// single-valued setter above shares.
+    fun upsert<K: copy + drop + store, V: drop + store>(id: &mut UID, key: K, value: V) {
+        if (df::exists_with_type<K, V>(id, key)) {
+            *df::borrow_mut<K, V>(id, key) = value;
+        } else {
+            df::add(id, key, value);
+        };
     }
 
     /// Withdraw the adapter, closing the registration path entirely until a new
@@ -763,7 +755,9 @@ module triex::fee_policy {
     /// The set-if-absent write both the witness path above and tests land on.
     /// Set-if-absent is what makes a *second* registration attempt safe: it
     /// cannot capture a beneficiary an earlier registration established.
-    public(package) fun register_operator_beneficiary(
+    /// Private, so no other module in the package can write a beneficiary
+    /// without presenting the adapter witness.
+    fun register_operator_beneficiary(
         self: &mut FeePolicy,
         collection_id: ID,
         beneficiary: address,
@@ -803,10 +797,14 @@ module triex::fee_policy {
         }
     }
 
-    public fun has_operator_beneficiary(self: &FeePolicy, collection_id: ID): bool {
-        df::exists_with_type<OperatorBeneficiaryKey, address>(
-            &self.id,
-            OperatorBeneficiaryKey { collection_id },
-        )
+    #[test_only]
+    /// Register a beneficiary without the adapter witness, for tests exercising
+    /// the mapping itself rather than the registration gate.
+    public fun register_operator_beneficiary_for_testing(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+    ) {
+        self.register_operator_beneficiary(collection_id, beneficiary);
     }
 }

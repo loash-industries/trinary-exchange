@@ -612,7 +612,6 @@ module triex::multicoin_pool {
         let previous_quantity = self.get_order(order_id).quantity();
 
         let pool_inner = self.load_inner_mut();
-        let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let (cancel_quantity, order) = pool_inner
             .book
             .modify_order(order_id, new_quantity, clock.timestamp_ms());
@@ -651,9 +650,15 @@ module triex::multicoin_pool {
         // A modify-down retains its share on the same terms as a cancel, so
         // requoting down cannot dodge the retention. The retained escrow is
         // revenue recognized now, so the hub is credited its share of it now.
-        pool_inner
-            .vault
-            .recognize_locked_maker_fees(fee_release.release_retained(), operator_bps);
+        // The rate is resolved only when something was actually retained, so
+        // the common zero-retention modify never walks the policy.
+        let retained = fee_release.release_retained();
+        let operator_bps = if (retained > 0) {
+            policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch())
+        } else {
+            0
+        };
+        pool_inner.vault.recognize_locked_maker_fees(retained, operator_bps);
 
         order.emit_order_modified(
             pool_inner.pool_id,
@@ -680,8 +685,24 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
+        self.cancel_order_int(policy, option::none(), trading_account, trade_proof, order_id, clock, ctx);
+    }
+
+    /// The cancel body. `batch_operator_bps` carries a rate the batch entry
+    /// points resolved once for their whole transaction; `none` resolves
+    /// lazily, and only when the cancel actually retained escrow — an ask
+    /// cancel never walks the policy at all.
+    fun cancel_order_int<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        policy: &FeePolicy,
+        batch_operator_bps: Option<u64>,
+        trading_account: &mut TradingAccount,
+        trade_proof: &TradeProof,
+        order_id: u64,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
         let pool_inner = self.load_inner_mut();
-        let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let mut order = pool_inner.book.cancel_order(order_id);
         assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
         let (settled, owed, fee_release) = pool_inner
@@ -716,9 +737,15 @@ module triex::multicoin_pool {
             );
         // The retained share stops being a user claim and becomes revenue —
         // split between hub and treasury at this instant's rate.
-        pool_inner
-            .vault
-            .recognize_locked_maker_fees(fee_release.release_retained(), operator_bps);
+        let retained = fee_release.release_retained();
+        let operator_bps = if (retained == 0) {
+            0
+        } else if (batch_operator_bps.is_some()) {
+            *batch_operator_bps.borrow()
+        } else {
+            policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch())
+        };
+        pool_inner.vault.recognize_locked_maker_fees(retained, operator_bps);
 
         order.emit_order_canceled(
             pool_inner.pool_id,
@@ -740,16 +767,30 @@ module triex::multicoin_pool {
         ctx: &mut TxContext,
     ) {
         let inner = self.load_inner_mut();
+        let collection_id = inner.collection_id;
         let mut open_orders = vector[];
         if (inner.state.account_exists(trading_account.id())) {
             open_orders = inner.state.account(trading_account.id()).open_orders().into_keys();
         };
 
-        let mut i = 0;
         let num_orders = open_orders.length();
+        if (num_orders == 0) return;
+        // Resolved once and threaded to every cancel — the same rule the fill
+        // path documents: a batch of N cancels must not do N dynamic-field
+        // walks.
+        let operator_bps = option::some(policy.operator_share_bps_at(collection_id, ctx.epoch()));
+        let mut i = 0;
         while (i < num_orders) {
             let order_id = open_orders[i];
-            self.cancel_order(policy, trading_account, trade_proof, order_id, clock, ctx);
+            self.cancel_order_int(
+                policy,
+                operator_bps,
+                trading_account,
+                trade_proof,
+                order_id,
+                clock,
+                ctx,
+            );
             i = i + 1;
         }
     }
@@ -766,11 +807,23 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        let mut i = 0;
         let num_orders = order_ids.length();
+        if (num_orders == 0) return;
+        // See `cancel_all_orders`: one rate resolution for the whole batch.
+        let collection_id = self.load_inner().collection_id;
+        let operator_bps = option::some(policy.operator_share_bps_at(collection_id, ctx.epoch()));
+        let mut i = 0;
         while (i < num_orders) {
             let order_id = order_ids[i];
-            self.cancel_order(policy, trading_account, trade_proof, order_id, clock, ctx);
+            self.cancel_order_int(
+                policy,
+                operator_bps,
+                trading_account,
+                trade_proof,
+                order_id,
+                clock,
+                ctx,
+            );
             i = i + 1;
         }
     }
@@ -882,31 +935,50 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ): Coin<QuoteAsset> {
+        let now = clock.timestamp_ms();
         let pool_inner = self.load_inner_mut();
+        // The sweep must not be blockable by a misconfigured hub, so an absent
+        // beneficiary skips the leg: the share stays encumbered, and the
+        // treasury still cannot touch it.
+        pool_inner.pay_operator_share(policy, false, now, ctx);
+
         let pool_id = pool_inner.pool_id;
-        let collection_id = pool_inner.collection_id;
-
-        if (pool_inner.vault.operator_owed() > 0) {
-            let beneficiary = policy.operator_beneficiary(collection_id);
-            if (beneficiary.is_some()) {
-                let beneficiary = beneficiary.destroy_some();
-                let share = pool_inner
-                    .vault
-                    .claim_operator_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
-                transfer::public_transfer(share, beneficiary);
-            };
-        };
-
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
-        vault::emit_pool_fees_withdrawn<QuoteAsset>(
-            pool_id,
-            amount,
-            clock.timestamp_ms(),
-        );
+        vault::emit_pool_fees_withdrawn<QuoteAsset>(pool_id, amount, now);
         fee_coin
     }
 
     // === Public-Mutative Functions * HUB REVENUE SHARE * ===
+
+    /// The one payout leg both sweep entry points share: claim the accrued
+    /// share out of the reserve and transfer it to the collection's registered
+    /// beneficiary. Returns the amount paid — zero when nothing is owed, and
+    /// zero when no beneficiary is registered and `must_have_beneficiary` is
+    /// false; with it true, an absent mapping aborts instead, so the share
+    /// stays encumbered until a registration restores it.
+    fun pay_operator_share<QuoteAsset>(
+        pool_inner: &mut MultiCoinPoolInner<QuoteAsset>,
+        policy: &FeePolicy,
+        must_have_beneficiary: bool,
+        timestamp: u64,
+        ctx: &mut TxContext,
+    ): u64 {
+        let owed = pool_inner.vault.operator_owed();
+        if (owed == 0) return 0;
+
+        let beneficiary = policy.operator_beneficiary(pool_inner.collection_id);
+        if (beneficiary.is_none()) {
+            assert!(!must_have_beneficiary, ENoOperatorBeneficiary);
+            return 0
+        };
+        let beneficiary = beneficiary.destroy_some();
+
+        let share = pool_inner
+            .vault
+            .claim_operator_share(pool_inner.pool_id, beneficiary, timestamp, ctx);
+        transfer::public_transfer(share, beneficiary);
+        owed
+    }
 
     /// Pay the hub operator's accrued share to the collection's configured
     /// beneficiary, and the treasury's remainder to the treasury address — one
@@ -927,26 +999,14 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ): (u64, u64) {
+        let now = clock.timestamp_ms();
         let pool_inner = self.load_inner_mut();
-        let pool_id = pool_inner.pool_id;
-        let collection_id = pool_inner.collection_id;
-
-        let hub_amount = pool_inner.vault.operator_owed();
-        if (hub_amount > 0) {
-            // With money actually owed, an absent mapping means no one has
-            // registered yet, or the admin destroyed it. Abort rather than burn
-            // the share or bank it for the treasury: `operator_owed` stays
-            // encumbered until claimed, so a registration restoring the mapping
-            // still pays.
-            let beneficiary = policy.operator_beneficiary(collection_id);
-            assert!(beneficiary.is_some(), ENoOperatorBeneficiary);
-            let beneficiary = beneficiary.destroy_some();
-
-            let share = pool_inner
-                .vault
-                .claim_operator_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
-            transfer::public_transfer(share, beneficiary);
-        };
+        // With money actually owed, an absent mapping means no one has
+        // registered yet, or the admin destroyed it. Abort rather than burn
+        // the share or bank it for the treasury: `operator_owed` stays
+        // encumbered until claimed, so a registration restoring the mapping
+        // still pays.
+        let hub_amount = pool_inner.pay_operator_share(policy, true, now, ctx);
 
         // The remainder is exact — no holdback, no unsettled basis — so the
         // treasury leg empties the earned revenue completely. Zero is normal for
@@ -955,9 +1015,9 @@ module triex::multicoin_pool {
         if (treasury_amount > 0) {
             let fee_coin = pool_inner.vault.withdraw_quote_fees(treasury_amount, ctx);
             vault::emit_pool_fees_withdrawn<QuoteAsset>(
-                pool_id,
+                pool_inner.pool_id,
                 treasury_amount,
-                clock.timestamp_ms(),
+                now,
             );
             transfer::public_transfer(fee_coin, triex_registry.treasury_address());
         };
@@ -1160,6 +1220,14 @@ module triex::multicoin_pool {
     /// at recognition, so there is no unsettled remainder beside it.
     public fun operator_owed<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
         self.load_inner().vault.operator_owed()
+    }
+
+    /// Everything in the fee reserve claimed by someone other than the
+    /// treasury. `reserve >= encumbered()` is the vault's solvency invariant;
+    /// exposed so callers assert against the one definition rather than
+    /// restating the sum.
+    public fun encumbered<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u128 {
+        self.load_inner().vault.encumbered()
     }
 
     /// Get the Order struct.

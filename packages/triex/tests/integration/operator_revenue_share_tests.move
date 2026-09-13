@@ -73,7 +73,9 @@ module triex::integration_hub_revenue_share_tests {
     /// A pool, an adapter-registered beneficiary (`OPERATOR` — deployment
     /// itself pins nothing), two funded accounts, gold in Bob's account, and
     /// the treasury pointed at a distinct address.
-    fun setup(test: &mut Scenario): (ID, ID, ID, CollectionCap) {
+    ///
+    /// Returns `(pool_id, collection_id, registry_id, alice_ta, bob_ta, cap)`.
+    fun setup(test: &mut Scenario): (ID, ID, ID, ID, ID, CollectionCap) {
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             test,
         );
@@ -118,7 +120,7 @@ module triex::integration_hub_revenue_share_tests {
             return_shared(reg);
         };
 
-        (pool_id, alice_ta, bob_ta, collection_cap)
+        (pool_id, collection_id, registry_id, alice_ta, bob_ta, collection_cap)
     }
 
     /// Put `collection_id` in a class priced at `bps`, effective next epoch.
@@ -223,15 +225,24 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(pool);
     }
 
-    /// Solvency: the reserve covers both claims against it, always.
+    /// Solvency: the reserve covers both claims against it, always — asserted
+    /// against the vault's own `encumbered()`, so this tests the invariant as
+    /// defined, not a restatement that could drift from it.
     fun assert_solvent(pool_id: ID, test: &mut Scenario) {
         test.next_tx(OWNER);
         let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        assert!(
-            (pool.quote_fee_reserve_balance() as u128)
-                >= (pool.locked_maker_fees() as u128) + (pool.operator_owed() as u128),
-        );
+        assert!((pool.quote_fee_reserve_balance() as u128) >= pool.encumbered());
         return_shared(pool);
+    }
+
+    /// The eager split floors per recognition, so over a round of recognitions
+    /// the credit sits in `[exact − recognitions, exact]` where
+    /// `exact = revenue × bps / fee_precision()`. Every test here makes at most
+    /// four recognitions, so the band allows four units of flooring.
+    fun assert_share_in_band(owed: u128, revenue: u128, bps: u64) {
+        let exact = revenue * (bps as u128) / (quote_fee::fee_precision() as u128);
+        assert!(owed <= exact);
+        assert!(owed + 4 >= exact);
     }
 
     fun operator_owed(pool_id: ID, test: &mut Scenario): u64 {
@@ -257,13 +268,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun operator_owed_counts_recognized_revenue_exactly_once() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         // Ceiling rate, so any escrow miscount is as visible as possible.
         let bps = constants::max_operator_share_bps();
@@ -302,9 +307,7 @@ module triex::integration_hub_revenue_share_tests {
             assert!(pool.locked_maker_fees() == 0);
             let revenue = pool.quote_fee_reserve_balance() as u128;
             let owed = pool.operator_owed() as u128;
-            let exact_share = revenue * (bps as u128) / 10_000;
-            assert!(owed <= exact_share);
-            assert!(owed + 4 >= exact_share);
+            assert_share_in_band(owed, revenue, bps);
             // And the treasury's view is the exact complement.
             assert!((pool.withdrawable_pool_fees() as u128) == revenue - owed);
             return_shared(pool);
@@ -319,17 +322,9 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun one_claim_pays_the_operator_and_the_treasury() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let (registry_id, collection_id) = {
-            test.next_tx(OWNER);
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            let reg = test.take_shared<Registry>();
-            let rid = object::id(&reg);
-            return_shared(reg);
-            (rid, id)
-        };
+        let (pool_id, collection_id, registry_id, alice_ta, bob_ta, collection_cap) = setup(
+            &mut test,
+        );
 
         // 25% — a launch-partner rate, effective next epoch.
         configure_hub(collection_id, 2_500, &mut test);
@@ -403,13 +398,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun the_admin_sweep_pays_the_operator_in_the_same_transaction() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         configure_hub(collection_id, 2_500, &mut test);
         test.next_epoch(OWNER);
@@ -457,13 +446,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun a_staged_rate_change_applies_only_from_the_next_epoch() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         // 30% from epoch 1.
         configure_hub(collection_id, 3_000, &mut test);
@@ -482,8 +465,7 @@ module triex::integration_hub_revenue_share_tests {
             (r as u128, o as u128)
         };
         // Credited at 30%, banded for per-recognition flooring.
-        assert!(owed_1 <= revenue_1 * 3_000 / 10_000);
-        assert!(owed_1 + 4 >= revenue_1 * 3_000 / 10_000);
+        assert_share_in_band(owed_1, revenue_1, 3_000);
 
         // Cut the rate to 5%. The already-credited 30% is history the cut
         // cannot reach; only new revenue prices at 5%.
@@ -506,8 +488,7 @@ module triex::integration_hub_revenue_share_tests {
             let revenue_2 = (pool.quote_fee_reserve_balance() as u128) - revenue_1;
             let owed_2 = (pool.operator_owed() as u128) - owed_1;
             // The second round credited at 5%, not 30% and not a blend.
-            assert!(owed_2 <= revenue_2 * 500 / 10_000);
-            assert!(owed_2 + 4 >= revenue_2 * 500 / 10_000);
+            assert_share_in_band(owed_2, revenue_2, 500);
             return_shared(pool);
         };
 
@@ -521,7 +502,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun an_unconfigured_hub_accrues_nothing_and_never_blocks() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
+        let (pool_id, _, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         let price = 2 * constants::float_scaling();
         let (order_id, _, _) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
@@ -552,13 +533,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun claiming_an_idle_pool_is_a_noop_even_without_a_beneficiary() {
         let mut test = begin(OWNER);
-        let (pool_id, _alice_ta, _bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, _alice_ta, _bob_ta, collection_cap) = setup(&mut test);
 
         destroy_beneficiary(collection_id, &mut test);
 
@@ -569,7 +544,7 @@ module triex::integration_hub_revenue_share_tests {
             let triex_reg = test.take_shared<Registry>();
             let clock = test.take_shared<Clock>();
 
-            assert!(!policy.has_operator_beneficiary(collection_id));
+            assert!(policy.operator_beneficiary(collection_id).is_none());
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
                 &policy,
                 &triex_reg,
@@ -596,13 +571,7 @@ module triex::integration_hub_revenue_share_tests {
     #[expected_failure(abort_code = triex::multicoin_pool::ENoOperatorBeneficiary)]
     fun claiming_without_a_beneficiary_aborts() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         // A rate, but the payout mapping destroyed out from under it.
         configure_hub(collection_id, 1_000, &mut test);
@@ -636,13 +605,7 @@ module triex::integration_hub_revenue_share_tests {
     #[test]
     fun cancel_retention_credits_the_hub() {
         let mut test = begin(OWNER);
-        let (pool_id, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
-        let collection_id = {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let id = pool.collection_id();
-            return_shared(pool);
-            id
-        };
+        let (pool_id, collection_id, _, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
 
         let bps = constants::max_operator_share_bps();
         configure_hub(collection_id, bps, &mut test);
@@ -657,7 +620,8 @@ module triex::integration_hub_revenue_share_tests {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let (_, retained) = quote_fee::split_released_fee(maker_fee, 2000);
             assert!(retained > 0);
-            let expected = (((retained as u128) * (bps as u128)) / 10_000) as u64;
+            let expected =
+                (((retained as u128) * (bps as u128)) / (quote_fee::fee_precision() as u128)) as u64;
             assert!(pool.operator_owed() == expected);
             return_shared(pool);
         };

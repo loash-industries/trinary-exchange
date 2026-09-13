@@ -123,12 +123,12 @@ module triex::integration_multicoin_test_utils {
         test.next_tx(sender);
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let mut policy = test.take_shared<FeePolicy>();
+        let policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
 
         let pool_id = multicoin_pool::create_pool_admin<USDC>(
             &mut registry,
-            &mut policy,
+            &policy,
             &collection,
             asset_id,
             &admin_cap,
