@@ -16,8 +16,8 @@
 /// mid-epoch, with no per-pool promotion machinery.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
-    use sui::{event, table::{Self, Table}};
-    use triex::{fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
+    use sui::{dynamic_field as df, event, table::{Self, Table}};
+    use triex::{constants, fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
 
     // === Errors ===
     const EClassAlreadyExists: u64 = 0;
@@ -27,6 +27,7 @@ module triex::fee_policy {
     const EClassQuoteMismatch: u64 = 4;
     const EDuplicateGenesisClass: u64 = 5;
     const EInvalidQuoteUnit: u64 = 6;
+    const EHubShareAboveCeiling: u64 = 7;
 
     // === Constants ===
     const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -460,4 +461,187 @@ module triex::fee_policy {
     public fun share_for_testing(self: FeePolicy) {
         transfer::share_object(self)
     }
+
+    // === Hub revenue share ===
+    //
+    // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
+    // fields on an upgrade — dynamic fields on its `id` can. Everything below is
+    // additive, and all of it is admin-written at epoch cadence, which is what the
+    // module invariant allows. The operator-written half of this configuration —
+    // the payout address — deliberately lives in `hub_registry` instead, because a
+    // user-reachable `&mut` on this object would serialize every trade that reads
+    // it.
+
+    /// class_id -> the rate ladder for that class.
+    public struct HubShareClassKey has copy, drop, store { class_id: u16 }
+
+    /// collection_id -> the class that collection's hubs are priced in.
+    public struct HubShareAssignmentKey has copy, drop, store { collection_id: ID }
+
+    /// Class a collection nobody has configured falls into.
+    public struct DefaultHubShareKey has copy, drop, store {}
+
+    /// One rung of a hub-share ladder: `bps` applies to every epoch from
+    /// `from_epoch` until the next segment's `from_epoch`.
+    public struct HubShareSegment has copy, drop, store {
+        from_epoch: u64,
+        bps: u64,
+    }
+
+    public struct HubShareClassUpdated has copy, drop {
+        class_id: u16,
+        bps: u64,
+        from_epoch: u64,
+    }
+
+    public struct HubShareClassAssigned has copy, drop {
+        collection_id: ID,
+        class_id: u16,
+    }
+
+    /// Re-price a hub-share class, effective next epoch.
+    ///
+    /// The ladder is **append-only**, not the `current`/`next` pair a
+    /// `ClassSchedule` keeps. A share is settled against the rate of the epoch that
+    /// earned the revenue, and settlement can lag by up to the basis window, so the
+    /// policy has to be able to answer "what was the rate in epoch N?" for any
+    /// epoch still in that window. A two-slot ladder loses that answer after the
+    /// second re-price — precisely when settlement is late, which is when it is
+    /// asked. Segments keep it.
+    ///
+    /// Pinning the rate to the epoch that earned it also takes the timing out of
+    /// settlement. `settle_hub_share` is permissionless; if a share were priced at
+    /// whatever the ladder said when someone called it, the call would be a free
+    /// option on every staged change — settle early to dodge a cut, wait to
+    /// capture a rise, and whichever party gains calls first.
+    public fun stage_hub_share_class(
+        self: &mut FeePolicy,
+        class_id: u16,
+        bps: u64,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
+        assert!(bps <= constants::max_hub_share_bps(), EHubShareAboveCeiling);
+
+        // Next epoch, never this one: a rate an operator has not had the chance to
+        // read cannot apply to revenue they have already hosted.
+        let from_epoch = ctx.epoch() + 1;
+        let key = HubShareClassKey { class_id };
+
+        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
+            df::add(&mut self.id, key, vector[HubShareSegment { from_epoch, bps }]);
+        } else {
+            let segments: &mut vector<HubShareSegment> = df::borrow_mut(&mut self.id, key);
+            let len = segments.length();
+            // Two re-prices in one epoch would give the same `from_epoch` twice and
+            // the ladder would stop being a function of the epoch. The later write
+            // replaces the earlier: neither has taken effect yet.
+            if (len > 0 && segments[len - 1].from_epoch == from_epoch) {
+                *segments.borrow_mut(len - 1) = HubShareSegment { from_epoch, bps };
+            } else {
+                segments.push_back(HubShareSegment { from_epoch, bps });
+            };
+            prune_hub_share_segments(segments, ctx.epoch());
+        };
+
+        event::emit(HubShareClassUpdated { class_id, bps, from_epoch });
+    }
+
+    /// Drop segments no epoch inside the basis window can still resolve to. The
+    /// window is the settle-by deadline, so a rate older than a basis that could
+    /// still be settled is unreachable by construction.
+    fun prune_hub_share_segments(segments: &mut vector<HubShareSegment>, epoch: u64) {
+        let window = constants::hub_basis_window_epochs();
+        let floor = if (epoch > window) epoch - window else 0;
+        // Keep the last segment at or below the floor: it is the rate the floor
+        // epoch itself resolves to. Anything before that one is shadowed.
+        while (segments.length() > 1 && segments[1].from_epoch <= floor) {
+            segments.remove(0);
+        };
+    }
+
+    /// Point a collection's hubs at a share class. One write re-prices every pool
+    /// of every asset in that collection.
+    public fun assign_hub_share_class(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        class_id: u16,
+        _cap: &TriexAdminCap,
+    ) {
+        let key = HubShareAssignmentKey { collection_id };
+        if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, key)) {
+            let assigned: &mut u16 = df::borrow_mut(&mut self.id, key);
+            *assigned = class_id;
+        } else {
+            df::add(&mut self.id, key, class_id);
+        };
+
+        event::emit(HubShareClassAssigned { collection_id, class_id });
+    }
+
+    /// Class for collections nobody has configured. Absent means zero, which is
+    /// why deploying the feature changes nothing until a hub is assigned.
+    public fun set_default_hub_share_class(
+        self: &mut FeePolicy,
+        class_id: u16,
+        _cap: &TriexAdminCap,
+    ) {
+        let key = DefaultHubShareKey {};
+        if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, key)) {
+            let current: &mut u16 = df::borrow_mut(&mut self.id, key);
+            *current = class_id;
+        } else {
+            df::add(&mut self.id, key, class_id);
+        };
+    }
+
+    /// The share rate that applied to revenue recognized in `epoch`, in bps.
+    ///
+    /// Zero for an unconfigured collection, an unconfigured class, or an epoch
+    /// before the class's first segment — so an unconfigured exchange settles
+    /// every basis to nothing, and the feature is inert until someone configures
+    /// it.
+    public fun hub_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
+        let class_id = self.hub_share_class(collection_id);
+        let key = HubShareClassKey { class_id };
+        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
+            return 0
+        };
+
+        let segments: &vector<HubShareSegment> = df::borrow(&self.id, key);
+        let mut i = segments.length();
+        while (i > 0) {
+            i = i - 1;
+            let segment = &segments[i];
+            if (segment.from_epoch <= epoch) return segment.bps;
+        };
+
+        0
+    }
+
+    /// Share class a collection is priced in, falling back to the default class
+    /// and then to class 0.
+    public fun hub_share_class(self: &FeePolicy, collection_id: ID): u16 {
+        let assignment = HubShareAssignmentKey { collection_id };
+        if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, assignment)) {
+            return *df::borrow<HubShareAssignmentKey, u16>(&self.id, assignment)
+        };
+
+        let default = DefaultHubShareKey {};
+        if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, default)) {
+            return *df::borrow<DefaultHubShareKey, u16>(&self.id, default)
+        };
+
+        0
+    }
+
+    #[test_only]
+    public fun hub_share_segment_count(self: &FeePolicy, class_id: u16): u64 {
+        let key = HubShareClassKey { class_id };
+        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
+            return 0
+        };
+        df::borrow<HubShareClassKey, vector<HubShareSegment>>(&self.id, key).length()
+    }
+
 }

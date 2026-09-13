@@ -24,6 +24,12 @@ module triex::multicoin_vault_tests {
 
     // === Helper Functions ===
 
+    /// Stand-in pool id for the vault-level suites, which construct a vault
+    /// directly and have no pool. Only ever reaches an event field.
+    fun test_pool_id(): ID {
+        object::id_from_address(@0x9001)
+    }
+
     /// Setup a MultiCoin collection for testing
     fun setup_collection(test: &mut Scenario): (ID, CollectionCap) {
         test.next_tx(OWNER);
@@ -749,9 +755,21 @@ module triex::multicoin_vault_tests {
         vault.lock_maker_fees_for_testing(4_000);
 
         // Recognition reclassifies without moving funds.
-        vault.recognize_locked_maker_fees(1_500);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_500, 0);
         assert!(vault.quote_fee_reserve_balance() == 10_000);
         assert!(vault.locked_maker_fees() == 2_500);
+        // Recognized revenue becomes hub basis, and an unsettled basis is held
+        // back at the ceiling until someone prices it: 40% of 1_500 = 600. The
+        // escrow that was released is no longer locked, but it is not yet wholly
+        // the treasury's either.
+        assert!(vault.hub_basis_at(0) == 1_500);
+        assert!(vault.hub_holdback() == 600);
+        assert!(vault.withdrawable_quote_fees() == 6_900);
+
+        // Settling at 0 bps — an unconfigured hub — releases the whole holdback.
+        vault.settle_hub_basis(test_pool_id(), 0, 0);
+        assert!(vault.hub_owed() == 0);
+        assert!(vault.hub_holdback() == 0);
         assert!(vault.withdrawable_quote_fees() == 7_500);
 
         destroy(vault);
@@ -769,9 +787,14 @@ module triex::multicoin_vault_tests {
 
         // Per-fill flooring can never exceed the once-floored lock, but the
         // counter saturates rather than underflowing if it ever did.
-        vault.recognize_locked_maker_fees(4_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 4_000, 0);
         assert!(vault.locked_maker_fees() == 0);
-        assert!(vault.withdrawable_quote_fees() == 10_000);
+        // The basis is credited off the actual decrement, not the request. Off the
+        // request it would be 4_000 — revenue that was never recognized — and the
+        // holdback would then subtract 1_600 from a reserve that never received it.
+        assert!(vault.hub_basis_at(0) == 1_000);
+        assert!(vault.hub_holdback() == 400);
+        assert!(vault.withdrawable_quote_fees() == 9_600);
 
         destroy(vault);
         destroy(collection_cap);
@@ -852,6 +875,277 @@ module triex::multicoin_vault_tests {
         assert!(vault.quote_fee_reserve_balance() == 7_000);
         assert!(vault.locked_maker_fees() == 1_000);
         assert!(vault.withdrawable_quote_fees() == 6_000);
+
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    // === Hub Revenue Share Tests ===
+    // The reserve now carries a third claim. These exercise the arithmetic that
+    // keeps `reserve >= encumbered()` true, which is what makes all three claims
+    // payable out of one balance.
+
+    fun max_bps(): u64 {
+        constants::max_hub_share_bps()
+    }
+
+    /// The invariant the whole shared-pot construction rests on. Asserted after
+    /// every operation below, because the moment it fails one of the three
+    /// claimants is owed money the reserve does not hold.
+    fun assert_solvent<QuoteAsset>(vault: &multicoin_vault::MultiCoinVault<QuoteAsset>) {
+        assert!((vault.quote_fee_reserve_balance() as u128) >= vault.encumbered());
+    }
+
+    #[test]
+    fun test_holdback_rounds_up_and_owed_rounds_down() {
+        // The pair that keeps the invariant from failing by a single unit. A basis
+        // of 1 at a 40% ceiling holds back `ceil(0.4) == 1` but settles to
+        // `floor(0.4) == 0`. Reversed, settlement would credit more than the
+        // holdback reserved and `withdrawable_quote_fees` would underflow.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(1);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1, 0);
+
+        assert!(vault.hub_basis_at(0) == 1);
+        assert!(vault.hub_holdback() == 1);
+        assert_solvent(&vault);
+
+        assert!(vault.settle_hub_basis(test_pool_id(), 0, max_bps()) == 0);
+        assert!(vault.hub_owed() == 0);
+        assert!(vault.hub_holdback() == 0);
+        assert_solvent(&vault);
+
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_settled_owed_never_exceeds_the_holdback_it_releases() {
+        // Swept across bases and rates where flooring and ceiling disagree most.
+        // If `owed` could ever exceed the holdback, a settlement would be able to
+        // create a claim the sweep had not reserved for.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let bases = vector[1u64, 2, 3, 7, 99, 100, 101, 2_499, 2_500, 9_999];
+        let rates = vector[0u64, 1, 7, 1_000, 3_333, max_bps()];
+
+        bases.do_ref!(|basis| {
+            rates.do_ref!(|bps| {
+                let mut vault = multicoin_vault::empty<USDC>(
+                    collection_id,
+                    TEST_ASSET_ID,
+                    test.ctx(),
+                );
+                vault.deposit_quote_fees(
+                    mint_for_testing<USDC>(*basis, test.ctx()).into_balance(),
+                );
+                vault.lock_maker_fees_for_testing(*basis);
+                vault.recognize_locked_maker_fees(test_pool_id(), *basis, 0);
+
+                let holdback = vault.hub_holdback();
+                let owed = vault.settle_hub_basis(test_pool_id(), 0, *bps);
+                assert!((owed as u128) <= holdback);
+                assert_solvent(&vault);
+
+                destroy(vault);
+            });
+        });
+
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_encumbered_sums_all_three_claims() {
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+
+        // 2_000 of escrow, 1_000 recognized then settled at 40% (= 400 owed), and
+        // 500 recognized but left unsettled (= 200 held back).
+        vault.lock_maker_fees_for_testing(3_500);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+        assert!(vault.settle_hub_basis(test_pool_id(), 0, max_bps()) == 400);
+        vault.recognize_locked_maker_fees(test_pool_id(), 500, 0);
+
+        assert!(vault.locked_maker_fees() == 2_000);
+        assert!(vault.hub_owed() == 400);
+        assert!(vault.hub_holdback() == 200);
+        assert!(vault.encumbered() == 2_600);
+        assert!(vault.withdrawable_quote_fees() == 7_400);
+        assert_solvent(&vault);
+
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = multicoin_vault::EFeesLocked)]
+    fun test_sweep_cannot_take_the_holdback() {
+        // The guardrail: an accrued share is not the treasury's to sweep, even
+        // before anyone has priced it.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(1_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+
+        // 400 is held back, so 601 is one unit too many.
+        assert!(vault.withdrawable_quote_fees() == 600);
+        let coin = vault.withdraw_quote_fees(601, test.ctx());
+
+        destroy(coin);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = multicoin_vault::EFeesLocked)]
+    fun test_sweep_cannot_take_settled_hub_owed() {
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(1_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+        assert!(vault.settle_hub_basis(test_pool_id(), 0, max_bps()) == 400);
+
+        assert!(vault.withdrawable_quote_fees() == 600);
+        let coin = vault.withdraw_quote_fees(601, test.ctx());
+
+        destroy(coin);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = multicoin_vault::EHubShareAboveCeiling)]
+    fun test_settling_above_the_ceiling_aborts() {
+        // MAX_HUB_SHARE_BPS is the number stated in CAPABILITIES.md, so the vault
+        // enforces it rather than trusting the policy to have done so.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(1_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+
+        vault.settle_hub_basis(test_pool_id(), 0, max_bps() + 1);
+
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_claim_pays_the_settled_share_and_zeroes_it() {
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(1_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+        vault.settle_hub_basis(test_pool_id(), 0, 1_000); // 10%
+
+        assert!(vault.hub_owed() == 100);
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+
+        assert!(share.value() == 100);
+        assert!(vault.hub_owed() == 0);
+        assert!(vault.quote_fee_reserve_balance() == 900);
+        // The claim consumed its own encumbrance, so the rest is the treasury's.
+        assert!(vault.withdrawable_quote_fees() == 900);
+        assert_solvent(&vault);
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_claiming_nothing_is_harmless() {
+        // A payout cron sweeping many pools will hit plenty with nothing owed.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(500, test.ctx()).into_balance());
+
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+        assert!(share.value() == 0);
+        assert!(vault.withdrawable_quote_fees() == 500);
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_escrow_refund_leaves_the_hub_claim_untouched() {
+        // A refund must come out of escrow, never out of a settled share. If
+        // `unlock` could reach past `locked_maker_fees`, the operator's coin would
+        // fund a maker's refund and the claim would abort later.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(6_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 2_000, 0);
+        vault.settle_hub_basis(test_pool_id(), 0, max_bps());
+        assert!(vault.hub_owed() == 800);
+
+        // Refund the escrow that is still locked.
+        vault.unlock_quote_fees(collection_id, 1, collection_id, 4_000, 0);
+
+        assert!(vault.locked_maker_fees() == 0);
+        assert!(vault.hub_owed() == 800);
+        assert!(vault.quote_fee_reserve_balance() == 6_000);
+        assert!(vault.withdrawable_quote_fees() == 5_200);
+        assert_solvent(&vault);
+
+        // And the share is still payable.
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+        assert!(share.value() == 800);
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_basis_stays_separated_by_epoch() {
+        // Each epoch's basis has to remain priceable at its own rate: that is what
+        // makes a late settlement produce the same answer as a prompt one.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(3_000);
+        vault.recognize_locked_maker_fees(test_pool_id(), 1_000, 0);
+        vault.recognize_locked_maker_fees(test_pool_id(), 2_000, 1);
+
+        assert!(vault.hub_basis_at(0) == 1_000);
+        assert!(vault.hub_basis_at(1) == 2_000);
+
+        // Epoch 0 at 10%, epoch 1 at 40% — the accrual window priced correctly
+        // rather than at one blended rate.
+        assert!(vault.settle_hub_basis(test_pool_id(), 0, 1_000) == 100);
+        assert!(vault.settle_hub_basis(test_pool_id(), 1, max_bps()) == 800);
+        assert!(vault.hub_owed() == 900);
+        assert!(vault.hub_unsettled_basis() == 0);
+        assert_solvent(&vault);
 
         destroy(vault);
         destroy(collection_cap);

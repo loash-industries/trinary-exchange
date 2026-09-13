@@ -1327,15 +1327,40 @@ module triex::integration_multicoin_pool_advanced_tests {
             let proof = ta.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut ta, &proof, order_id, &clock, test.ctx());
 
-            // 80% leaves the reserve back to Alice; the 20% retention stays and
-            // is the only sweepable balance left.
+            // 80% leaves the reserve back to Alice; the 20% retention stays.
             let (refund, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
             assert!(pool.quote_fee_reserve_balance() == retained, 2);
             assert!(pool.locked_maker_fees() == 0, 3);
-            assert!(pool.withdrawable_pool_fees() == retained, 4);
+
+            // The retention is recognized revenue, so it is now hub basis, and an
+            // unsettled basis is held back at the ceiling until someone prices it.
+            // The retention has stopped being a maker's claim without yet becoming
+            // wholly the treasury's.
+            let holdback = mc_utils::ceil_bps(retained, constants::max_hub_share_bps());
+            assert!(pool.hub_basis_at(test.ctx().epoch()) == retained, 4);
+            assert!(pool.hub_holdback() == (holdback as u128), 5);
+            assert!(pool.withdrawable_pool_fees() == retained - holdback, 6);
 
             return_shared(ta);
             return_shared(clock);
+            return_shared(pool);
+        };
+
+        // Settling an unconfigured hub prices the basis at zero and hands the whole
+        // retention back to the treasury. This is what "deploying it changes
+        // nothing" actually costs: not a rate, but a settle call before the sweep.
+        test.next_tx(OWNER);
+        {
+            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
+            let (_, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
+
+            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 7);
+            assert!(pool.hub_owed() == 0, 8);
+            assert!(pool.hub_holdback() == 0, 9);
+            assert!(pool.withdrawable_pool_fees() == retained, 10);
+
+            return_shared(policy);
             return_shared(pool);
         };
 
@@ -1535,7 +1560,15 @@ module triex::integration_multicoin_pool_advanced_tests {
             );
             assert!(order.status() == constants::filled(), 3);
             assert!(pool.locked_maker_fees() == 0, 4);
-            assert!(pool.withdrawable_pool_fees() == pool.quote_fee_reserve_balance(), 5);
+            // No escrow outstanding, but the reserve is not wholly sweepable: every
+            // fee in it has been recognized, so all of it is unsettled hub basis and
+            // the ceiling slice is held back until settled.
+            let reserve = pool.quote_fee_reserve_balance();
+            let holdback = mc_utils::ceil_bps(reserve, constants::max_hub_share_bps());
+            assert!(pool.hub_holdback() == (holdback as u128), 5);
+            assert!(pool.withdrawable_pool_fees() == reserve - holdback, 6);
+            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 7);
+            assert!(pool.withdrawable_pool_fees() == reserve, 8);
             return_shared(ta);
             return_shared(clock);
             return_shared(pool);
@@ -3302,7 +3335,13 @@ module triex::integration_multicoin_pool_advanced_tests {
             // Only the retention is left, and no escrow is outstanding.
             assert!(pool.locked_maker_fees() == 0, 6);
             assert!(pool.quote_fee_reserve_balance() == alice_escrow - refund, 7);
-            assert!(pool.withdrawable_pool_fees() == alice_escrow - refund, 8);
+            // Expiry retention is recognized revenue like any other, so it accrues
+            // hub basis and carries the same holdback until settled.
+            let reserve = pool.quote_fee_reserve_balance();
+            let holdback = mc_utils::ceil_bps(reserve, constants::max_hub_share_bps());
+            assert!(pool.withdrawable_pool_fees() == reserve - holdback, 8);
+            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 9);
+            assert!(pool.withdrawable_pool_fees() == reserve, 10);
 
             return_shared(ta);
             return_shared(clock);

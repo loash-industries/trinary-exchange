@@ -84,6 +84,30 @@ visible on-chain beforehand through `pool_fee_schedule_next()` and
 the ceiling is what the cap permits, and users assessing operator trust should
 read it as such.
 
+#### How much of a fee can be diverted to a hub operator
+
+Multicoin pools can pay the storage unit they trade against a share of the fees
+recognized on them. `MAX_HUB_SHARE_BPS` is **40%** (`constants.move`), and it
+bounds both what the admin can configure and what a settlement can credit — the
+vault re-checks it rather than trusting the policy to have done so.
+
+Read it as a bound on redistribution, not on cost: a share divides fees already
+collected, so it cannot change what a trader pays, and taker/maker rates, tier
+ladders and dry-run quotes are untouched by it. The rate ships at **0% for every
+hub**, applies only to collections the admin has explicitly assigned to a share
+class, and — like every other rate here — takes effect no earlier than the
+**next epoch boundary**, visible on-chain beforehand through
+`hub_share_bps_at()`. A share is settled against the rate of the epoch that
+earned the revenue, so a rate change never re-prices revenue already hosted, and
+a late settlement pays the same as a prompt one.
+
+Where the share is paid is configuration, not inference: `HubRegistry` holds an
+explicit `collection_id -> address`, so a hub changing hands, a capability parked
+on another object, or a game-side change to a character's wallet cannot silently
+redirect money. Accrued-but-unclaimed balance pays whoever is configured at claim
+time, which is a settlement matter between a hub's buyer and seller — the accrual
+and claim events are the record of it.
+
 ### What the AdminCap can NOT do
 
 The cap's financial reach is limited to **fee revenue and fee rates** — subject
@@ -91,6 +115,11 @@ to the ceiling noted above, which is high enough that "fee rates" is a broader
 power than it sounds. It cannot:
 
 - Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
+- Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
+  settled `hub_owed` *and* holds back the ceiling slice of any basis nobody has
+  settled yet, so a sweep cannot reach it even before it has been priced
+- Redirect a hub share: `claim_hub_share` pays only the address `HubRegistry`
+  records, never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled)

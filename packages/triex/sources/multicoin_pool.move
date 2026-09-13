@@ -20,6 +20,7 @@ module triex::multicoin_pool {
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
+        hub_registry::HubRegistry,
         multicoin_vault::{Self, MultiCoinVault},
         order::Order,
         order_info::{Self, OrderInfo},
@@ -37,6 +38,7 @@ module triex::multicoin_pool {
     const EMinimumQuantityOutNotMet: u64 = 13;
     const EPoolNotRegistered: u64 = 14;
     const EQuoteNotApproved: u64 = 20;
+    const ENoHubBeneficiary: u64 = 21;
     // qty × price (raw) would exceed u64::MAX — lower the quantity or price.
 
     // === Structs ===
@@ -634,7 +636,13 @@ module triex::multicoin_pool {
             );
         // A modify-down retains its share on the same terms as a cancel, so
         // requoting down cannot dodge the retention.
-        pool_inner.vault.recognize_locked_maker_fees(fee_release.release_retained());
+        pool_inner
+            .vault
+            .recognize_locked_maker_fees(
+                pool_inner.pool_id,
+                fee_release.release_retained(),
+                ctx.epoch(),
+            );
 
         order.emit_order_modified(
             pool_inner.pool_id,
@@ -691,7 +699,13 @@ module triex::multicoin_pool {
             );
         // The retained share stops being a user claim and becomes revenue the
         // admin may sweep.
-        pool_inner.vault.recognize_locked_maker_fees(fee_release.release_retained());
+        pool_inner
+            .vault
+            .recognize_locked_maker_fees(
+                pool_inner.pool_id,
+                fee_release.release_retained(),
+                ctx.epoch(),
+            );
 
         order.emit_order_canceled(
             pool_inner.pool_id,
@@ -850,6 +864,85 @@ module triex::multicoin_pool {
             clock.timestamp_ms(),
         );
         fee_coin
+    }
+
+    // === Public-Mutative Functions * HUB REVENUE SHARE * ===
+
+    /// Price every epoch of unsettled basis at that epoch's rate and move the
+    /// result into `hub_owed`.
+    ///
+    /// Permissionless, and safe to be: it reads the rate the policy already
+    /// committed to for the epoch that earned the revenue, so the caller cannot
+    /// influence the amount, and the destination is not theirs to choose. That
+    /// lets Triex run this on a cron, lets an operator run it themselves, and lets
+    /// either batch many pools into one PTB.
+    ///
+    /// Takes `&FeePolicy` immutably. This is the only place a hub-share rate is
+    /// read, and it is off the trading path entirely.
+    public fun settle_hub_share<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        policy: &FeePolicy,
+        ctx: &TxContext,
+    ): u64 {
+        let epoch = ctx.epoch();
+        let pool_inner = self.load_inner_mut();
+        let pool_id = pool_inner.pool_id;
+        let collection_id = pool_inner.collection_id;
+
+        // Roll first so anything that aged out past the settle-by window is
+        // recorded as forfeited before it can be mistaken for settleable.
+        pool_inner.vault.roll_hub_basis(pool_id, epoch);
+
+        let pending = pool_inner.vault.pending_hub_basis();
+        let mut settled = 0;
+        pending.do_ref!(|entry| {
+            let basis_epoch = entry.basis_epoch();
+            let bps = policy.hub_share_bps_at(collection_id, basis_epoch);
+            settled =
+                settled + pool_inner.vault.settle_hub_basis(pool_id, basis_epoch, bps);
+        });
+
+        settled
+    }
+
+    /// Settle, then pay the whole settled balance to the collection's configured
+    /// beneficiary.
+    ///
+    /// No capability required. The destination comes from `HubRegistry`, not from
+    /// the caller, so there is nothing to redirect by calling this — which is what
+    /// makes a permissionless payout safe rather than merely convenient.
+    public fun claim_hub_share<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        policy: &FeePolicy,
+        registry: &HubRegistry,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ): u64 {
+        self.settle_hub_share(policy, ctx);
+
+        let pool_inner = self.load_inner_mut();
+        // Nothing owed is not a misconfiguration — a payout cron batching many
+        // pools into one PTB will meet plenty of them — so return before requiring
+        // a beneficiary. Otherwise one unconfigured idle pool would abort the batch.
+        if (pool_inner.vault.hub_owed() == 0) return 0;
+
+        // With money actually owed, an absent beneficiary *is* a misconfiguration.
+        // Abort rather than burn the share or bank it for the treasury: the basis
+        // has already moved into `hub_owed`, where it stays encumbered until claimed,
+        // so setting an address later still pays.
+        let pool_id = pool_inner.pool_id;
+        let collection_id = pool_inner.collection_id;
+        let beneficiary = registry.beneficiary(collection_id);
+        assert!(beneficiary.is_some(), ENoHubBeneficiary);
+        let beneficiary = beneficiary.destroy_some();
+
+        let share = pool_inner
+            .vault
+            .claim_hub_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
+        let amount = share.value();
+        transfer::public_transfer(share, beneficiary);
+
+        amount
     }
 
     /// Burns CRED tokens from the pool.
@@ -1041,6 +1134,28 @@ module triex::multicoin_pool {
     /// Earned fee revenue in the reserve: the ceiling on `withdraw_pool_fees`.
     public fun withdrawable_pool_fees<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
         self.load_inner().vault.withdrawable_quote_fees()
+    }
+
+    /// Hub share already priced and awaiting a claim.
+    public fun hub_owed<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+        self.load_inner().vault.hub_owed()
+    }
+
+    /// Revenue recognized on this pool that no one has priced into a share yet,
+    /// across the whole basis window.
+    public fun hub_unsettled_basis<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u128 {
+        self.load_inner().vault.hub_unsettled_basis()
+    }
+
+    /// Unsettled basis standing against a single epoch.
+    public fun hub_basis_at<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>, epoch: u64): u64 {
+        self.load_inner().vault.hub_basis_at(epoch)
+    }
+
+    /// What `withdraw_pool_fees` is currently holding back against an unsettled
+    /// basis, at the `MAX_HUB_SHARE_BPS` ceiling. Falls to zero on settlement.
+    public fun hub_holdback<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u128 {
+        self.load_inner().vault.hub_holdback()
     }
 
     /// Get the Order struct.
@@ -1367,13 +1482,20 @@ module triex::multicoin_pool {
                         pool_inner.pool_id,
                         proceeds_fee.trading_account_id(),
                         proceeds_fee.amount(),
+                        ctx.epoch(),
                         clock.timestamp_ms(),
                     );
                 fee_idx = fee_idx + 1;
             };
             // Escrow these fills earned out, plus the share retained from any
             // expiries, is revenue now and sweepable.
-            pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized());
+            pool_inner
+                .vault
+                .recognize_locked_maker_fees(
+                    pool_inner.pool_id,
+                    fee_flows.recognized(),
+                    ctx.epoch(),
+                );
             // The taker fee is revenue the moment it is charged, so it counts
             // toward this trader's tier — credited into the exchange-wide ring on
             // their own trading_account, after pricing, so the order never discounts

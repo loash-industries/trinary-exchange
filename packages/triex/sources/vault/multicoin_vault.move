@@ -4,9 +4,20 @@
 /// - CRED: Traditional Sui Balance<CRED> for fee payments
 module triex::multicoin_vault {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
-    use sui::{balance::{Self, Balance}, coin::{Self, Coin}, dynamic_object_field as dof};
+    use sui::{
+        balance::{Self, Balance},
+        coin::{Self, Coin},
+        dynamic_object_field as dof,
+        event
+    };
     use token::cred::CRED;
-    use triex::{balances::Balances, trading_account::{TradeProof, TradingAccount}, vault};
+    use triex::{
+        balances::Balances,
+        constants,
+        fee_basis::{Self, FeeBasis, EpochBasis},
+        trading_account::{TradeProof, TradingAccount},
+        vault
+    };
 
     // === Errors ===
     const EInsufficientBaseBalance: u64 = 1;
@@ -16,6 +27,48 @@ module triex::multicoin_vault {
     const EFeesLocked: u64 = 6;
     const ENoBalanceToSettle: u64 = 7;
     const EHasOwedBalances: u64 = 8;
+    const EHubShareAboveCeiling: u64 = 9;
+
+    // === Events ===
+    /// Revenue recognized on this pool, credited to the epoch whose hub-share
+    /// rate will price it. Emitted at each of the three recognition points, so an
+    /// operator can reconstruct a basis from events without an indexer.
+    public struct HubBasisAccrued has copy, drop {
+        pool_id: ID,
+        collection_id: ID,
+        epoch: u64,
+        amount: u64,
+    }
+
+    /// A basis that aged out of the ring before anyone settled it. The amount
+    /// stops being claimable and its holdback is released into the next treasury
+    /// sweep — the settle-by deadline taking effect. Never silent: this is the
+    /// record an operator reconciles a missing payment against.
+    public struct HubBasisForfeited has copy, drop {
+        pool_id: ID,
+        collection_id: ID,
+        epoch: u64,
+        amount: u64,
+    }
+
+    /// One epoch's basis priced at that epoch's rate and moved into `hub_owed`.
+    public struct HubShareSettled has copy, drop {
+        pool_id: ID,
+        collection_id: ID,
+        epoch: u64,
+        basis: u64,
+        bps: u64,
+        owed: u64,
+    }
+
+    /// `hub_owed` paid out to the beneficiary configured for the collection.
+    public struct HubShareClaimed has copy, drop {
+        pool_id: ID,
+        collection_id: ID,
+        beneficiary: address,
+        amount: u64,
+        timestamp: u64,
+    }
 
     // === Structs ===
 
@@ -58,6 +111,13 @@ module triex::multicoin_vault {
         /// and it is deliberately left uncorrected — clearing it would need
         /// per-order residue tracking the vault does not keep.
         locked_maker_fees: u64,
+        /// The portion of `quote_fee_reserve` a hub operator has been priced into
+        /// and may claim. Settled out of `hub_basis`, never written on a trade.
+        hub_owed: u64,
+        /// Revenue recognized on this pool that no one has priced into a share
+        /// yet, bucketed by the epoch that earned it. Holds the basis rather than
+        /// the split so the trading path never reads a rate — see `fee_basis`.
+        hub_basis: FeeBasis,
     }
 
     // === Public-Package Functions ===
@@ -76,6 +136,8 @@ module triex::multicoin_vault {
             cred_balance: balance::zero(),
             quote_fee_reserve: balance::zero(),
             locked_maker_fees: 0,
+            hub_owed: 0,
+            hub_basis: fee_basis::empty(ctx.epoch()),
         };
 
         // Initialize with a zero MultiCoin balance
@@ -107,11 +169,73 @@ module triex::multicoin_vault {
         self.locked_maker_fees
     }
 
+    /// Settled hub share awaiting a claim.
+    public(package) fun hub_owed<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64 {
+        self.hub_owed
+    }
+
+    /// Recognized revenue not yet priced into a share.
+    public(package) fun hub_unsettled_basis<QuoteAsset>(
+        self: &MultiCoinVault<QuoteAsset>,
+    ): u128 {
+        self.hub_basis.unsettled()
+    }
+
+    public(package) fun hub_basis_at<QuoteAsset>(
+        self: &MultiCoinVault<QuoteAsset>,
+        epoch: u64,
+    ): u64 {
+        self.hub_basis.basis_at(epoch)
+    }
+
+    /// What an unsettled basis could still turn into, priced at the ceiling.
+    ///
+    /// `withdraw_pool_fees` takes no `&FeePolicy` and so cannot know which slice
+    /// of an unsettled basis is the operator's. It assumes the worst, at the
+    /// compile-time bound. Rounded **up**: the settlement that consumes this
+    /// basis rounds `owed` down, and the pair must not cross or
+    /// `withdrawable_quote_fees` underflows by a unit. The over-lock disappears
+    /// the moment anyone settles.
+    public(package) fun hub_holdback<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u128 {
+        let unsettled = self.hub_basis.unsettled();
+        if (unsettled == 0) return 0;
+
+        let bps = constants::max_hub_share_bps() as u128;
+        let precision = bps_precision();
+        let product = unsettled * bps;
+        // ceil, without a branch on the remainder being zero.
+        (product + precision - 1) / precision
+    }
+
+    /// Everything in the reserve that is claimed by someone other than the
+    /// treasury: a maker's refundable escrow, a settled hub share, and the
+    /// provisional share of a basis nobody has settled yet.
+    ///
+    /// Every read of `quote_fee_reserve` that gates a payout goes through this.
+    /// The invariant `reserve >= encumbered()` is what makes each of the three
+    /// claims payable, and it is maintained by construction: a fee deposit raises
+    /// the reserve by more than it raises this figure, recognition moves value
+    /// from `locked` into a fraction of itself, an escrow refund lowers both by
+    /// the same amount, settlement converts holdback into no more `hub_owed` than
+    /// it releases, and every withdrawal is capped by the difference.
+    public(package) fun encumbered<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u128 {
+        (self.locked_maker_fees as u128) + (self.hub_owed as u128) + self.hub_holdback()
+    }
+
     /// Earned revenue in the reserve: what an admin sweep may take.
     public(package) fun withdrawable_quote_fees<QuoteAsset>(
         self: &MultiCoinVault<QuoteAsset>,
     ): u64 {
-        self.quote_fee_reserve.value() - self.locked_maker_fees
+        let reserve = self.quote_fee_reserve.value() as u128;
+        let encumbered = self.encumbered();
+        // An encumbrance above the reserve would mean basis was credited for
+        // revenue that never arrived. Abort rather than saturate: the figure gates
+        // a payout, and a wrong one here is spendable.
+        (reserve - encumbered) as u64
+    }
+
+    fun bps_precision(): u128 {
+        10000
     }
 
     #[test_only]
@@ -126,11 +250,135 @@ module triex::multicoin_vault {
 
     /// Recognize bid-maker escrow as earned revenue once the order fills. The
     /// funds are already in the reserve; only their classification changes.
+    ///
+    /// The hub basis is credited off the *actual* decrement, not `amount`. The two
+    /// differ: recognition floors per fill while the lock floors once over the
+    /// whole order, so a request can exceed what is still locked. Crediting the
+    /// request would turn the residue drift documented on `locked_maker_fees` into
+    /// a basis for revenue that was never recognized — an over-credit that
+    /// compounds, and that the holdback would then subtract from a reserve that
+    /// does not contain it.
     public(package) fun recognize_locked_maker_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
         amount: u64,
+        epoch: u64,
     ) {
-        self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
+        let recognized = amount.min(self.locked_maker_fees);
+        self.locked_maker_fees = self.locked_maker_fees - recognized;
+        self.accrue_hub_basis(pool_id, recognized, epoch);
+    }
+
+    /// Credit recognized revenue to the epoch that earned it, and surface
+    /// anything the roll forfeited. Every recognition point funnels through here.
+    fun accrue_hub_basis<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        amount: u64,
+        epoch: u64,
+    ) {
+        let forfeited = self.hub_basis.accrue(epoch, amount);
+        self.emit_forfeitures(pool_id, forfeited);
+        if (amount > 0) {
+            event::emit(HubBasisAccrued {
+                pool_id,
+                collection_id: self.collection_id,
+                epoch,
+                amount,
+            });
+        };
+    }
+
+    fun emit_forfeitures<QuoteAsset>(
+        self: &MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        forfeited: vector<EpochBasis>,
+    ) {
+        forfeited.do_ref!(|entry| event::emit(HubBasisForfeited {
+            pool_id,
+            collection_id: self.collection_id,
+            epoch: entry.basis_epoch(),
+            amount: entry.basis_amount(),
+        }));
+    }
+
+    // === Hub share settlement ===
+
+    /// Roll the basis ring forward without accruing, so a stale ring's
+    /// forfeitures are recorded before a settlement reads it.
+    public(package) fun roll_hub_basis<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        epoch: u64,
+    ) {
+        let forfeited = self.hub_basis.roll(epoch);
+        self.emit_forfeitures(pool_id, forfeited);
+    }
+
+    /// Every epoch currently carrying basis, so the caller can price each at its
+    /// own rate. The caller resolves rates; the vault holds no policy.
+    public(package) fun pending_hub_basis<QuoteAsset>(
+        self: &MultiCoinVault<QuoteAsset>,
+    ): vector<EpochBasis> {
+        self.hub_basis.pending()
+    }
+
+    /// Price one epoch's basis at that epoch's rate and move it into `hub_owed`.
+    ///
+    /// `owed` floors while `hub_holdback` ceils, so the holdback this releases is
+    /// always at least the `hub_owed` it creates and `encumbered()` can only fall.
+    /// That is the step the reserve invariant rests on.
+    public(package) fun settle_hub_basis<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        epoch: u64,
+        bps: u64,
+    ): u64 {
+        assert!(bps <= constants::max_hub_share_bps(), EHubShareAboveCeiling);
+
+        let basis = self.hub_basis.take(epoch);
+        if (basis == 0) return 0;
+
+        let owed = (((basis as u128) * (bps as u128)) / bps_precision()) as u64;
+        self.hub_owed = self.hub_owed + owed;
+
+        event::emit(HubShareSettled {
+            pool_id,
+            collection_id: self.collection_id,
+            epoch,
+            basis,
+            bps,
+            owed,
+        });
+
+        owed
+    }
+
+    /// Pay the settled share out of the reserve. Zeroes `hub_owed` first so the
+    /// split is measured against an already-decremented encumbrance.
+    public(package) fun claim_hub_share<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        beneficiary: address,
+        timestamp: u64,
+        ctx: &mut TxContext,
+    ): Coin<QuoteAsset> {
+        let amount = self.hub_owed;
+        self.hub_owed = 0;
+        // Guaranteed by `reserve >= encumbered()`, which counts `hub_owed` in
+        // full. Asserted rather than assumed: it is the invariant's payout edge.
+        assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
+        let share = self.quote_fee_reserve.split(amount);
+
+        event::emit(HubShareClaimed {
+            pool_id,
+            collection_id: self.collection_id,
+            beneficiary,
+            amount,
+            timestamp,
+        });
+
+        coin::from_balance(share, ctx)
     }
 
     /// Returns the collection_id this vault is associated with.
@@ -216,15 +464,23 @@ module triex::multicoin_vault {
                 maker_fee_amount,
                 timestamp,
             ) = vault::quote_fee_deposit_into_parts(deposit);
+            let epoch = ctx.epoch();
             self.move_quote_to_fee_reserve(
                 pool_id,
                 trading_account_id,
                 taker_fee_amount + maker_fee_amount,
+                epoch,
                 timestamp,
             );
             // Only the maker portion is escrow; the taker fee is earned on
             // execution and immediately sweepable.
             self.locked_maker_fees = self.locked_maker_fees + maker_fee_amount;
+            // The deposit above credited the whole fee to the basis, because from
+            // inside it the escrow half is not distinguishable. Take it back out:
+            // it re-enters through `recognize_locked_maker_fees` if and when the
+            // order actually earns it. Same epoch, same transaction, so the bucket
+            // it was just credited to is the one it comes out of.
+            self.hub_basis.uncredit(epoch, maker_fee_amount);
         } else {
             option::destroy_none(quote_fee_deposit);
         };
@@ -324,18 +580,30 @@ module triex::multicoin_vault {
     }
 
     /// Move already-held quote from the pool balance into the fee reserve.
-    /// Used for fees charged out of quote proceeds (ask-taker and ask-maker
-    /// fees), which never pass through a user withdrawal.
+    ///
+    /// This is the shared *deposit* primitive, not a single recognition point.
+    /// Two callers reach it with different money: the ask-proceeds loop moves fees
+    /// already earned, while `settle_trading_account` moves a bid's
+    /// `taker + maker` deposit, of which only the taker half is revenue. From in
+    /// here the two are indistinguishable.
+    ///
+    /// So the basis is credited for the whole `amount`, and
+    /// `settle_trading_account` takes the escrow half straight back out. Crediting
+    /// only here and correcting at the one caller that knows better keeps a single
+    /// rule — the basis moves where the reserve does — and means the ask path
+    /// needs no instrumentation of its own.
     public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         pool_id: ID,
         trading_account_id: ID,
         amount: u64,
+        epoch: u64,
         timestamp: u64,
     ) {
         if (amount == 0) return;
         let fee_balance = self.quote_balance.split(amount);
         self.quote_fee_reserve.join(fee_balance);
+        self.accrue_hub_basis(pool_id, amount, epoch);
         vault::emit_pool_fees_deposited<QuoteAsset>(
             pool_id,
             amount,

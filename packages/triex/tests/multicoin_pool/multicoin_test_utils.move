@@ -25,6 +25,14 @@ module triex::integration_multicoin_test_utils {
 
     public fun owner(): address { OWNER }
 
+    /// `hub_holdback`'s arithmetic, for asserting against it. Rounds up, matching
+    /// the vault — the holdback must never sit below the `hub_owed` a settlement
+    /// can create out of the same basis.
+    public fun ceil_bps(amount: u64, bps: u64): u64 {
+        if (amount == 0) return 0;
+        (((amount as u128) * (bps as u128) + 9999) / 10000) as u64
+    }
+
     // Test asset IDs
     const ASSET_GOLD: u64 = 1;
     const ASSET_SILVER: u64 = 2;

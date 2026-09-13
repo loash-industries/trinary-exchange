@@ -2561,20 +2561,33 @@ module triex::integration_multicoin_pool_order_management_tests {
         {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let reserve_before = pool.quote_fee_reserve_balance();
             assert!(reserve_before > 0, 2);
+
+            // Sweeping the whole reserve requires settling first. Every fee in it is
+            // recognized revenue, so all of it is unsettled hub basis, and
+            // `withdraw_pool_fees` holds back the ceiling slice of that basis — it
+            // takes no `&FeePolicy` and so cannot know the basis prices to zero.
+            // This is the PTB order the admin sweep has to adopt; without the settle
+            // the withdrawal below aborts on `EFeesLocked`.
+            assert!(pool.withdrawable_pool_fees() < reserve_before, 3);
+            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 4);
+            assert!(pool.withdrawable_pool_fees() == reserve_before, 5);
+
             let fee_coin = pool.withdraw_pool_fees(
                 &admin_cap,
                 reserve_before,
                 &clock,
                 test.ctx(),
             );
-            assert!(fee_coin.value() == reserve_before, 3);
-            assert!(pool.quote_fee_reserve_balance() == 0, 4);
+            assert!(fee_coin.value() == reserve_before, 6);
+            assert!(pool.quote_fee_reserve_balance() == 0, 7);
 
             unit_test::destroy(fee_coin);
             return_shared(clock);
+            return_shared(policy);
             return_shared(pool);
             unit_test::destroy(admin_cap);
         };
