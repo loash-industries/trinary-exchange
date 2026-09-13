@@ -109,7 +109,7 @@ module triex::integration_master_withdraw_permissionless_tests {
         test.end();
     }
 
-    #[test, expected_failure(abort_code = ::triex::vault::ENoBalanceToSettle)]
+    #[test, expected_failure(abort_code = ::triex::coin_vault::ENoBalanceToSettle)]
     fun test_withdraw_settled_amounts_permissionless_no_balance_e() {
         let mut test = begin(OWNER);
         let registry_id = pool_tests::setup_test(OWNER, &mut test);

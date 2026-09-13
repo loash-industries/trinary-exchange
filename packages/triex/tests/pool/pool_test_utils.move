@@ -10,13 +10,14 @@ module triex::pool_test_utils {
     };
     use token::cred::CRED;
     use triex::{
-        book,
+        big_vector::{BigVector, borrow as borrow},
+        coin_book,
         constants,
         fee_policy::{Self, FeePolicy},
-        fill::Fill,
+        coin_fill::Fill,
         math,
-        order::{Self, Order},
-        order_info::{Self, OrderInfo},
+        coin_order::{Self, Order},
+        coin_order_info::{Self, OrderInfo},
         pool::{Self, Pool},
         quote_fee,
         registry::{Self, Registry, TriexAdminCap},
@@ -30,7 +31,7 @@ module triex::pool_test_utils {
             create_acct_and_share_with_funds_typed,
             create_caps
         },
-        vault
+        coin_vault
     };
 
     const OWNER: address = @0x1;
@@ -38,7 +39,6 @@ module triex::pool_test_utils {
     const BOB: address = @0xBBBB;
     const CAROL: address = @0xCCCC;
 
-    const EBookOrderNotFound: u64 = 1;
 
     // Entry-tier rates the shared `FeePolicy` is seeded with in tests — tier 0 of
     // the genesis ladder `fee_policy::bootstrap_quote` writes at launch. Multicoin
@@ -2161,7 +2161,7 @@ module triex::pool_test_utils {
         end(test);
     }
 
-    fun get_order(pool_id: ID, order_id: u64, test: &mut Scenario): Order {
+    fun get_order(pool_id: ID, order_id: u128, test: &mut Scenario): Order {
         test.next_tx(OWNER);
         {
             let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
@@ -2172,7 +2172,7 @@ module triex::pool_test_utils {
         }
     }
 
-    fun get_orders(pool_id: ID, order_ids: vector<u64>, test: &mut Scenario): vector<Order> {
+    fun get_orders(pool_id: ID, order_ids: vector<u128>, test: &mut Scenario): vector<Order> {
         test.next_tx(OWNER);
         {
             let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
@@ -2471,7 +2471,7 @@ module triex::pool_test_utils {
         sender: address,
         pool_id: ID,
         trading_account_id: ID,
-        order_id: u64,
+        order_id: u128,
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
@@ -2520,7 +2520,7 @@ module triex::pool_test_utils {
         sender: address,
         pool_id: ID,
         trading_account_id: ID,
-        order_id: u64,
+        order_id: u128,
         new_quantity: u64,
         test: &mut Scenario,
     ) {
@@ -5677,36 +5677,12 @@ module triex::pool_test_utils {
         assert!(fill.maker_fee() >= 0, constants::e_fill_mismatch());
     }
 
-    /// Helper, borrow orderbook and verify an order.
-    /// #feat:bv
-    /// fun borrow_and_verify_book_order<BaseAsset, QuoteAsset>(
-    ///     pool_id: ID,
-    ///     book_order_id: u64,
-    ///     is_bid: bool,
-    ///     quantity: u64,
-    ///     filled_quantity: u64,
-    ///     epoch: u64,
-    ///     status: u8,
-    ///     expire_timestamp: u64,
-    ///     test: &mut Scenario,
-    /// ) {
-    ///     test.next_tx(@0x1);
-    ///     let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-    ///     let order = borrow_orderbook(&pool, is_bid).borrow(book_order_id);
-    ///     verify_book_order(
-    ///         order,
-    ///         book_order_id,
-    ///         quantity,
-    ///         filled_quantity,
-    ///         epoch,
-    ///         status,
-    ///         expire_timestamp,
-    ///     );
-    ///     return_shared(pool);
-    /// }
+    /// Helper, borrow orderbook and verify an order. The order id is its own
+    /// `BigVector` key, so this is a direct O(log n) borrow rather than the index
+    /// scan the vector book needed.
     public(package) fun borrow_and_verify_book_order<BaseAsset, QuoteAsset>(
         pool_id: ID,
-        book_order_id: u64,
+        book_order_id: u128,
         is_bid: bool,
         quantity: u64,
         filled_quantity: u64,
@@ -5717,11 +5693,7 @@ module triex::pool_test_utils {
     ) {
         test.next_tx(@0x1);
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let orderbook = borrow_orderbook(&pool, is_bid);
-        let order_idx_ref: Option<u64> = book::find_order_index(orderbook, book_order_id);
-        assert!(order_idx_ref.is_some(), EBookOrderNotFound);
-        let order_idx = order_idx_ref.borrow();
-        let order: &Order = orderbook.borrow(*order_idx);
+        let order: &Order = borrow_orderbook(&pool, is_bid).borrow(book_order_id);
         verify_book_order(
             order,
             book_order_id,
@@ -5735,34 +5707,24 @@ module triex::pool_test_utils {
         return_shared(pool);
     }
 
-    /// Internal function to borrow orderbook to ensure order exists
-    /// #feat:bv
-    /// fun borrow_order_ok<BaseAsset, QuoteAsset>(pool_id: ID, book_order_id: u64, test: &mut Scenario) {
-    ///     test.next_tx(@0x1);
-    ///     let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-    ///     // Order ids are opaque u64; side is not derivable from the id.
-    ///     borrow_orderbook(&pool, is_bid).borrow(book_order_id);
-    ///     return_shared(pool);
-    /// }
+    /// Internal function to borrow orderbook to ensure order exists. Aborts inside
+    /// `BigVector` with `ENotFound` if the id is not on the given side.
     public(package) fun borrow_order_ok<BaseAsset, QuoteAsset>(
         pool_id: ID,
-        book_order_id: u64,
+        book_order_id: u128,
         is_bid: bool,
         test: &mut Scenario,
     ) {
         test.next_tx(@0x1);
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let book_side = borrow_orderbook(&pool, is_bid);
-        let order_idx_ref: Option<u64> = book::find_order_index(book_side, book_order_id);
-        assert!(order_idx_ref.is_some(), EBookOrderNotFound);
-        order_idx_ref.borrow();
+        borrow_orderbook(&pool, is_bid).borrow(book_order_id);
         return_shared(pool);
     }
 
     /// Internal function to verifies an order in the book
     fun verify_book_order(
         order: &Order,
-        book_order_id: u64,
+        book_order_id: u128,
         quantity: u64,
         filled_quantity: u64,
         epoch: u64,
@@ -5781,8 +5743,7 @@ module triex::pool_test_utils {
     fun borrow_orderbook<BaseAsset, QuoteAsset>(
         pool: &Pool<BaseAsset, QuoteAsset>,
         is_bid: bool,
-        // ): &BigVector<Order> { // #feat:bv
-    ): &vector<Order> {
+    ): &BigVector<Order> {
         let orderbook = if (is_bid) {
             pool.load_inner().bids()
         } else {
@@ -5980,7 +5941,7 @@ module triex::pool_test_utils {
         sender: address,
         pool_id: ID,
         trading_account_id: ID,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
@@ -6571,7 +6532,7 @@ module triex::pool_test_utils {
             pool.cancel_order(&mut trading_account, &trade_proof, new_order_id, &clock, test.ctx());
 
             // 100% retention: nothing to unlock, so no refund event at all.
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 0, 2);
 
             return_shared(trading_account);
@@ -6639,9 +6600,9 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
             assert!(amount == escrow, 1);
 
             // The reserve is empty: nothing traded and nothing was retained.
@@ -6793,18 +6754,18 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
                 &refunds[0],
             );
             assert!(refund_order_id == order_id, 1);
             assert!(refund_amount == expected_refund, 2);
             assert!(refund_bm == trading_account_id_alice, 3);
 
-            let cancels = event::events_by_type<order::OrderCanceled>();
+            let cancels = event::events_by_type<coin_order::OrderCanceled>();
             assert!(cancels.length() == 1, 4);
-            let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
+            let (cancel_order_id, fee_refunded, fee_retained) = coin_order::canceled_event_parts(
                 &cancels[0],
             );
             // Same order, same refund: the two events describe one release.
@@ -6897,9 +6858,9 @@ module triex::pool_test_utils {
             );
             return_shared(policy);
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
                 &refunds[0],
             );
             // Bob sent the transaction; Alice owns the refund.
@@ -6908,9 +6869,9 @@ module triex::pool_test_utils {
             assert!(refund_order_id == alice_order_id, 3);
             assert!(refund_amount == expected_refund, 4);
 
-            let expiries = event::events_by_type<order_info::OrderExpired>();
+            let expiries = event::events_by_type<coin_order_info::OrderExpired>();
             assert!(expiries.length() == 1, 5);
-            let (expired_order_id, fee_refunded, fee_retained) = order_info::expired_event_parts(
+            let (expired_order_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(
                 &expiries[0],
             );
             assert!(expired_order_id == refund_order_id, 6);
@@ -7295,10 +7256,10 @@ module triex::pool_test_utils {
             return_shared(policy);
 
             // Two refunds, one per expired maker, each naming its own order.
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 2, 0);
-            let (id_a, amount_a, ta_a) = vault::refunded_event_parts(&refunds[0]);
-            let (id_b, amount_b, ta_b) = vault::refunded_event_parts(&refunds[1]);
+            let (id_a, amount_a, ta_a) = coin_vault::refunded_event_parts(&refunds[0]);
+            let (id_b, amount_b, ta_b) = coin_vault::refunded_event_parts(&refunds[1]);
             assert!(ta_a != ta_b, 1);
             // Neither is attributed to Bob, who merely triggered the expiries.
             assert!(ta_a != trading_account_id_bob, 2);
@@ -7397,15 +7358,15 @@ module triex::pool_test_utils {
             return_shared(policy);
 
             // The stale ask escrowed nothing, so nothing is refunded.
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 0, 1);
 
             // And the expiry event must not claim otherwise. Nothing moves funds
             // on this path, so a non-zero split here would be visible only in the
             // event — an indexer would book a refund that never happened.
-            let expiries = event::events_by_type<order_info::OrderExpired>();
+            let expiries = event::events_by_type<coin_order_info::OrderExpired>();
             assert!(expiries.length() == 1, 9);
-            let (_id, fee_refunded, fee_retained) = order_info::expired_event_parts(&expiries[0]);
+            let (_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(&expiries[0]);
             assert!(fee_refunded == 0, 10);
             assert!(fee_retained == 0, 11);
 
@@ -7498,9 +7459,9 @@ module triex::pool_test_utils {
             );
             return_shared(policy);
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
                 &refunds[0],
             );
             assert!(refund_order_id == bid_order_id, 1);
@@ -7509,9 +7470,9 @@ module triex::pool_test_utils {
 
             // A self-match cancel emits OrderCanceled rather than OrderExpired,
             // and it has to carry the same split.
-            let cancels = event::events_by_type<order::OrderCanceled>();
+            let cancels = event::events_by_type<coin_order::OrderCanceled>();
             assert!(cancels.length() == 1, 4);
-            let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
+            let (cancel_order_id, fee_refunded, fee_retained) = coin_order::canceled_event_parts(
                 &cancels[0],
             );
             assert!(cancel_order_id == bid_order_id, 5);
@@ -7599,12 +7560,12 @@ module triex::pool_test_utils {
             pool.cancel_all_orders(&mut trading_account, &trade_proof, &clock, test.ctx());
 
             // One refund per bid; the ask escrowed nothing and contributes none.
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 3, 1);
             let mut summed = 0;
             let mut r = 0;
             while (r < refunds.length()) {
-                let (_id, amount, ta) = vault::refunded_event_parts(&refunds[r]);
+                let (_id, amount, ta) = coin_vault::refunded_event_parts(&refunds[r]);
                 assert!(ta == trading_account_id_alice, 2);
                 summed = summed + amount;
                 r = r + 1;
@@ -7698,13 +7659,13 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 1);
-            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
             assert!(amount == expected_refund, 2);
 
-            let cancels = event::events_by_type<order::OrderCanceled>();
-            let (_cid, fee_refunded, fee_retained) = order::canceled_event_parts(&cancels[0]);
+            let cancels = event::events_by_type<coin_order::OrderCanceled>();
+            let (_cid, fee_refunded, fee_retained) = coin_order::canceled_event_parts(&cancels[0]);
             assert!(fee_refunded == expected_refund, 3);
             assert!(fee_retained == expected_retained, 4);
             // The halves still sum exactly, so the escrow counter can reach zero.
@@ -9045,15 +9006,76 @@ module triex::pool_test_utils {
         end(test);
     }
 
+    /// Build a book `count` bids deep, spreading the orders over as many trading
+    /// accounts as `MAX_OPEN_ORDERS` requires. The single-account `bench_place_bids`
+    /// above tops out at 100, which is inside one or two `BigVector` slices —
+    /// nowhere near the depth where a keyed book is supposed to beat a flat vector.
+    /// This is how that regime gets measured at all.
+    fun bench_place_bids_deep(count: u64) {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let first_account = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            first_account,
+            &mut test,
+        );
+
+        let quantity = 1 * constants::float_scaling();
+        // Stay clear of the per-account cap so the placement itself is what is
+        // being timed, not an account rollover.
+        let per_account = 75;
+        let mut placed = 0;
+        let mut account = first_account;
+        let mut trader = ALICE;
+        while (placed < count) {
+            if (placed > 0 && placed % per_account == 0) {
+                // Distinct sender per batch so each gets its own trading account.
+                trader = sui::address::from_u256(0x10000 + ((placed / per_account) as u256));
+                account =
+                    create_acct_and_share_with_funds(
+                        trader,
+                        1000000 * constants::float_scaling(),
+                        &mut test,
+                    );
+            };
+            place_limit_order<SUI, USDC>(
+                trader,
+                pool_id,
+                account,
+                constants::no_restriction(),
+                constants::self_matching_allowed(),
+                (placed + 1) * constants::float_scaling(),
+                quantity,
+                true,
+                constants::max_u64(),
+                &mut test,
+            );
+            placed = placed + 1;
+        };
+
+        end(test);
+    }
+
     public(package) fun bench_depth_10() { bench_place_bids(10) }
 
     public(package) fun bench_depth_40() { bench_place_bids(40) }
 
     public(package) fun bench_depth_80() { bench_place_bids(80) }
 
-    /// 80 resting bids, then cancel the *worst-priced* one. That order sits at
-    /// index 0, so `find_order_index` scans the whole book to reach it and the
-    /// removal shifts every element — the worst case for cancel at this depth.
+    /// Past the 64-order slice size: several slices, so cross-slice work counts.
+    public(package) fun bench_depth_300() { bench_place_bids_deep(300) }
+
+    /// 80 resting bids, then cancel the *worst-priced* one — the order furthest
+    /// from the top of the book. On the vector book this was the worst case: a
+    /// full scan to find it, then a memmove of every element past it. On the
+    /// keyed coin book it is an ordinary O(log n) remove, so this benchmark now
+    /// measures the difference that made rather than a pathological case.
     public(package) fun bench_cancel_at_depth_80() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);

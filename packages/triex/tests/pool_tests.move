@@ -9,7 +9,7 @@
 #[test_only]
 module triex::pool_tests {
     use sui::{object::ID, test_scenario::Scenario};
-    use triex::{order_info::OrderInfo, pool_test_utils};
+    use triex::{coin_order_info::OrderInfo, pool_test_utils};
 
     public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, ReferenceQuoteAsset>(
         test: &mut Scenario,
@@ -152,7 +152,7 @@ module triex::pool_tests {
         sender: address,
         pool_id: ID,
         trading_account_id: ID,
-        order_id: u64,
+        order_id: u128,
         test: &mut Scenario,
     ) {
         pool_test_utils::cancel_order<BaseAsset, QuoteAsset>(
@@ -174,7 +174,7 @@ module triex::pool_tests {
         sender: address,
         pool_id: ID,
         trading_account_id: ID,
-        order_id: u64,
+        order_id: u128,
         new_quantity: u64,
         test: &mut Scenario,
     ) {

@@ -28,7 +28,7 @@ module triex::pool_fee_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::vault::EFeesLocked)]
+    #[expected_failure(abort_code = triex::coin_vault::EFeesLocked)]
     fun test_admin_sweep_above_unlocked_portion_aborts() {
         pool_test_utils::test_admin_sweep_above_unlocked_portion_aborts();
     }
@@ -44,7 +44,7 @@ module triex::pool_fee_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::vault::EFeesLocked)]
+    #[expected_failure(abort_code = triex::coin_vault::EFeesLocked)]
     fun test_admin_cannot_sweep_locked_maker_fees() {
         pool_test_utils::test_admin_cannot_sweep_locked_maker_fees();
     }
