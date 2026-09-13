@@ -88,7 +88,7 @@ module triex::multicoin_pool {
     /// #ref:functions
     public fun create_permissionless_pool<QuoteAsset>(
         registry: &mut Registry,
-        policy: &mut FeePolicy,
+        policy: &FeePolicy,
         collection: &Collection,
         asset_id: u64,
         creation_fee: Coin<CRED>,
@@ -110,7 +110,7 @@ module triex::multicoin_pool {
     /// #ref:functions
     public(package) fun create_pool<QuoteAsset>(
         registry: &mut Registry,
-        policy: &mut FeePolicy,
+        policy: &FeePolicy,
         collection: &Collection,
         asset_id: u64,
         creation_fee: Coin<CRED>,
@@ -123,12 +123,13 @@ module triex::multicoin_pool {
         let quote_type = type_name::with_defining_ids<QuoteAsset>();
         assert!(registry.is_quote_approved(quote_type), EQuoteNotApproved);
 
-        // Deploying a collection's first pool is what pins where its operator
-        // share is paid: the deployer, once, and never re-pointed here — the
-        // admin cap can destroy the mapping but the contracts offer no
-        // rotation. Set-if-absent, so later pools on the same collection
-        // cannot capture a beneficiary an earlier deployment established.
-        policy.register_operator_beneficiary(collection_id, ctx.sender());
+        // Deliberately no beneficiary registration here. Pool creation is
+        // permissionless and proves nothing about who operates the hub, so
+        // pinning the deployer would let whoever deploys first capture the
+        // collection's revenue share. The payout address is registered
+        // separately, through `fee_policy`'s adapter witness, which binds the
+        // write to the storage unit's `OwnerCap` — and creation therefore only
+        // ever *reads* the policy object.
 
         // Born into the multicoin default class for its quote — multicoin pools
         // price differently from coin pools sharing the same quote, so they get
@@ -178,7 +179,7 @@ module triex::multicoin_pool {
     /// #ref:functions
     public fun create_pool_admin<QuoteAsset>(
         registry: &mut Registry,
-        policy: &mut FeePolicy,
+        policy: &FeePolicy,
         collection: &Collection,
         asset_id: u64,
         _cap: &TriexAdminCap,
@@ -912,7 +913,7 @@ module triex::multicoin_pool {
     /// claim, both parties, atomically.
     ///
     /// No capability required. Both destinations come from configuration —
-    /// `FeePolicy` records the beneficiary pool creation pinned, and
+    /// `FeePolicy` records the beneficiary the adapter witness registered, and
     /// `Registry.treasury_address()` the treasury — not from the caller, so
     /// there is nothing to redirect by calling this. That lets Triex run a
     /// payout cron, lets an operator self-serve, and lets either batch many
@@ -932,10 +933,11 @@ module triex::multicoin_pool {
 
         let hub_amount = pool_inner.vault.operator_owed();
         if (hub_amount > 0) {
-            // With money actually owed, an absent mapping means the admin has
-            // destroyed it. Abort rather than burn the share or bank it for
-            // the treasury: `operator_owed` stays encumbered until claimed, so a
-            // redeployment restoring the mapping still pays.
+            // With money actually owed, an absent mapping means no one has
+            // registered yet, or the admin destroyed it. Abort rather than burn
+            // the share or bank it for the treasury: `operator_owed` stays
+            // encumbered until claimed, so a registration restoring the mapping
+            // still pays.
             let beneficiary = policy.operator_beneficiary(collection_id);
             assert!(beneficiary.is_some(), ENoOperatorBeneficiary);
             let beneficiary = beneficiary.destroy_some();

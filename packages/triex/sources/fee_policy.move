@@ -9,8 +9,9 @@
 /// `&mut`. Immutable reads of a shared object commute, so arbitrarily many
 /// trades read this object in parallel — exactly as the whole network reads
 /// `Clock` — but a write path on user flow would serialize the entire exchange.
-/// The one user-reachable write is pool creation, which pins the operator
-/// beneficiary — rare by nature, and never on the flow of an order.
+/// The one user-reachable write is operator beneficiary registration through
+/// the admin-registered adapter witness — rare by nature (once per storage
+/// unit), and never on the flow of an order. Pool creation reads immutably.
 ///
 /// Schedule changes are staged: `update_class` writes `next` with
 /// `effective_epoch = now + 1`, and reads pick `next` once its epoch arrives.
@@ -31,6 +32,8 @@ module triex::fee_policy {
     const EInvalidQuoteUnit: u64 = 6;
     const EOperatorShareAboveCeiling: u64 = 7;
     const EOperatorShareClassDoesNotExist: u64 = 8;
+    const ENoAuthorizedAdapter: u64 = 9;
+    const EUnauthorizedAdapter: u64 = 10;
 
     // === Constants ===
     const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -470,12 +473,14 @@ module triex::fee_policy {
     // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
     // fields on an upgrade — dynamic fields on its `id` can. Everything below is
     // additive. The rates are admin-written at epoch cadence, which is what the
-    // module invariant allows. The payout address is written exactly once, by
-    // pool creation, and destroyed only by the admin cap — there is no
-    // operator-reachable rotation path, so the only user-reachable `&mut` on
-    // this object is the (rare) pool-creation transaction. Re-pointing revenue
-    // at another party is deliberately not a thing these contracts do; any such
-    // delegation is settled outside Triex.
+    // module invariant allows. The payout address is written exactly once, on
+    // presentation of the registered adapter's witness — the adapter package is
+    // what binds the write to the storage unit's `OwnerCap`, so the address
+    // pinned is the storage unit owner's, not whichever sender deployed a pool
+    // first — and destroyed only by the admin cap. There is no rotation path,
+    // witness-gated or otherwise: re-pointing revenue at another party is
+    // deliberately not a thing these contracts do; any such delegation is
+    // settled outside Triex.
     //
     // The rate is applied eagerly, at the moment revenue is recognized — see
     // `docs/trade-hub-revenue-share.md`, "Revision: split at recognition".
@@ -493,10 +498,15 @@ module triex::fee_policy {
     public struct DefaultOperatorShareKey has copy, drop, store {}
 
     /// collection_id -> the address that collection's share is paid to.
-    /// Written exactly once, by the transaction that deploys the collection's
-    /// first pool; destroyed only via the admin cap. Absent means a claim
-    /// aborts rather than guessing.
+    /// Written exactly once, through the registered adapter's witness;
+    /// destroyed only via the admin cap. Absent means a claim aborts rather
+    /// than guessing.
     public struct OperatorBeneficiaryKey has copy, drop, store { collection_id: ID }
+
+    /// The one witness type allowed to register a beneficiary. Absent until the
+    /// admin registers an adapter, which is the shipping state: no registration
+    /// path exists at all until the adapter package has been audited and named.
+    public struct AuthorizedAdapterKey has copy, drop, store {}
 
     /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
     /// at `effective_epoch`, and reads compare against the running epoch so
@@ -531,6 +541,10 @@ module triex::fee_policy {
 
     public struct OperatorBeneficiaryDestroyed has copy, drop {
         collection_id: ID,
+    }
+
+    public struct OperatorAdapterAuthorized has copy, drop {
+        adapter: Option<TypeName>,
     }
 
     /// Re-price a hub-share class, effective next epoch.
@@ -665,16 +679,90 @@ module triex::fee_policy {
         0
     }
 
-    /// Record where a collection's operator share is paid, if nothing is
-    /// recorded yet. First write wins: the address is pinned by the transaction
-    /// that deploys the collection's first pool, and after that the contracts
-    /// offer no way to re-point it — a hub changing hands, or an operator
-    /// wanting revenue elsewhere, is a settlement matter external to Triex.
-    /// The admin cap can destroy a mapping, never redirect one.
+    /// Register the one witness type allowed to register beneficiaries,
+    /// replacing any previous registration.
     ///
-    /// `public(package)` so the only caller is pool creation. The set-if-absent
-    /// contract is what makes creating a *second* pool for a collection safe:
-    /// it cannot capture a beneficiary someone else's deployment established.
+    /// The type is what makes the gate real. A bare `<W: drop>` bound authorizes
+    /// nothing — any package can declare a struct with `drop` and mint one — so a
+    /// witness only proves anything if the callee pins which type it will accept.
+    /// Pinning it by `TypeName` rather than by importing the adapter keeps Triex
+    /// free of any dependency on the game world: it compares a name, it does not
+    /// link a module.
+    public fun set_operator_adapter<W: drop>(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let adapter = type_name::with_defining_ids<W>();
+        let key = AuthorizedAdapterKey {};
+        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
+            let current: &mut TypeName = df::borrow_mut(&mut self.id, key);
+            *current = adapter;
+        } else {
+            df::add(&mut self.id, key, adapter);
+        };
+
+        event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
+    }
+
+    /// Withdraw the adapter, closing the registration path entirely until a new
+    /// one is registered. Mappings already written are untouched.
+    public fun clear_operator_adapter(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let key = AuthorizedAdapterKey {};
+        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
+            df::remove<AuthorizedAdapterKey, TypeName>(&mut self.id, key);
+            event::emit(OperatorAdapterAuthorized { adapter: option::none() });
+        };
+    }
+
+    /// The registered adapter type, if registration is enabled.
+    public fun operator_adapter(self: &FeePolicy): Option<TypeName> {
+        let key = AuthorizedAdapterKey {};
+        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
+            option::some(*df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, key))
+        } else {
+            option::none()
+        }
+    }
+
+    /// Record where a collection's operator share is paid, on presentation of
+    /// the registered adapter's witness. First write wins, and after it the
+    /// contracts offer no way to re-point — a hub changing hands, or an operator
+    /// wanting revenue elsewhere, is a settlement matter external to Triex. The
+    /// admin cap can destroy a mapping, never redirect one; after a destroy,
+    /// re-registration runs through this same gate, so the address can only ever
+    /// be re-pinned by the storage unit's current owner.
+    ///
+    /// **What this trusts, stated plainly.** The witness proves the call came
+    /// *through* the registered adapter. It does not prove anything about
+    /// `collection_id` or `beneficiary`, because a witness cannot carry a payload
+    /// Triex could verify — a struct is constructible only in its defining
+    /// module, so any field Triex could read is a field the adapter alone can
+    /// set, and reading it would be trusting the adapter anyway. The binding is
+    /// the adapter's job: it takes the caller's `OwnerCap<StorageUnit>` and the
+    /// `VaultConfig`, checks the cap against the config's storage unit and the
+    /// config's collection against the one being registered, and only then mints
+    /// the witness. That logic is what the admin audits before registering it,
+    /// which is why registration is admin-only, single-valued, and revocable.
+    public fun register_operator_beneficiary_with_witness<W: drop>(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+        _witness: W,
+    ) {
+        let adapter_key = AuthorizedAdapterKey {};
+        assert!(
+            df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key),
+            ENoAuthorizedAdapter,
+        );
+        assert!(
+            df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key) ==
+            type_name::with_defining_ids<W>(),
+            EUnauthorizedAdapter,
+        );
+
+        self.register_operator_beneficiary(collection_id, beneficiary);
+    }
+
+    /// The set-if-absent write both the witness path above and tests land on.
+    /// Set-if-absent is what makes a *second* registration attempt safe: it
+    /// cannot capture a beneficiary an earlier registration established.
     public(package) fun register_operator_beneficiary(
         self: &mut FeePolicy,
         collection_id: ID,
@@ -691,8 +779,9 @@ module triex::fee_policy {
 
     /// Destroy a collection's payout mapping. Accrual continues — the rate is a
     /// property of the share class, not of the mapping — but claims abort until
-    /// the collection deploys again, so the share stays encumbered rather than
-    /// paying an address the admin has disowned.
+    /// the storage unit's owner registers again through the adapter, so the
+    /// share stays encumbered rather than paying an address the admin has
+    /// disowned.
     public fun destroy_operator_beneficiary(
         self: &mut FeePolicy,
         collection_id: ID,

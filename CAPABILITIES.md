@@ -103,13 +103,18 @@ not happened yet — there is no deferred settlement whose timing anyone could
 game, and `operator_owed()` is exact at all times.
 
 Where the share is paid is configuration, not inference: `FeePolicy` holds an
-explicit `collection_id -> address`, pinned to the deployer by the transaction
-that creates the collection's first pool and never re-pointed by the contracts —
-so a hub changing hands, a capability parked on another object, or a game-side
-change to a character's wallet cannot silently redirect money. There is no
-rotation surface at all: any delegation or re-division of a hub's revenue is
+explicit `collection_id -> address`, written once through a witness minted by an
+admin-registered adapter package — the adapter checks the caller's
+`OwnerCap<StorageUnit>` against the collection, so the address registered is the
+storage unit owner's, not whichever sender happened to deploy a pool first (pool
+creation itself writes nothing) — and never re-pointed by the contracts, so a
+hub changing hands, a capability parked on another object, or a game-side change
+to a character's wallet cannot silently redirect money. Until the admin
+registers an adapter type, no registration path exists at all. There is no
+rotation surface either: any delegation or re-division of a hub's revenue is
 settled outside Triex, and the admin cap can only **destroy** a mapping (halting
-payouts, which stay encumbered), never point it somewhere new.
+payouts, which stay encumbered until the owner re-registers), never point it
+somewhere new.
 Accrued-but-unclaimed balance pays whoever is configured at claim time, which is
 a settlement matter between a hub's buyer and seller — the `operator_owed()`
 view and the claim events are the record of it.
@@ -125,8 +130,8 @@ power than it sounds. It cannot:
   `operator_owed`, which is exact at all times — a sweep pays the operator's share to
   the operator and can never reach it
 - Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
-  the address `FeePolicy` records — pinned at deployment, destructible but never
-  re-pointable by the cap — and never the caller
+  the address `FeePolicy` records — registered through the adapter witness,
+  destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled)

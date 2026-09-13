@@ -258,7 +258,7 @@ module triex::fee_policy_operator_share_tests {
         policy.register_operator_beneficiary(a_collection(), @0xB0B);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
 
-        // A later registration — a second deployment — cannot re-point it.
+        // A later registration cannot re-point it.
         policy.register_operator_beneficiary(a_collection(), @0xBAD);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
 
@@ -284,12 +284,89 @@ module triex::fee_policy_operator_share_tests {
         policy.destroy_operator_beneficiary(a_collection(), &cap);
         assert!(!policy.has_operator_beneficiary(a_collection()));
 
-        // After a destroy, the next deployment may pin a fresh address.
+        // After a destroy, the next registration may pin a fresh address.
         policy.register_operator_beneficiary(a_collection(), @0xCAFE);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xCAFE));
 
         destroy(cap);
         destroy(policy);
         end(test);
+    }
+
+    // === Adapter witness gate ===
+
+    /// Stands in for the audited adapter package's witness.
+    public struct Adapter has drop {}
+
+    /// Any other type with `drop` — what a forger can mint for free.
+    public struct Forgery has drop {}
+
+    #[test]
+    fun the_registered_witness_registers_set_if_absent() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        assert_eq!(policy.operator_adapter(), option::none());
+        policy.set_operator_adapter<Adapter>(&cap);
+        assert_eq!(
+            policy.operator_adapter(),
+            option::some(std::type_name::with_defining_ids<Adapter>()),
+        );
+
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        // The gate authorizes the write path, not a re-point: a second witnessed
+        // registration is the same set-if-absent as the first.
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xBAD, Adapter {});
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::ENoAuthorizedAdapter)]
+    fun no_registration_path_exists_until_an_adapter_is_registered() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+
+        // The shipping state: no adapter, so no one — witness in hand or not —
+        // can write a beneficiary.
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+
+        abort 0
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EUnauthorizedAdapter)]
+    fun a_forged_witness_cannot_register() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        // `drop` is free to declare; only the registered type passes the gate.
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Forgery {});
+
+        abort 0
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::ENoAuthorizedAdapter)]
+    fun clearing_the_adapter_closes_the_registration_path() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.clear_operator_adapter(&cap);
+        assert_eq!(policy.operator_adapter(), option::none());
+
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+
+        abort 0
     }
 }

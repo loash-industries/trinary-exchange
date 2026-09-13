@@ -30,8 +30,9 @@ module triex::integration_hub_revenue_share_tests {
     const OWNER: address = @0x1;
     const ALICE: address = @0xA;
     const BOB: address = @0xB;
-    /// The hub operator's payout address: the account that deploys the pool,
-    /// which is what pins the beneficiary. Deliberately not a trader.
+    /// The hub operator's payout address, registered through the adapter
+    /// witness. Deliberately not a trader, and deliberately not the deployer:
+    /// deployment pins nothing.
     const OPERATOR: address = @0x0B0B;
     /// The treasury's payout address. Deliberately not the admin who signs.
     const TREASURY: address = @0x77EA;
@@ -40,15 +41,38 @@ module triex::integration_hub_revenue_share_tests {
     const ASSET_SILVER: u64 = 2;
     const HUB_CLASS: u16 = 7;
 
+    /// Stands in for the witness the audited adapter package mints after
+    /// checking the caller's `OwnerCap<StorageUnit>` against the collection.
+    public struct HubAdapterWitness has drop {}
+
     // === Helpers ===
 
     fun funds(): u64 {
         1_000_000 * constants::float_scaling()
     }
 
-    /// A pool deployed by `OPERATOR` — which is what pins the beneficiary —
-    /// two funded accounts, gold in Bob's account, and the treasury pointed at
-    /// a distinct address.
+    /// Register `beneficiary` as `collection_id`'s payout address the way
+    /// production does: the admin registers the adapter type once, and the
+    /// adapter's witness authorizes the write.
+    fun pin_beneficiary(collection_id: ID, beneficiary: address, test: &mut Scenario) {
+        test.next_tx(OWNER);
+        let mut policy = test.take_shared<FeePolicy>();
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<HubAdapterWitness>(&cap);
+        policy.register_operator_beneficiary_with_witness(
+            collection_id,
+            beneficiary,
+            HubAdapterWitness {},
+        );
+
+        unit_test::destroy(cap);
+        return_shared(policy);
+    }
+
+    /// A pool, an adapter-registered beneficiary (`OPERATOR` — deployment
+    /// itself pins nothing), two funded accounts, gold in Bob's account, and
+    /// the treasury pointed at a distinct address.
     fun setup(test: &mut Scenario): (ID, ID, ID, CollectionCap) {
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             test,
@@ -60,6 +84,7 @@ module triex::integration_hub_revenue_share_tests {
             ASSET_GOLD,
             test,
         );
+        pin_beneficiary(collection_id, OPERATOR, test);
         let alice_ta = mc_utils::create_trading_account_with_funds(ALICE, funds(), funds(), test);
         let bob_ta = mc_utils::create_trading_account_with_funds(BOB, funds(), funds(), test);
 
@@ -97,8 +122,8 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// Put `collection_id` in a class priced at `bps`, effective next epoch.
-    /// The payout address needs no configuring here: `setup` deployed the pool
-    /// as `OPERATOR`, which pinned it.
+    /// The payout address needs no configuring here: `setup` already registered
+    /// `OPERATOR` through the adapter witness.
     fun configure_hub(collection_id: ID, bps: u64, test: &mut Scenario) {
         test.next_tx(OWNER);
         let mut policy = test.take_shared<FeePolicy>();
@@ -111,8 +136,8 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(policy);
     }
 
-    /// Admin-destroy the mapping pool creation pinned, leaving the collection
-    /// with a rate but no payout address.
+    /// Admin-destroy the registered mapping, leaving the collection with a
+    /// rate but no payout address.
     fun destroy_beneficiary(collection_id: ID, test: &mut Scenario) {
         test.next_tx(OWNER);
         let mut policy = test.take_shared<FeePolicy>();
@@ -641,28 +666,32 @@ module triex::integration_hub_revenue_share_tests {
         end(test);
     }
 
-    /// Deploying a collection's first pool pins the deployer as beneficiary;
-    /// deploying a second pool on the same collection — by anyone — leaves it
-    /// untouched. First write wins is the whole rotation story: the contracts
-    /// offer no re-point, so a hub changing hands settles outside Triex.
+    /// Deploying a pool — first or otherwise, by anyone — pins nothing.
+    /// Deployment is permissionless and proves nothing about who operates the
+    /// hub, so the mapping stays absent until the adapter witness writes it;
+    /// this is what closes the capture-by-first-deployment hole.
     #[test]
-    fun the_first_deployment_pins_the_beneficiary_and_later_ones_cannot() {
+    fun pool_deployment_does_not_pin_a_beneficiary() {
         let mut test = begin(OWNER);
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             &mut test,
         );
 
-        mc_utils::setup_multicoin_pool(OPERATOR, registry_id, collection_id, ASSET_GOLD, &mut test);
+        mc_utils::setup_multicoin_pool(ALICE, registry_id, collection_id, ASSET_GOLD, &mut test);
         test.next_tx(OWNER);
         {
             let policy = test.take_shared<FeePolicy>();
-            assert!(policy.operator_beneficiary(collection_id) == option::some(OPERATOR));
+            assert!(policy.operator_beneficiary(collection_id).is_none());
             return_shared(policy);
         };
 
-        // A second pool on the same collection, deployed by a different party,
-        // cannot capture the mapping.
+        // The adapter-witnessed registration is what pins, and first write
+        // wins: a later registration — here for a second pool's deployer —
+        // leaves the mapping untouched. The contracts offer no re-point, so a
+        // hub changing hands settles outside Triex.
+        pin_beneficiary(collection_id, OPERATOR, &mut test);
         mc_utils::setup_multicoin_pool(ALICE, registry_id, collection_id, ASSET_SILVER, &mut test);
+        pin_beneficiary(collection_id, ALICE, &mut test);
         test.next_tx(OWNER);
         {
             let policy = test.take_shared<FeePolicy>();

@@ -10,14 +10,19 @@ ladder) is deleted, `cancel_order`/`modify_order`/`cancel_orders`/
 transaction.*
 
 *A second revision then removed the standalone registry and every rotation
-surface with it: the beneficiary is a `collection_id → address` dynamic field on
-`FeePolicy`, **pinned to the deployer by the transaction that creates a
-collection's first pool**, readable by the payout paths, and destructible (never
-re-pointable) by the admin cap. There is no operator self-service, no adapter
-witness, and no delegation of fee revenue to other beneficiaries on chain —
-re-dividing a hub's revenue is deliberately external to the Triex contracts.
-Sections below that describe `OperatorRegistry`, witness-gated rotation, or
-[Rollout 03](#03--operator-self-service) record the superseded design.*
+surface with it. A third moved the initial write off pool deployment: pinning
+the deployer let whoever deployed a collection's first pool — a permissionless
+transaction proving nothing about hub ownership — capture the collection's
+share. The beneficiary is a `collection_id → address` dynamic field on
+`FeePolicy`, **written once through a witness minted by an admin-registered
+adapter package that checks the caller's `OwnerCap<StorageUnit>` against the
+collection** — pool creation writes nothing, and the path does not exist until
+an adapter is registered. It is readable by the payout paths and destructible
+(never re-pointable) by the admin cap. There is still no rotation: the witness
+gates the *first* write (and a fresh write after an admin destroy), never a
+re-point, and re-dividing a hub's revenue stays deliberately external to the
+Triex contracts. Sections below that describe `OperatorRegistry`, witness-gated
+*rotation*, or deployment-time pinning record superseded designs.*
 
 *The sections between here and the Revision describe the original deferred
 design; they are kept because the Revision is written against them and most of
@@ -383,18 +388,25 @@ entirely removed that premise.)*
 
 The beneficiary is a fourth dynamic field on `FeePolicy`:
 `OperatorBeneficiaryKey` (`collection_id`) → `address`. It is written exactly
-once, by `register_operator_beneficiary` inside `create_pool` — the transaction
-that deploys a collection's first pool pins its deployer, set-if-absent, so a
-later pool on the same collection cannot capture it. The admin cap can
-**destroy** a mapping (`destroy_operator_beneficiary`), which halts claims while
-the share stays encumbered; it cannot re-point one. Nobody can: a hub changing
-hands, or an operator wanting revenue split with someone else, is settled
-outside Triex, with the `operator_owed()` view and the claim events as the
-on-chain record.
+once, by `register_operator_beneficiary_with_witness` — set-if-absent, so a
+later registration cannot capture it. The witness is the authorization: the
+admin registers a single adapter type (`set_operator_adapter<W>`, revocable,
+`TypeName`-compared so Triex never links the game world), and the adapter
+package mints its witness only after checking the caller's
+`OwnerCap<StorageUnit>` and the `VaultConfig` binding that storage unit to the
+collection being registered. Pool creation writes nothing — deployment is
+permissionless and proves nothing about who operates the hub, which is exactly
+why pinning the deployer was a capture surface: anyone could deploy a
+collection's first pool and take the mapping. The admin cap can **destroy** a
+mapping (`destroy_operator_beneficiary`), which halts claims while the share
+stays encumbered; it cannot re-point one. Nobody can: a hub changing hands, or
+an operator wanting revenue split with someone else, is settled outside Triex,
+with the `operator_owed()` view and the claim events as the on-chain record.
 
-**The trading path still touches nothing new.** Pool creation is the one
-user-reachable `&mut FeePolicy`, and it is rare by nature and never on the flow
-of an order; the payout paths read the mapping immutably.
+**The trading path still touches nothing new.** Witnessed registration is the
+one user-reachable `&mut FeePolicy`, and it is rare by nature (once per storage
+unit) and never on the flow of an order; pool creation now reads the policy
+immutably, and the payout paths read the mapping immutably.
 
 This is what "configurable by entity" buys in practice: a standard class at
 10%, a launch-partner class at 25%, and a single anchor hub in a class of its
@@ -456,14 +468,17 @@ changed hands — but detection informs an off-chain settlement, not an on-chain
 write. The three reasons above not to *pay* off the resolution are also the
 reasons the contracts offer no rotation at all: every rotation surface is a
 surface that a moved cap, a parked cap, or a sponsor-side mutation can
-eventually steer. Pinning the deployer once, at deployment, is the whole
-authorization story, and anything past it — a sale, a tribe treasury split, a
-delegation — is external to Triex by design.
+eventually steer. One witnessed registration, proven against the storage unit's
+`OwnerCap` at the moment of the write, is the whole authorization story, and
+anything past it — a sale, a tribe treasury split, a delegation — is external
+to Triex by design. (Note the asymmetry with the list above: the cap chain is
+too steerable to *keep paying* off, but a one-time write gated on it only
+trusts it for one instant, in a ceremony the owner initiates.)
 
 > **A destroyed mapping is a halt, not a redirect.** The admin's only lever is
 > `destroy_operator_beneficiary`. Claims then abort while `operator_owed` stays
-> encumbered — the treasury cannot take the share, and a redeployment that
-> re-pins a fresh address resumes payment.
+> encumbered — the treasury cannot take the share, and a fresh witnessed
+> registration by the storage unit's current owner resumes payment.
 
 > **Decide the sale case explicitly.** Accrued-but-unclaimed balance pays to
 > whoever is configured at claim time, which after a hub sale may be the wrong
@@ -551,8 +566,9 @@ What the mechanism cannot do:
   [Recognition sites](#recognition-sites) is the section to review hardest.
 - **Serialize the exchange.** The trading path reads no new object and writes one
   `u64` on a pool it already holds mutably — no new event, and no policy read.
-  The beneficiary mapping on `FeePolicy` is written by pool creation and read by
-  payout, neither of which is on a trade.
+  The beneficiary mapping on `FeePolicy` is written by the witnessed
+  registration and read by payout, neither of which is on a trade — and pool
+  creation reads the policy immutably.
 
 ---
 
@@ -836,8 +852,9 @@ and `:1042`.
 |---|---|
 | `operator_owed`, `encumbered()`, `credit_operator_share`, eager `recognize_locked_maker_fees`, claim primitive | `vault/multicoin_vault.move` |
 | Staged `current`/`next` rate pair, class assignment, default class | `fee_policy.move` (dynamic fields) |
-| `collection_id -> address`, pinned at deployment, admin-destructible | `fee_policy.move` (dynamic field) |
-| `claim_operator_share` (pays both parties), hub-paying `withdraw_pool_fees`, `operator_owed()` view, `&FeePolicy` on the cancel/modify signatures, beneficiary registration in `create_pool` | `multicoin_pool.move` |
+| `collection_id -> address`, witness-registered, admin-destructible | `fee_policy.move` (dynamic field) |
+| Adapter gate: `set_operator_adapter<W>` / `clear_operator_adapter`, `register_operator_beneficiary_with_witness<W>` | `fee_policy.move` (dynamic field) |
+| `claim_operator_share` (pays both parties), hub-paying `withdraw_pool_fees`, `operator_owed()` view, `&FeePolicy` on the cancel/modify signatures | `multicoin_pool.move` |
 | `MAX_OPERATOR_SHARE_BPS = 10000` | `helper/constants.move` |
 
 The basis ring (`state/fee_basis.move`), the holdback, `settle_operator_share`, the
@@ -852,22 +869,32 @@ Default 0 bps means **no hub is paid anything** until a collection is assigned a
 class — but see [the wart](#the-one-wart-is-not-free) for the one thing the deploy
 does change on day one.
 
-The beneficiary needs no configuration step at all: it is pinned by the pool
-deployment itself, and the admin's only lever over it is destruction.
+The beneficiary needs one configuration step: a witnessed registration by the
+storage unit's owner, through the adapter of stage 03. Until it runs, claims
+abort and the share stays encumbered — accrual does not wait for registration.
 
-### 03 — Operator self-service
+### 03 — Operator registration (adapter package)
 
-**Cut.** The witness-gated rotation (`set_authorized_adapter<W>`,
-`set_beneficiary_with_witness<W>`, the adapter package against
-`warehouse-receipts` and `world-contracts`) was implemented and then removed
-along with the registry itself: there is deliberately no on-chain path by which
-an operator — or anyone — re-points or delegates a hub's revenue. The payout
-address is fixed at deployment; everything downstream of it (a sale, a tribe
-split, a delegation) is an off-chain settlement, reconciled from the
-`operator_owed()` view and the claim events.
+The witness gate is on-chain (`set_operator_adapter<W>`,
+`register_operator_beneficiary_with_witness<W>` on `FeePolicy`); what remains is
+the adapter package against `warehouse-receipts` and `world-contracts` that
+mints the witness. Its whole job is the binding Triex cannot do itself: take the
+caller's `OwnerCap<StorageUnit>` and the `VaultConfig`, check the cap against
+the config's storage unit and the config's collection against the one being
+registered, and only then mint. The admin audits exactly that logic before
+`set_operator_adapter` names it — and can revoke it at any time, which closes
+the registration path without touching written mappings.
 
-What remains worth building is the read side: a hub-operator dashboard over the
-claim events.
+**Registration, not rotation.** The earlier witness-gated *rotation*
+(`set_beneficiary_with_witness` on the removed registry) stays cut: there is
+deliberately no on-chain path by which an operator — or anyone — re-points or
+delegates a hub's revenue. The witness authorizes the set-if-absent first write
+(and a fresh write after an admin destroy); everything downstream of it (a
+sale, a tribe split, a delegation) is an off-chain settlement, reconciled from
+the `operator_owed()` view and the claim events.
+
+Also worth building is the read side: a hub-operator dashboard over the claim
+events.
 
 ---
 
