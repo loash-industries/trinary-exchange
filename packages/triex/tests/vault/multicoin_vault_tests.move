@@ -1212,4 +1212,109 @@ module triex::multicoin_vault_tests {
         destroy(collection_cap);
         end(test);
     }
+
+    #[test]
+    fun test_solvency_holds_across_a_multi_epoch_settlement() {
+        // The holdback ceils over the *aggregate* unsettled basis while each epoch
+        // settles with its own floored rate, so the pairing that protects the
+        // invariant is `ceil(total) - ceil(total - b) >= floor(b × bps)` at every
+        // intermediate step — not just once. Settling one epoch at a time walks
+        // through each of those steps, and the reserve is set to exactly the
+        // recognized revenue so there is no cushion absorbing an off-by-one.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+
+        // Bases and rates chosen so the division leaves a large fractional part in
+        // both directions.
+        let bases = vector[1u64, 3, 7, 2_501, 9_999, 10_000, 33_333, 1];
+        let rates = vector[max_bps(), 1, 3_333, 9, 2_500, 0, 1_999, max_bps()];
+
+        let mut total = 0;
+        bases.do_ref!(|b| total = total + *b);
+
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(total, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(total);
+
+        // One epoch's worth of revenue recognized per bucket.
+        let mut epoch = 0;
+        while (epoch < bases.length()) {
+            vault.recognize_locked_maker_fees(test_pool_id(), bases[epoch], epoch);
+            assert_solvent(&vault);
+            epoch = epoch + 1;
+        };
+        assert!(vault.hub_unsettled_basis() == (total as u128));
+        assert!(vault.locked_maker_fees() == 0);
+
+        // Settle each epoch at its own rate, checking the invariant after every one.
+        let mut expected_owed = 0;
+        epoch = 0;
+        while (epoch < bases.length()) {
+            let owed = vault.settle_hub_basis(test_pool_id(), epoch, rates[epoch]);
+            expected_owed =
+                expected_owed + (((bases[epoch] as u128) * (rates[epoch] as u128) / 10_000) as u64);
+            assert!(vault.hub_owed() == expected_owed);
+            assert_solvent(&vault);
+            epoch = epoch + 1;
+            // Silence the unused binding without losing the call's return value.
+            assert!(owed <= total);
+        };
+
+        assert!(vault.hub_unsettled_basis() == 0);
+        assert!(vault.hub_holdback() == 0);
+        // Everything divided: the operator's share plus the treasury's is the whole
+        // reserve, with nothing stranded and nothing conjured.
+        assert!(vault.withdrawable_quote_fees() == total - expected_owed);
+
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+        assert!(share.value() == expected_owed);
+        assert!(vault.quote_fee_reserve_balance() == total - expected_owed);
+        assert_solvent(&vault);
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun test_solvency_holds_when_settlement_interleaves_with_accrual() {
+        // A settle cron and a trading pool do not take turns. Revenue keeps arriving
+        // into the epoch that was just settled, and into later ones, so the ring has
+        // to stay solvent when `take` and `accrue` interleave on the same bucket.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(100_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(100_000);
+
+        let mut round = 0;
+        let mut expected_owed = 0;
+        while (round < 12) {
+            let epoch = round / 3; // three recognitions per epoch
+            let amount = 137 + round * 11;
+            vault.recognize_locked_maker_fees(test_pool_id(), amount, epoch);
+            assert_solvent(&vault);
+
+            // Settle the epoch that is still accruing, which is legitimate: the next
+            // credit lands in the same bucket and is priced at the same rate.
+            let basis = vault.hub_basis_at(epoch);
+            let owed = vault.settle_hub_basis(test_pool_id(), epoch, 3_700);
+            assert!(owed == (((basis as u128) * 3_700 / 10_000) as u64));
+            expected_owed = expected_owed + owed;
+            assert!(vault.hub_owed() == expected_owed);
+            assert_solvent(&vault);
+
+            round = round + 1;
+        };
+
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+        assert!(share.value() == expected_owed);
+        assert_solvent(&vault);
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
 }

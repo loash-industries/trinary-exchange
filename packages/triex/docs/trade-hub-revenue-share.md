@@ -6,7 +6,8 @@
 until a collection is assigned a share class; the one thing it does change on day
 one is the admin sweep, which now has to settle first
 ([the wart](#the-one-wart-is-not-free)). [Rollout 03](#03--operator-self-service)
-and the [open questions](#open-questions) are outstanding.*
+is half-landed — the authorization gate is in, the adapter package that drives it
+is not — and the [open questions](#open-questions) are outstanding.*
 
 How Triex can pay a storage unit owner (a "trade hub operator") a configurable
 share of the trading fees earned on their hub — without moving a coin on the
@@ -633,11 +634,27 @@ rather than as a rider on fee accounting.
 
 ### 03 — Operator self-service
 
-The registered-witness beneficiary setter plus the adapter package, so an SSU
-owner rotates their own payout address against `OwnerCap<StorageUnit>`. Pair it
-with a hub-operator dashboard reading the accrual, settlement, claim and
-forfeiture events. Register the adapter's `TypeName` in the same transaction that
-publishes it, and keep the admin setter as the override for a destroyed cap.
+**The gate is implemented; the adapter is not.** `set_authorized_adapter<W>`,
+`clear_authorized_adapter` and `set_beneficiary_with_witness<W>` are in
+`hub_registry.move`, with the forgery they exist to stop pinned by
+`a_forged_witness_cannot_rotate_the_beneficiary`. The path stays closed until an
+adapter is registered, so shipping the registry does not ship a rotation surface.
+
+What remains is the adapter package, which cannot live in `triex`: it needs
+`warehouse-receipts` and `world-contracts` as dependencies to take an
+`OwnerCap<StorageUnit>` and a `VaultConfig`, check
+`is_authorized(cap, vault_config.storage_unit_id())` and
+`vault_config.collection_id() == pool.collection_id()`, and only then mint the
+witness. Keeping it out is the point — Triex stays collection-agnostic and
+dependency-free.
+
+Register its `TypeName` in the same transaction that publishes it, and keep the
+admin setter as the standing override: `delete_owner_cap` is sponsor-callable, so
+an operator can lose the cap the adapter checks and otherwise never rotate again
+while a stale address keeps collecting.
+
+Pair it with a hub-operator dashboard reading the settlement, claim and forfeiture
+events.
 
 ---
 

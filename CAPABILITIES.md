@@ -104,7 +104,11 @@ a late settlement pays the same as a prompt one.
 Where the share is paid is configuration, not inference: `HubRegistry` holds an
 explicit `collection_id -> address`, so a hub changing hands, a capability parked
 on another object, or a game-side change to a character's wallet cannot silently
-redirect money. Accrued-but-unclaimed balance pays whoever is configured at claim
+redirect money. Rotation is admin-only unless the admin has registered an adapter
+package by type (`set_authorized_adapter`), which lets a storage unit owner rotate
+their own payout address against their `OwnerCap<StorageUnit>`; that registration
+is single-valued and revocable, and an adapter can only move *where* a share is
+paid — never a rate, the reserve, or a balance already settled. Accrued-but-unclaimed balance pays whoever is configured at claim
 time, which is a settlement matter between a hub's buyer and seller — the accrual
 and claim events are the record of it.
 

@@ -15,6 +15,17 @@ module triex::hub_registry_tests {
     const OWNER: address = @0x1;
     const ALICE: address = @0xA;
     const BOB: address = @0xB;
+    const ATTACKER: address = @0xBAD;
+
+    /// Stands in for the real adapter: the package the admin audits and registers,
+    /// which checks the caller's `OwnerCap<StorageUnit>` against the collection
+    /// before minting this.
+    public struct AdapterWitness has drop {}
+
+    /// Stands in for anyone else's. This is the whole content of the original
+    /// finding: `drop` is not a permission, so any package can declare one of
+    /// these, and a gate that accepts any `W: drop` accepts this too.
+    public struct ForgedWitness has drop {}
 
     fun a_collection(): ID {
         object::id_from_address(@0xC0FFEE)
@@ -76,6 +87,110 @@ module triex::hub_registry_tests {
         reg.set_beneficiary(a_collection(), BOB, &cap);
 
         assert_eq!(reg.beneficiary(a_collection()).destroy_some(), BOB);
+
+        destroy(cap);
+        return_shared(reg);
+        end(test);
+    }
+
+    // === Operator self-service ===
+
+    #[test]
+    fun a_registered_adapters_witness_rotates_the_beneficiary() {
+        let mut test = begin(OWNER);
+        let mut reg = with_registry(&mut test);
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        reg.set_beneficiary(a_collection(), ALICE, &cap);
+        reg.set_authorized_adapter<AdapterWitness>(&cap);
+
+        // No admin cap in this call — the operator is rotating their own hub.
+        test.next_tx(ALICE);
+        reg.set_beneficiary_with_witness(a_collection(), BOB, AdapterWitness {});
+
+        assert_eq!(reg.beneficiary(a_collection()).destroy_some(), BOB);
+
+        destroy(cap);
+        return_shared(reg);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = hub_registry::EUnauthorizedAdapter)]
+    fun a_forged_witness_cannot_rotate_the_beneficiary() {
+        // The finding this gate exists for. With a bare `<W: drop>` bound and no
+        // registered type, `ForgedWitness` is indistinguishable from the real one —
+        // anyone publishes a `drop` struct and redirects any hub's payouts to
+        // themselves. Pinning the `TypeName` is what turns the bound into a check.
+        let mut test = begin(OWNER);
+        let mut reg = with_registry(&mut test);
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        reg.set_beneficiary(a_collection(), ALICE, &cap);
+        reg.set_authorized_adapter<AdapterWitness>(&cap);
+
+        test.next_tx(ATTACKER);
+        reg.set_beneficiary_with_witness(a_collection(), ATTACKER, ForgedWitness {});
+
+        destroy(cap);
+        return_shared(reg);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = hub_registry::ENoAuthorizedAdapter)]
+    fun no_witness_is_accepted_before_an_adapter_is_registered() {
+        // Self-service is opt-in. Until the admin has audited and registered an
+        // adapter, the witness path is closed to every type including the eventual
+        // real one — so shipping the registry does not ship a rotation surface.
+        let mut test = begin(OWNER);
+        let mut reg = with_registry(&mut test);
+
+        test.next_tx(ALICE);
+        reg.set_beneficiary_with_witness(a_collection(), BOB, AdapterWitness {});
+
+        return_shared(reg);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = hub_registry::EUnauthorizedAdapter)]
+    fun revoking_an_adapter_closes_the_path_it_opened() {
+        // The containment on a compromised adapter: registration is revocable, and
+        // revoking it stops future rotations without touching anything already
+        // accrued or settled.
+        let mut test = begin(OWNER);
+        let mut reg = with_registry(&mut test);
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        reg.set_authorized_adapter<AdapterWitness>(&cap);
+        reg.clear_authorized_adapter(&cap);
+        reg.set_authorized_adapter<ForgedWitness>(&cap);
+
+        // Re-registering a *different* type also revokes the first: the field holds
+        // one type, not a set, so there is no accumulating list of past adapters.
+        test.next_tx(ALICE);
+        reg.set_beneficiary_with_witness(a_collection(), BOB, AdapterWitness {});
+
+        destroy(cap);
+        return_shared(reg);
+        end(test);
+    }
+
+    #[test]
+    fun the_admin_override_survives_self_service() {
+        // `delete_owner_cap` is sponsor-callable in world-contracts, so an operator
+        // can lose the cap the adapter checks and be unable to rotate ever again
+        // while a stale address keeps collecting. The admin path has to remain.
+        let mut test = begin(OWNER);
+        let mut reg = with_registry(&mut test);
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        reg.set_authorized_adapter<AdapterWitness>(&cap);
+        reg.set_beneficiary(a_collection(), ALICE, &cap);
+
+        assert_eq!(reg.beneficiary(a_collection()).destroy_some(), ALICE);
+        assert!(reg.authorized_adapter().is_some());
 
         destroy(cap);
         return_shared(reg);
