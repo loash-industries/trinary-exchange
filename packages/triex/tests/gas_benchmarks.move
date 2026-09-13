@@ -23,6 +23,13 @@ module triex::gas_benchmarks {
     #[test]
     fun bench_depth_80() { pool_test_utils::bench_depth_80() }
 
+    // Depths above the 64-order slice size, where the coin book's B+ tree is meant
+    // to overtake a flat vector. These span several trading accounts because
+    // MAX_OPEN_ORDERS caps one account at 100.
+    #[test]
+    fun bench_depth_300() { pool_test_utils::bench_depth_300() }
+
+
     #[test]
     fun bench_cancel_at_depth_80() { pool_test_utils::bench_cancel_at_depth_80() }
 

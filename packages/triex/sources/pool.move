@@ -10,17 +10,18 @@ module triex::pool {
     };
     use token::cred::{CRED, ProtectedTreasury};
     use triex::{
-        account::Account,
-        book::{Self, Book},
+        big_vector::BigVector,
+        coin_account::Account,
+        coin_book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
-        order::Order,
-        order_info::{Self, OrderInfo},
+        coin_order::Order,
+        coin_order_info::{Self, OrderInfo},
         registry::{TriexAdminCap, Registry},
-        state::{Self, State},
+        coin_state::{Self, State},
         trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
-        vault::{Self, Vault}
+        coin_vault::{Self, Vault}
     };
 
     // use fun df::add as UID.add;
@@ -517,7 +518,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         new_quantity: u64,
         clock: &Clock,
         ctx: &TxContext,
@@ -577,7 +578,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         clock: &Clock,
         ctx: &TxContext,
     ) {
@@ -630,7 +631,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
         clock: &Clock,
         ctx: &TxContext,
     ) {
@@ -1029,7 +1030,7 @@ module triex::pool {
     ): Coin<QuoteAsset> {
         let pool_inner = self.load_inner_mut();
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
-        vault::emit_pool_fees_withdrawn<QuoteAsset>(
+        coin_vault::emit_pool_fees_withdrawn<QuoteAsset>(
             pool_inner.pool_id,
             amount,
             clock.timestamp_ms(),
@@ -1224,7 +1225,7 @@ module triex::pool {
     public fun account_open_orders<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
         trading_account: &TradingAccount,
-    ): VecSet<u64> {
+    ): VecSet<u128> {
         let self = self.load_inner();
 
         if (!self.state.account_exists(trading_account.id())) {
@@ -1327,7 +1328,7 @@ module triex::pool {
     /// Get the Order struct
     public fun get_order<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
-        order_id: u64,
+        order_id: u128,
     ): Order {
         self.load_inner().book.get_order(order_id)
     }
@@ -1335,7 +1336,7 @@ module triex::pool {
     /// Get multiple orders given a vector of order_ids.
     public fun get_orders<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
     ): vector<Order> {
         let mut orders = vector[];
         let mut i = 0;
@@ -1536,9 +1537,9 @@ module triex::pool {
         let pool_inner = PoolInner<BaseAsset, QuoteAsset> {
             allowed_versions: registry.allowed_versions(),
             pool_id: pool_id.to_inner(),
-            book: book::empty(ctx),
-            state: state::empty(ctx),
-            vault: vault::empty(),
+            book: coin_book::empty(ctx),
+            state: coin_state::empty(ctx),
+            vault: coin_vault::empty(),
             registered_pool: true,
             fee_class,
         };
@@ -1565,15 +1566,13 @@ module triex::pool {
 
     public(package) fun bids<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
-        // ): &BigVector<Order> { // #feat:bv
-    ): &vector<Order> {
+    ): &BigVector<Order> {
         self.book.bids()
     }
 
     public(package) fun asks<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
-        // ): &BigVector<Order> { // #feat:bv
-    ): &vector<Order> {
+    ): &BigVector<Order> {
         self.book.asks()
     }
 
@@ -1658,7 +1657,7 @@ module triex::pool {
                 turnover,
                 ctx.epoch(),
             );
-            let mut order_info = order_info::new(
+            let mut order_info = coin_order_info::new(
                 pool_inner.pool_id,
                 trading_account.id(),
                 ctx.sender(),
@@ -1714,7 +1713,7 @@ module triex::pool {
             };
             let fee_deposit = if (taker_fee_amount + maker_fee_amount > 0) {
                 option::some(
-                    vault::new_quote_fee_deposit(
+                    coin_vault::new_quote_fee_deposit(
                         pool_inner.pool_id,
                         trading_account.id(),
                         taker_fee_amount,

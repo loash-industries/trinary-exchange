@@ -3,6 +3,18 @@
 
 /// The book module contains the `Book` struct which represents the order book.
 /// All order book operations are defined in this module.
+///
+/// This is the **multicoin** order book, and it stores orders in a sorted
+/// `vector<Order>` keyed by nothing — order ids are opaque ascending `u64`
+/// serials, and position in the vector is what encodes priority. That is a
+/// deliberate, permanent choice, not a staging post: coin pools needed
+/// unbounded depth and O(log n) access and got their own `BigVector`-backed
+/// book in `triex::coin_book`, keyed by an encoded `u128` id. The two stacks run
+/// side by side.
+///
+/// The fee arithmetic in `get_quantity_out` is shared verbatim with
+/// `triex::coin_book`; only the traversal differs. Any change to it must land in
+/// both files.
 module triex::book {
     use triex::{constants, math, order::Order, order_info::OrderInfo, quote_fee};
 
@@ -28,59 +40,27 @@ module triex::book {
 
     /// === Structs ===
     public struct Book has store {
-        // bids: BigVector<Order>,
-        // asks: BigVector<Order>, // #feat:bv
         bids: vector<Order>, // sorted ASCENDING by price (best bid at END)
         asks: vector<Order>, // sorted DESCENDING by price (best ask at END)
         next_order_id: u64,
-        // Divisor used in qty ↔ quote conversions.
-        // Normal pools: FLOAT_SCALING (1e9) — price = human × QUOTE_UNIT × FLOAT_SCALING / BASE_UNIT.
-        // Multicoin pools: 1 — price = human × QUOTE_UNIT (no float division).
+        // Divisor used in qty ↔ quote conversions. 1 for multicoin pools —
+        // price = human × QUOTE_UNIT, with no float division. (The coin book
+        // uses FLOAT_SCALING; see `triex::coin_book`.)
         price_scaling: u64,
     }
 
     /// === Public-Package Functions ===
-    /// public(package) fun bids(self: &Book): &BigVector<Order> { // #feat:bv
     public(package) fun bids(self: &Book): &vector<Order> {
         &self.bids
     }
 
-    /// public(package) fun asks(self: &Book): &BigVector<Order> { // #feat:bv
     public(package) fun asks(self: &Book): &vector<Order> {
         &self.asks
     }
 
-    /// #feat:bv
-    /// #ref:order_null
-    /// public(package) fun empty(tick_size: u64, lot_size: u64, min_size: u64, ctx: &mut TxContext): Book {
-    ///     Book {
-    ///         tick_size,
-    ///         lot_size,
-    ///         min_size,
-    ///         bids: big_vector::empty(
-    ///             constants::max_slice_size(),
-    ///             constants::max_fan_out(),
-    ///             ctx,
-    ///         ),
-    ///         asks: big_vector::empty(
-    ///             constants::max_slice_size(),
-    ///             constants::max_fan_out(),
-    ///             ctx,
-    ///         ),
-    ///         next_bid_order_id: START_BID_ORDER_ID,
-    ///         next_ask_order_id: START_ASK_ORDER_ID,
-    ///     }
-    /// }
-    /// #ref:order_null
-    public(package) fun empty(_ctx: &mut TxContext): Book {
-        Book {
-            bids: vector[],
-            asks: vector[],
-            next_order_id: 1,
-            price_scaling: constants::float_scaling(),
-        }
-    }
-
+    /// The `FLOAT_SCALING` constructor this module used to expose for coin pools is
+    /// gone — they build their book through `coin_book::empty` now. Only the
+    /// multicoin constructor below remains.
     public(package) fun empty_multicoin(_ctx: &mut TxContext): Book {
         Book {
             bids: vector[],
@@ -232,10 +212,6 @@ module triex::book {
 
     /// Cancels an order given order_id
     /// #ref:order_cancel
-    /// #feat:bv
-    /// public(package) fun cancel_order(self: &mut Book, order_id: u128): Order {
-    ///     self.book_side_mut(order_id).remove(order_id)
-    /// }
     /// #ref:order_cancel
     public(package) fun cancel_order(self: &mut Book, order_id: u64): Order {
         // Fast path: if it's at the end (best price) on either side, pop_back in O(1)
@@ -277,104 +253,14 @@ module triex::book {
     /// - Check last 5 orders first (O(1) for recent orders - common case)
     /// - Use binary search if vector is large (>50 orders)
     /// - Fall back to linear search for medium-sized vectors
-    /// fun find_order_index(orders: &vector<Order>, order_id: u128): u64 {
-    ///     let len = orders.length();
-    ///     if (len == 0) {
-    ///         abort EBookOrderNotFound
-    ///     };
 
-    ///     // Strategy 1: Check last 5 orders first (most frequently updated)
-    ///     let check_recent = if (len < 5) len else 5;
-    ///     let mut i = len;
-    ///     let mut checked = 0;
-    ///     while (checked < check_recent) {
-    ///         i = i - 1;
-    ///         if (orders[i].order_id() == order_id) {
-    ///             return i
-    ///         };
-    ///         checked = checked + 1;
-    ///     };
-
-    ///     // Strategy 2: Binary search for large vectors (>50 orders)
-    ///     if (len > 50) {
-    ///         return binary_search_by_order_id(orders, order_id, 0, len - check_recent)
-    ///     };
-
-    ///     // Strategy 3: Linear search for medium vectors (6-50 orders)
-    ///     while (i > 0) {
-    ///         i = i - 1;
-    ///         if (orders[i].order_id() == order_id) {
-    ///             return i
-    ///         };
-    ///     };
-    ///     abort EBookOrderNotFound
-    /// }
     /// Binary search for order by order_id in a sorted vector
     /// Handles both ascending (bids) and descending (asks) sorted vectors
-    /// fun binary_search_by_order_id(orders: &vector<Order>, order_id: u64, start: u64, end: u64): u64 {
-    ///     if (start >= end) {
-    ///         abort EBookOrderNotFound
-    ///     };
-    ///     let mut lo = start;
-    ///     let mut hi = end;
-    ///     // Determine sorting direction by comparing first and last elements
-    ///     let is_ascending = orders[lo].order_id() < orders[hi - 1].order_id();
-    ///     while (lo < hi) {
-    ///         let mid = lo + (hi - lo) / 2;
-    ///         let mid_order_id = orders[mid].order_id();
-    ///         if (mid_order_id == order_id) {
-    ///             return mid
-    ///         };
-    ///         if (is_ascending) {
-    ///             // Ascending order (bids: low to high price at end)
-    ///             if (order_id < mid_order_id) {
-    ///                 hi = mid;
-    ///             } else {
-    ///                 lo = mid + 1;
-    ///             }
-    ///         } else {
-    ///             // Descending order (asks: high to low price at end)
-    ///             if (order_id > mid_order_id) {
-    ///                 hi = mid;
-    ///             } else {
-    ///                 lo = mid + 1;
-    ///             }
-    ///         }
-    ///     };
-    ///     // Binary search failed, fall back to linear scan
-    ///     // This handles edge cases where orders at same price might not be fully sorted by order_id
-    ///     let mut i = start;
-    ///     while (i < end) {
-    ///         if (orders[i].order_id() == order_id) {
-    ///             return i
-    ///         };
-    ///         i = i + 1;
-    ///     };
-
-    ///     abort EBookOrderNotFound
-    /// }
 
     /// Modifies an order given order_id and new_quantity.
     /// New quantity must be less than the original quantity.
     /// Order must not have already expired.
     /// #ref:order_modify
-    /// #feat:bv
-    /// public(package) fun modify_order(
-    ///     self: &mut Book,
-    ///     order_id: u64,
-    ///     new_quantity: u64,
-    ///     timestamp: u64,
-    /// ): (u64, &Order) {
-    ///     assert!(new_quantity >= self.min_size, EOrderBelowMinimumSize);
-    ///     assert!(new_quantity % self.lot_size == 0, EOrderInvalidLotSize);
-
-    ///     let order = self.book_sidde_mut(order_id).borrow_mut(order_id);
-    ///     assert!(new_quantity < order.quantity(), ENewQuantityMustBeLessThanOriginal);
-    ///     let cancel_quantity = order.quantity() - new_quantity;
-    ///     order.modify(new_quantity, timestamp);
-
-    ///     (cancel_quantity, order)
-    /// }
 
     /// #ref:order_modify
     public(package) fun modify_order(
@@ -416,37 +302,6 @@ module triex::book {
 
     /// Returns the mid price of the order book.
     /// #ref:mid_price
-    /// #feat:bv
-    /// public(package) fun mid_price(self: &Book, current_timestamp: u64): u64 {
-    ///     let (mut ask_ref, mut ask_offset) = self.asks.min_slice();
-    ///     let (mut bid_ref, mut bid_offset) = self.bids.max_slice();
-    ///     let mut best_ask_price = 0;
-    ///     let mut best_bid_price = 0;
-
-    ///     while (!ask_ref.is_null()) {
-    ///         let best_ask_order = slice_borrow(
-    ///             self.asks.borrow_slice(ask_ref),
-    ///             ask_offset,
-    ///         );
-    ///         best_ask_price = best_ask_order.price();
-    ///         if (current_timestamp <= best_ask_order.expire_timestamp()) break;
-    ///         (ask_ref, ask_offset) = self.asks.next_slice(ask_ref, ask_offset);
-    ///     };
-
-    ///     while (!bid_ref.is_null()) {
-    ///         let best_bid_order = slice_borrow(
-    ///             self.bids.borrow_slice(bid_ref),
-    ///             bid_offset,
-    ///         );
-    ///         best_bid_price = best_bid_order.price();
-    ///         if (current_timestamp <= best_bid_order.expire_timestamp()) break;
-    ///         (bid_ref, bid_offset) = self.bids.prev_slice(bid_ref, bid_offset);
-    ///     };
-
-    ///     assert!(!ask_ref.is_null() && !bid_ref.is_null(), EEmptyOrderbook);
-
-    ///     math::mul(best_ask_price + best_bid_price, constants::half())
-    /// }
 
     /// #ref:mid_price
     public(package) fun mid_price(self: &Book, current_timestamp: u64): u64 {
@@ -484,91 +339,6 @@ module triex::book {
     /// The number of ticks is the number of price levels to return.
     /// The price_low and price_high are the range of prices to return.
     /// #ref:level2
-    /// #feat:bv
-    /// public(package) fun get_level2_range_and_ticks(
-    ///     self: &Book,
-    ///     price_low: u64,
-    ///     price_high: u64,
-    ///     ticks: u64,
-    ///     is_bid: bool,
-    ///     current_timestamp: u64,
-    /// ): (vector<u64>, vector<u64>) {
-    ///     assert!(price_low <= price_high, EInvalidPriceRange);
-    ///     assert!(
-    ///         price_low >= constants::min_price() &&
-    ///         price_low <= constants::max_price(),
-    ///         EInvalidPriceRange,
-    ///     );
-    ///     assert!(
-    ///         price_high >= constants::min_price() &&
-    ///         price_high <= constants::max_price(),
-    ///         EInvalidPriceRange,
-    ///     );
-    ///     assert!(ticks > 0, EInvalidTicks);
-
-    ///     let mut price_vec = vector[];
-    ///     let mut quantity_vec = vector[];
-
-    ///     // convert price_low and price_high to keys for searching
-    ///     let msb = if (is_bid) {
-    ///         (0 as u128)
-    ///     } else {
-    ///         (1 as u128) << 127
-    ///     };
-    ///     let key_low = ((price_low as u128) << 64) + msb;
-    ///     let key_high = ((price_high as u128) << 64) + (((1u128 << 64) - 1) as u128) + msb;
-    ///     let book_side = if (is_bid) &self.bids else &self.asks;
-    ///     let (mut ref, mut offset) = if (is_bid) {
-    ///         book_side.slice_before(key_high)
-    ///     } else {
-    ///         book_side.slice_following(key_low)
-    ///     };
-    ///     let mut ticks_left = ticks;
-    ///     let mut cur_price = 0;
-    ///     let mut cur_quantity = 0;
-
-    ///     while (!ref.is_null() && ticks_left > 0) {
-    ///         let order = slice_borrow(book_side.borrow_slice(ref), offset);
-    ///         if (current_timestamp <= order.expire_timestamp()) {
-    ///             let (_, order_price, _) = utils::decode_order_id(order.order_id());
-    ///             if (
-    ///                 (is_bid && order_price < price_low) || (
-    ///                     !is_bid && order_price > price_high,
-    ///                 )
-    ///             ) break;
-    ///             if (
-    ///                 cur_price == 0 && (
-    ///                     (is_bid && order_price <= price_high) || (
-    ///                         !is_bid && order_price >= price_low,
-    ///                     ),
-    ///                 )
-    ///             ) {
-    ///                 cur_price = order_price
-    ///             };
-
-    ///             if (cur_price != 0 && order_price != cur_price) {
-    ///                 price_vec.push_back(cur_price);
-    ///                 quantity_vec.push_back(cur_quantity);
-    ///                 cur_price = order_price;
-    ///                 cur_quantity = 0;
-    ///                 ticks_left = ticks_left - 1;
-    ///                 if (ticks_left == 0) break;
-    ///             };
-    ///             if (cur_price != 0) {
-    ///                 cur_quantity = cur_quantity + order.quantity() - order.filled_quantity();
-    ///             };
-    ///         };
-
-    ///         (ref, offset) = if (is_bid) book_side.(ref, offset) else book_side.next_slice(ref, offset);
-    ///     };
-
-    ///     if (cur_price != 0 && ticks_left > 0) {
-    ///         price_vec.push_back(cur_price);
-    ///         quantity_vec.push_back(cur_quantity);
-    ///     };
-
-    ///     (price_vec, quantity_vec)
-    /// }
 
     /// #ref:level2
     public(package) fun get_level2_range_and_ticks(
@@ -645,11 +415,6 @@ module triex::book {
     }
 
     /// #ref:order_query
-    /// #feat:bv
-    /// public(package) fun get_order(self: &Book, order_id: u128): Order {
-    ///     let order = self.book_side(order_id).borrow(order_id);
-    ///     order.copy_order()
-    /// }
     /// #ref:order_query
     public(package) fun get_order(self: &Book, order_id: u64): Order {
         let mut index = 0;
@@ -673,55 +438,11 @@ module triex::book {
 
     /// === Private Functions ===
     /// Access side of book where order_id belongs
-    /// fun book_side_mut(self: &mut Book, order_id: u128): &mut BigVector<Order> { // #feat:bv
-    ///     let (is_bid, _, _) = utils::decode_order_id(order_id);
-    ///     if (is_bid) {
-    ///         &mut self.bids
-    ///     } else {
-    ///         &mut self.asks
-    ///     }
-    /// }
-    /// fun book_side(self: &Book, order_id: u128): &BigVector<Order> { // #feat:bv
-    ///     let (is_bid, _, _) = utils::decode_order_id(order_id);
-    ///     if (is_bid) {
-    ///         &self.bids
-    ///     } else {
-    ///         &self.asks
-    ///     }
-    /// }
-    /// #feat:bv
 
     /// Matches the given order and quantity against the order book.
     /// If is_bid, it will match against asks, otherwise against bids.
     /// Mutates the order and the maker order as necessary.
     /// #ref:matching
-    /// #feat:bv
-    /// fun match_against_book(self: &mut Book, order_info: &mut OrderInfo, timestamp: u64) {
-    ///     let is_bid = order_info.is_bid();
-    ///     let book_side = if (is_bid) &mut self.asks else &mut self.bids;
-    ///     let (mut ref, mut offset) = if (is_bid) book_side.min_slice() else book_side.max_slice();
-    ///     let max_fills = constants::max_fills();
-    ///     let mut current_fills = 0;
-    ///     while (!ref.is_null() &&
-    ///         current_fills < max_fills) {
-    ///         let maker_order = slice_borrow_mut(
-    ///             book_side.borrow_slice_mut(ref),
-    ///             offset,
-    ///         );
-    ///         if (!order_info.match_maker(maker_order, timestamp)) break;
-    ///         (ref, offset) = if (is_bid) book_side.next_slice(ref, offset)
-    ///         else book_side.prev_slice(ref, offset);
-    ///         current_fills = current_fills + 1;
-    ///     };
-    ///     order_info.fills_ref().do_ref!(|fill| {
-    ///         if (fill.expired() || fill.completed()) {
-    ///             book_side.remove(fill.maker_order_id());
-    ///         };
-    ///     });
-    ///     if (current_fills == max_fills) {
-    ///         order_info.set_fill_limit_reached();
-    ///     }
-    /// }
     /// #ref:matching
     fun match_against_book(self: &mut Book, order_info: &mut OrderInfo, timestamp: u64) {
         let is_bid = order_info.is_bid();
@@ -788,14 +509,6 @@ module triex::book {
     }
 
     /// Balance accounting happens before this function is called
-    /// fun inject_limit_order(self: &mut Book, order_info: &OrderInfo,) {
-    ///     let order = order_info.to_order();
-    ///     if (order_info.is_bid()) {
-    ///         self.bids.insert(order_info.order_id(), order);
-    ///     } else {
-    ///         self.asks.insert(order_info.order_id(), order);
-    ///     };
-    /// }
     /// Binary search for insertion point - REVERSED sorting
     /// #ref:order_insert
     fun find_insert_position(orders: &vector<Order>, price: u64, order_id: u64, is_bid: bool): u64 {

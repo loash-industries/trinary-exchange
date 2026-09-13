@@ -1,5 +1,5 @@
 #[test_only]
-module triex::vault_tests {
+module triex::coin_vault_tests {
     use std::unit_test::destroy;
     use sui::{balance, object::id_from_address, test_scenario::{next_tx, begin, end}};
     use triex::{
@@ -7,7 +7,7 @@ module triex::vault_tests {
         constants,
         trading_account::{Self, TradingAccount},
         trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds},
-        vault
+        coin_vault
     };
 
     const OWNER: address = @0xF;
@@ -29,7 +29,7 @@ fun borrow_flashloan_ok() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -75,7 +75,7 @@ fun borrow_flashloan_single_ok() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -105,7 +105,7 @@ fun borrow_flashloan_single_ok() {
     test.end();
 }
 
-#[test, expected_failure(abort_code = vault::ENotEnoughBaseForLoan)]
+#[test, expected_failure(abort_code = coin_vault::ENotEnoughBaseForLoan)]
 fun borrow_flashloan_not_enough_base_e() {
     let mut test = begin(OWNER);
 
@@ -115,7 +115,7 @@ fun borrow_flashloan_not_enough_base_e() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -147,7 +147,7 @@ fun borrow_flashloan_not_enough_base_e() {
     abort (0)
 }
 
-#[test, expected_failure(abort_code = vault::ENotEnoughQuoteForLoan)]
+#[test, expected_failure(abort_code = coin_vault::ENotEnoughQuoteForLoan)]
 fun borrow_flashloan_not_enough_quote_e() {
     let mut test = begin(OWNER);
 
@@ -157,7 +157,7 @@ fun borrow_flashloan_not_enough_quote_e() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -189,7 +189,7 @@ fun borrow_flashloan_not_enough_quote_e() {
     abort 0
 }
 
-#[test, expected_failure(abort_code = vault::EIncorrectLoanPool)]
+#[test, expected_failure(abort_code = coin_vault::EIncorrectLoanPool)]
 fun borrow_flashloan_incorrect_pool_id_e() {
     let mut test = begin(OWNER);
 
@@ -199,7 +199,7 @@ fun borrow_flashloan_incorrect_pool_id_e() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -227,7 +227,7 @@ fun borrow_flashloan_incorrect_pool_id_e() {
     abort (0)
 }
 
-#[test, expected_failure(abort_code = vault::EIncorrectQuantityReturned)]
+#[test, expected_failure(abort_code = coin_vault::EIncorrectQuantityReturned)]
 fun borrow_flashloan_incorrect_return_base_e() {
     let mut test = begin(OWNER);
 
@@ -237,7 +237,7 @@ fun borrow_flashloan_incorrect_return_base_e() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -266,7 +266,7 @@ fun borrow_flashloan_incorrect_return_base_e() {
     abort (0)
 }
 
-#[test, expected_failure(abort_code = vault::EIncorrectQuantityReturned)]
+#[test, expected_failure(abort_code = coin_vault::EIncorrectQuantityReturned)]
 fun borrow_flashloan_incorrect_return_quote_e() {
     let mut test = begin(OWNER);
 
@@ -276,7 +276,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
         &mut test,
     );
     test.next_tx(ALICE);
-    let mut vault = vault::empty<SPAM, USDC>();
+    let mut vault = coin_vault::empty<SPAM, USDC>();
     let settled_balances = balances::new(0, 0, 0);
     let owed_balances = balances::new(1000, 1000, 1000);
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -317,7 +317,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
             &mut test,
         );
         test.next_tx(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         let settled_balances = balances::new(1000, 1000, 1000);
         let owed_balances = balances::new(1000, 1000, 1000);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(
@@ -354,7 +354,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
             &mut test,
         );
         test.next_tx(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         let settled_balances = balances::new(1000, 1000, 1000);
         let owed_balances = balances::new(1000, 1000, 1000);
         let mut trading_account_alice = test.take_shared_by_id<TradingAccount>(
@@ -384,7 +384,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_withdrawable_excludes_locked_escrow() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -413,7 +413,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_recognizing_escrow_moves_it_to_withdrawable() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -428,7 +428,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_recognizing_more_than_locked_saturates_at_zero() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(1_000);
 
@@ -444,7 +444,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     #[test]
     fun test_withdraw_exactly_unlocked_ok() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -461,10 +461,10 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     }
 
     #[test]
-    #[expected_failure(abort_code = vault::EFeesLocked)]
+    #[expected_failure(abort_code = coin_vault::EFeesLocked)]
     fun test_withdraw_one_above_unlocked_e() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -477,7 +477,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_deposit_quote_fees() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         let fee_balance = balance::create_for_testing<USDC>(10_000);
 
         vault.deposit_quote_fees(fee_balance);
@@ -489,7 +489,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_deposit_multiple_quote_fees() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // First deposit
         let fee_balance1 = balance::create_for_testing<USDC>(5_000);
@@ -507,7 +507,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     #[test]
     fun test_withdraw_quote_fees() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // Deposit fees first
         let fee_balance = balance::create_for_testing<USDC>(10_000);
@@ -526,7 +526,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     #[test]
     fun test_withdraw_all_quote_fees() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // Deposit fees
         let fee_balance = balance::create_for_testing<USDC>(10_000);
@@ -543,10 +543,10 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     }
 
     #[test]
-    #[expected_failure(abort_code = vault::EInsufficientFeeReserve)]
+    #[expected_failure(abort_code = coin_vault::EInsufficientFeeReserve)]
     fun test_withdraw_exceeds_reserve_e() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // Deposit fees
         let fee_balance = balance::create_for_testing<USDC>(5_000);
@@ -561,10 +561,10 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     }
 
     #[test]
-    #[expected_failure(abort_code = vault::EInsufficientFeeReserve)]
+    #[expected_failure(abort_code = coin_vault::EInsufficientFeeReserve)]
     fun test_withdraw_from_empty_reserve_e() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // Try to withdraw from empty reserve
         let fee_coin = vault.withdraw_quote_fees(1_000, test.ctx());
@@ -577,7 +577,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     #[test]
     fun test_fee_reserve_separate_from_quote_balance() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
 
         // Setup trading account with funds
         let trading_account_id = create_acct_and_share_with_funds(
@@ -626,7 +626,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     #[test]
     fun test_unlock_quote_fees_moves_funds_and_clears_escrow() {
         let mut test = begin(ALICE);
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -647,7 +647,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_unlock_quote_fees_zero_is_noop() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));
         vault.lock_maker_fees_for_testing(4_000);
 
@@ -662,7 +662,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_unlock_preserves_reserve_covers_locked() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(5_000));
         vault.lock_maker_fees_for_testing(5_000);
 
@@ -677,9 +677,9 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     }
 
     #[test]
-    #[expected_failure(abort_code = vault::EInsufficientFeeReserve)]
+    #[expected_failure(abort_code = coin_vault::EInsufficientFeeReserve)]
     fun test_unlock_more_than_reserve_e() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(1_000));
         vault.lock_maker_fees_for_testing(1_000);
 

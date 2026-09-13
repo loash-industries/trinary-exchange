@@ -1,11 +1,11 @@
 #[test_only]
-module triex::order_query_tests {
+module triex::coin_order_query_tests {
     use std::unit_test::destroy;
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared}};
     use token::cred::CRED;
     use triex::{
+        coin_order_query::iter_orders,
         constants,
-        order_query::iter_orders,
         pool::Pool,
         pool_tests::{
             setup_test,
@@ -15,11 +15,28 @@ module triex::order_query_tests {
         trading_account_tests::{
             USDC,
             create_acct_and_share_with_funds as create_acct_and_share_with_funds
-        }
+        },
+        utils
     };
 
     const OWNER: address = @0x1;
     const ALICE: address = @0xAAAA;
+
+    /// The encoded id the `n`th bid placed in a fresh pool receives, 1-indexed.
+    /// The bid sequence counter descends from `START_BID_ORDER_ID` so that, at one
+    /// price, an earlier order sorts higher — the bid side is walked downward, so
+    /// the oldest must be reached first. `price` is the order's own price, which
+    /// the key embeds.
+    fun bid_id(price: u64, n: u64): u128 {
+        utils::encode_order_id(true, price, constants::start_bid_order_id() - n)
+    }
+
+    /// The encoded id the `n`th ask placed in a fresh pool receives, 1-indexed.
+    /// The ask counter ascends, and the ask side is walked upward, so again the
+    /// oldest order at a price is reached first.
+    fun ask_id(price: u64, n: u64): u128 {
+        utils::encode_order_id(false, price, constants::start_ask_order_id() + n)
+    }
 
     #[test]
     fun test_place_orders_ok() {
@@ -74,7 +91,7 @@ module triex::order_query_tests {
         let mut i = 1;
         while (i <= 10) {
             let order = &orders.orders()[i - 1];
-            assert!(order.order_id() == i);
+            assert!(order.order_id() == bid_id(price, i));
             assert!(order.price() == price);
             assert!(order.quantity() == quantity);
             assert!(order.is_bid() == is_bid);
@@ -203,7 +220,7 @@ module triex::order_query_tests {
         // Anchoring at 1 should return [2, 3, ..., 10].
         let page = iter_orders(
             &pool,
-            option::some(1),
+            option::some(bid_id(price, 1)),
             option::none(),
             option::none(),
             100,
@@ -211,10 +228,14 @@ module triex::order_query_tests {
         );
         assert!(page.orders().length() == 9);
         assert!(page.has_next_page() == false);
-        assert!(page.orders()[0].order_id() == 2);
-        assert!(page.orders()[8].order_id() == 10);
+        assert!(page.orders()[0].order_id() == bid_id(price, 2));
+        assert!(page.orders()[8].order_id() == bid_id(price, 10));
 
-        // Anchor miss: falls back to last index (so returns full set).
+        // Anchor miss: an id naming no live order yields an empty page. The vector
+        // implementation used to fall back to the top of the book and re-serve page
+        // one; keyed seeking finds nothing below a key that low and stops, which is
+        // the better answer — a stale cursor is a caller error, not a request to
+        // start over.
         let page = iter_orders(
             &pool,
             option::some(999),
@@ -223,14 +244,13 @@ module triex::order_query_tests {
             100,
             true,
         );
-        assert!(page.orders().length() == 10);
-        assert!(page.orders()[0].order_id() == 1);
-        assert!(page.orders()[9].order_id() == 10);
+        assert!(page.orders().length() == 0);
+        assert!(page.has_next_page() == false);
 
-        // Exact anchor hit at index 0: returns empty page.
+        // Exact anchor hit on the last (worst-priced) order: nothing follows it.
         let page = iter_orders(
             &pool,
-            option::some(10),
+            option::some(bid_id(price, 10)),
             option::none(),
             option::none(),
             100,
@@ -343,29 +363,29 @@ module triex::order_query_tests {
         let page = iter_orders(
             &pool,
             option::none(),
-            option::some(5),
+            option::some(bid_id(price, 5)),
             option::none(),
             100,
             true,
         );
         assert!(page.orders().length() == 4);
         assert!(page.has_next_page() == false);
-        assert!(page.orders()[0].order_id() == 1);
-        assert!(page.orders()[3].order_id() == 4);
+        assert!(page.orders()[0].order_id() == bid_id(price, 1));
+        assert!(page.orders()[3].order_id() == bid_id(price, 4));
 
         // If the limit is hit before `end_order_id`, we still paginate.
         let page = iter_orders(
             &pool,
             option::none(),
-            option::some(5),
+            option::some(bid_id(price, 5)),
             option::none(),
             2,
             true,
         );
         assert!(page.orders().length() == 2);
         assert!(page.has_next_page() == true);
-        assert!(page.orders()[0].order_id() == 1);
-        assert!(page.orders()[1].order_id() == 2);
+        assert!(page.orders()[0].order_id() == bid_id(price, 1));
+        assert!(page.orders()[1].order_id() == bid_id(price, 2));
 
         destroy(pool);
         end(test);
@@ -427,8 +447,8 @@ module triex::order_query_tests {
         );
         assert!(page.orders().length() == 5);
         assert!(page.has_next_page() == false);
-        assert!(page.orders()[0].order_id() == 6);
-        assert!(page.orders()[4].order_id() == 10);
+        assert!(page.orders()[0].order_id() == bid_id(price, 6));
+        assert!(page.orders()[4].order_id() == bid_id(price, 10));
 
         // Filtering can skip earlier orders but still paginate when limit is hit.
         let page = iter_orders(
@@ -441,8 +461,8 @@ module triex::order_query_tests {
         );
         assert!(page.orders().length() == 2);
         assert!(page.has_next_page() == true);
-        assert!(page.orders()[0].order_id() == 6);
-        assert!(page.orders()[1].order_id() == 7);
+        assert!(page.orders()[0].order_id() == bid_id(price, 6));
+        assert!(page.orders()[1].order_id() == bid_id(price, 7));
 
         destroy(pool);
         end(test);
@@ -489,9 +509,12 @@ module triex::order_query_tests {
         test.next_tx(ALICE);
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
 
+        // The anchor is exclusive on the ask side too, even though the underlying
+        // `slice_following` seek is inclusive — `iter_orders` steps over an exact
+        // hit so paging with the previous page's last id never repeats it.
         let page = iter_orders(
             &pool,
-            option::some(1),
+            option::some(ask_id(price, 1)),
             option::none(),
             option::none(),
             100,
@@ -499,28 +522,28 @@ module triex::order_query_tests {
         );
         assert!(page.orders().length() == 9);
         assert!(page.has_next_page() == false);
-        assert!(page.orders()[0].order_id() == 2);
-        assert!(page.orders()[8].order_id() == 10);
+        assert!(page.orders()[0].order_id() == ask_id(price, 2));
+        assert!(page.orders()[8].order_id() == ask_id(price, 10));
 
         let page = iter_orders(
             &pool,
             option::none(),
-            option::some(5),
+            option::some(ask_id(price, 5)),
             option::none(),
             100,
             false,
         );
         assert!(page.orders().length() == 4);
         assert!(page.has_next_page() == false);
-        assert!(page.orders()[0].order_id() == 1);
-        assert!(page.orders()[3].order_id() == 4);
+        assert!(page.orders()[0].order_id() == ask_id(price, 1));
+        assert!(page.orders()[3].order_id() == ask_id(price, 4));
 
         destroy(pool);
         end(test);
     }
 
     #[test]
-    fun test_find_insert_position_bids_price_time_priority() {
+    fun test_key_order_bids_price_time_priority() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -540,8 +563,9 @@ module triex::order_query_tests {
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
 
-        // Insert out-of-order by price to exercise find_insert_position.
-        // Order IDs assigned sequentially: 1..4.
+        // Insert out-of-order by price: with keyed storage, sort position comes from
+        // the encoded id rather than a search for an insertion index.
+        // Sequence numbers are assigned in placement order: 1..4.
         let p2 = 2 * constants::float_scaling();
         let p1 = 1 * constants::float_scaling();
         let p3 = 3 * constants::float_scaling();
@@ -611,7 +635,7 @@ module triex::order_query_tests {
         assert!(page.has_next_page() == false);
 
         // Full expected sequence: best price first; FIFO within price.
-        let expected_order_ids = vector[3, 1, 4, 2];
+        let expected_order_ids = vector[bid_id(p3, 3), bid_id(p2, 1), bid_id(p2, 4), bid_id(p1, 2)];
         let expected_prices = vector[p3, p2, p2, p1];
         let mut j = 0;
         while (j < 4) {
@@ -625,7 +649,7 @@ module triex::order_query_tests {
     }
 
     #[test]
-    fun test_find_insert_position_asks_price_time_priority() {
+    fun test_key_order_asks_price_time_priority() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -645,8 +669,9 @@ module triex::order_query_tests {
         let expire_timestamp = constants::max_u64();
         let is_bid = false;
 
-        // Insert out-of-order by price to exercise find_insert_position.
-        // Order IDs assigned sequentially: 1..4.
+        // Insert out-of-order by price: with keyed storage, sort position comes from
+        // the encoded id rather than a search for an insertion index.
+        // Sequence numbers are assigned in placement order: 1..4.
         let p2 = 2 * constants::float_scaling();
         let p3 = 3 * constants::float_scaling();
         let p1 = 1 * constants::float_scaling();
@@ -716,7 +741,7 @@ module triex::order_query_tests {
         assert!(page.has_next_page() == false);
 
         // Full expected sequence: best (lowest) price first; FIFO within price.
-        let expected_order_ids = vector[3, 1, 4, 2];
+        let expected_order_ids = vector[ask_id(p1, 3), ask_id(p2, 1), ask_id(p2, 4), ask_id(p3, 2)];
         let expected_prices = vector[p1, p2, p2, p3];
         let mut j = 0;
         while (j < 4) {
@@ -730,7 +755,7 @@ module triex::order_query_tests {
     }
 
     #[test]
-    fun test_find_insert_position_insert_at_end_new_best_price() {
+    fun test_key_order_insert_at_end_new_best_price() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -795,7 +820,8 @@ module triex::order_query_tests {
         test.next_tx(ALICE);
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
 
-        // New best bid should be at END of the bids vector, so it is returned first.
+        // The new best bid holds the highest key on the bid side, so it is the
+        // first order the downward walk reaches.
         let page = iter_orders(
             &pool,
             option::none(),
@@ -807,7 +833,7 @@ module triex::order_query_tests {
         assert!(page.orders().length() == 3);
         assert!(page.has_next_page() == false);
 
-        let expected_order_ids = vector[3, 2, 1];
+        let expected_order_ids = vector[bid_id(p4, 3), bid_id(p3, 2), bid_id(p2, 1)];
         let expected_prices = vector[p4, p3, p2];
         let mut j = 0;
         while (j < 3) {
@@ -821,7 +847,7 @@ module triex::order_query_tests {
     }
 
     #[test]
-    fun test_find_insert_position_insert_at_start_worst_price() {
+    fun test_key_order_insert_at_start_worst_price() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -898,7 +924,7 @@ module triex::order_query_tests {
         assert!(page.orders().length() == 3);
         assert!(page.has_next_page() == false);
 
-        let expected_order_ids = vector[2, 1, 3];
+        let expected_order_ids = vector[bid_id(p3, 2), bid_id(p2, 1), bid_id(p1, 3)];
         let expected_prices = vector[p3, p2, p1];
         let mut j = 0;
         while (j < 3) {
