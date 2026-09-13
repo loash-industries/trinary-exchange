@@ -67,7 +67,7 @@ module triex::hub_registry {
     }
 
     // === Public-Mutative Functions * ADMIN * ===
-    /// Set where a collection's hub share is paid.
+    /// Set where a collection's operator share is paid.
     ///
     /// Note what this does *not* do: it does not move an already-accrued balance.
     /// A claim pays whoever is configured at claim time, so rotating between an
@@ -129,7 +129,7 @@ module triex::hub_registry {
     ///
     /// The reach is bounded even so: an adapter can only move *where* a share is
     /// paid. It cannot change a rate, reach the reserve, or touch a balance already
-    /// settled into `hub_owed` — the worst a compromised adapter redirects is
+    /// settled into `operator_owed` — the worst a compromised adapter redirects is
     /// future claims, and `clear_authorized_adapter` stops it.
     public fun set_beneficiary_with_witness<W: drop>(
         self: &mut HubRegistry,

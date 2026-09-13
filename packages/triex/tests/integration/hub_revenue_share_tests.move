@@ -1,7 +1,7 @@
 /// End-to-end tests for trade hub revenue share, eager-split design.
 ///
 /// The unit suites cover the reserve arithmetic (`multicoin_vault_tests`), the
-/// staged rate pair (`fee_policy_hub_share_tests`) and the beneficiary table
+/// staged rate pair (`fee_policy_operator_share_tests`) and the beneficiary table
 /// (`hub_registry_tests`). These drive the whole thing through real orders,
 /// because the two failure modes that matter most are only reachable that way:
 /// a credit that counts the same fee twice (or counts refundable escrow at
@@ -103,8 +103,8 @@ module triex::integration_hub_revenue_share_tests {
         let mut reg = test.take_shared<HubRegistry>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(HUB_CLASS, bps, &cap, test.ctx());
-        policy.assign_hub_share_class(collection_id, HUB_CLASS, &cap);
+        policy.stage_operator_share_class(HUB_CLASS, bps, &cap, test.ctx());
+        policy.assign_operator_share_class(collection_id, HUB_CLASS, &cap);
         reg.set_beneficiary(collection_id, OPERATOR, &cap);
 
         unit_test::destroy(cap);
@@ -194,15 +194,15 @@ module triex::integration_hub_revenue_share_tests {
         let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         assert!(
             (pool.quote_fee_reserve_balance() as u128)
-                >= (pool.locked_maker_fees() as u128) + (pool.hub_owed() as u128),
+                >= (pool.locked_maker_fees() as u128) + (pool.operator_owed() as u128),
         );
         return_shared(pool);
     }
 
-    fun hub_owed(pool_id: ID, test: &mut Scenario): u64 {
+    fun operator_owed(pool_id: ID, test: &mut Scenario): u64 {
         test.next_tx(OWNER);
         let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let owed = pool.hub_owed();
+        let owed = pool.operator_owed();
         return_shared(pool);
         owed
     }
@@ -220,7 +220,7 @@ module triex::integration_hub_revenue_share_tests {
     /// far below; escrow counted at deposit shows up as a credit while the
     /// order is still open.
     #[test]
-    fun hub_owed_counts_recognized_revenue_exactly_once() {
+    fun operator_owed_counts_recognized_revenue_exactly_once() {
         let mut test = begin(OWNER);
         let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
         let collection_id = {
@@ -231,7 +231,7 @@ module triex::integration_hub_revenue_share_tests {
         };
 
         // Ceiling rate, so any escrow miscount is as visible as possible.
-        let bps = constants::max_hub_share_bps();
+        let bps = constants::max_operator_share_bps();
         configure_hub(collection_id, bps, &mut test);
         test.next_epoch(OWNER);
 
@@ -243,7 +243,7 @@ module triex::integration_hub_revenue_share_tests {
         let (order_id, taker_fee, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
         assert!(taker_fee == 0);
         assert!(maker_fee > 0);
-        assert!(hub_owed(pool_id, &mut test) == 0);
+        assert!(operator_owed(pool_id, &mut test) == 0);
         assert_solvent(pool_id, &mut test);
 
         // 2. A partial fill earns out part of that escrow and charges the ask
@@ -266,7 +266,7 @@ module triex::integration_hub_revenue_share_tests {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             assert!(pool.locked_maker_fees() == 0);
             let revenue = pool.quote_fee_reserve_balance() as u128;
-            let owed = pool.hub_owed() as u128;
+            let owed = pool.operator_owed() as u128;
             let exact_share = revenue * (bps as u128) / 10_000;
             assert!(owed <= exact_share);
             assert!(owed + 4 >= exact_share);
@@ -310,7 +310,7 @@ module triex::integration_hub_revenue_share_tests {
             // A fully-filled bid leaves no escrow, so the reserve is all revenue.
             assert!(pool.locked_maker_fees() == 0);
             let revenue = pool.quote_fee_reserve_balance();
-            let share = pool.hub_owed();
+            let share = pool.operator_owed();
             assert!(revenue > 0);
             assert!(share > 0);
             return_shared(pool);
@@ -325,7 +325,7 @@ module triex::integration_hub_revenue_share_tests {
             let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
 
-            let (hub_paid, treasury_paid) = pool.claim_hub_share(
+            let (hub_paid, treasury_paid) = pool.claim_operator_share(
                 &reg,
                 &triex_reg,
                 &clock,
@@ -333,7 +333,7 @@ module triex::integration_hub_revenue_share_tests {
             );
             assert!(hub_paid == share);
             assert!(treasury_paid == revenue - share);
-            assert!(pool.hub_owed() == 0);
+            assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
 
             return_shared(clock);
@@ -390,13 +390,13 @@ module triex::integration_hub_revenue_share_tests {
             let clock = test.take_shared<Clock>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-            let share = pool.hub_owed();
+            let share = pool.operator_owed();
             let remainder = pool.withdrawable_pool_fees();
             assert!(share > 0);
 
             let swept = pool.withdraw_pool_fees(&reg, &cap, remainder, &clock, test.ctx());
             assert!(swept.value() == remainder);
-            assert!(pool.hub_owed() == 0);
+            assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
 
             unit_test::destroy(swept);
@@ -442,7 +442,7 @@ module triex::integration_hub_revenue_share_tests {
             test.next_tx(OWNER);
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let r = pool.quote_fee_reserve_balance();
-            let o = pool.hub_owed();
+            let o = pool.operator_owed();
             return_shared(pool);
             (r as u128, o as u128)
         };
@@ -456,7 +456,7 @@ module triex::integration_hub_revenue_share_tests {
         {
             let mut policy = test.take_shared<FeePolicy>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
-            policy.stage_hub_share_class(HUB_CLASS, 500, &cap, test.ctx());
+            policy.stage_operator_share_class(HUB_CLASS, 500, &cap, test.ctx());
             unit_test::destroy(cap);
             return_shared(policy);
         };
@@ -469,7 +469,7 @@ module triex::integration_hub_revenue_share_tests {
         {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let revenue_2 = (pool.quote_fee_reserve_balance() as u128) - revenue_1;
-            let owed_2 = (pool.hub_owed() as u128) - owed_1;
+            let owed_2 = (pool.operator_owed() as u128) - owed_1;
             // The second round credited at 5%, not 30% and not a blend.
             assert!(owed_2 <= revenue_2 * 500 / 10_000);
             assert!(owed_2 + 4 >= revenue_2 * 500 / 10_000);
@@ -500,7 +500,7 @@ module triex::integration_hub_revenue_share_tests {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let revenue = pool.quote_fee_reserve_balance();
             assert!(revenue > 0);
-            assert!(pool.hub_owed() == 0);
+            assert!(pool.operator_owed() == 0);
             assert!(pool.withdrawable_pool_fees() == revenue);
             return_shared(pool);
         };
@@ -526,7 +526,7 @@ module triex::integration_hub_revenue_share_tests {
             let clock = test.take_shared<Clock>();
 
             assert!(!reg.has_beneficiary(pool.collection_id()));
-            let (hub_paid, treasury_paid) = pool.claim_hub_share(
+            let (hub_paid, treasury_paid) = pool.claim_operator_share(
                 &reg,
                 &triex_reg,
                 &clock,
@@ -546,7 +546,7 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// But once something *is* owed, an absent beneficiary is a misconfiguration
-    /// and aborts rather than banking the share. `hub_owed` stays encumbered, so
+    /// and aborts rather than banking the share. `operator_owed` stays encumbered, so
     /// setting an address later still pays.
     #[test]
     #[expected_failure(abort_code = triex::multicoin_pool::ENoHubBeneficiary)]
@@ -565,8 +565,8 @@ module triex::integration_hub_revenue_share_tests {
         {
             let mut policy = test.take_shared<FeePolicy>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
-            policy.stage_hub_share_class(HUB_CLASS, 1_000, &cap, test.ctx());
-            policy.assign_hub_share_class(collection_id, HUB_CLASS, &cap);
+            policy.stage_operator_share_class(HUB_CLASS, 1_000, &cap, test.ctx());
+            policy.assign_operator_share_class(collection_id, HUB_CLASS, &cap);
             unit_test::destroy(cap);
             return_shared(policy);
         };
@@ -582,7 +582,7 @@ module triex::integration_hub_revenue_share_tests {
         let triex_reg = test.take_shared<Registry>();
         let clock = test.take_shared<Clock>();
 
-        pool.claim_hub_share(&reg, &triex_reg, &clock, test.ctx());
+        pool.claim_operator_share(&reg, &triex_reg, &clock, test.ctx());
 
         return_shared(clock);
         return_shared(triex_reg);
@@ -607,7 +607,7 @@ module triex::integration_hub_revenue_share_tests {
             id
         };
 
-        let bps = constants::max_hub_share_bps();
+        let bps = constants::max_operator_share_bps();
         configure_hub(collection_id, bps, &mut test);
         test.next_epoch(OWNER);
 
@@ -621,7 +621,7 @@ module triex::integration_hub_revenue_share_tests {
             let (_, retained) = quote_fee::split_released_fee(maker_fee, 2000);
             assert!(retained > 0);
             let expected = (((retained as u128) * (bps as u128)) / 10_000) as u64;
-            assert!(pool.hub_owed() == expected);
+            assert!(pool.operator_owed() == expected);
             return_shared(pool);
         };
 

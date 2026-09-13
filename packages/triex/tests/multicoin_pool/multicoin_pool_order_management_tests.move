@@ -2576,7 +2576,7 @@ module triex::integration_multicoin_pool_order_management_tests {
             // With the split applied at recognition, the whole reserve is exact:
             // no hub is configured, so nothing accrued to an operator and the
             // sweep takes everything with no settle in front of it.
-            assert!(pool.hub_owed() == 0, 3);
+            assert!(pool.operator_owed() == 0, 3);
             assert!(pool.withdrawable_pool_fees() == reserve_before, 4);
 
             let fee_coin = pool.withdraw_pool_fees(

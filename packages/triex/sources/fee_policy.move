@@ -520,14 +520,14 @@ module triex::fee_policy {
     /// read cannot apply to revenue they host after it lands. With the split
     /// applied at recognition, that staging is the whole timing story — there is
     /// no settlement step whose caller could gain by moving it.
-    public fun stage_hub_share_class(
+    public fun stage_operator_share_class(
         self: &mut FeePolicy,
         class_id: u16,
         bps: u64,
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
-        assert!(bps <= constants::max_hub_share_bps(), EHubShareAboveCeiling);
+        assert!(bps <= constants::max_operator_share_bps(), EHubShareAboveCeiling);
 
         let from_epoch = ctx.epoch() + 1;
         let key = HubShareClassKey { class_id };
@@ -562,7 +562,7 @@ module triex::fee_policy {
     /// revenue that has not happened yet. There is no unsettled basis for it to
     /// re-price retroactively. One write re-prices every pool of every asset in
     /// the collection, from now on.
-    public fun assign_hub_share_class(
+    public fun assign_operator_share_class(
         self: &mut FeePolicy,
         collection_id: ID,
         class_id: u16,
@@ -571,7 +571,7 @@ module triex::fee_policy {
         // An unconfigured class resolves to zero, so a mistyped id would leave the
         // hub silently earning nothing — the one failure this configuration can have
         // that nobody notices until an operator asks where their payment is.
-        assert!(self.hub_share_class_exists(class_id), EHubShareClassDoesNotExist);
+        assert!(self.operator_share_class_exists(class_id), EHubShareClassDoesNotExist);
 
         let key = HubShareAssignmentKey { collection_id };
         if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, key)) {
@@ -586,12 +586,12 @@ module triex::fee_policy {
 
     /// Class for collections nobody has configured. Absent means zero, which is
     /// why deploying the feature changes nothing until a hub is assigned.
-    public fun set_default_hub_share_class(
+    public fun set_default_operator_share_class(
         self: &mut FeePolicy,
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
-        assert!(self.hub_share_class_exists(class_id), EHubShareClassDoesNotExist);
+        assert!(self.operator_share_class_exists(class_id), EHubShareClassDoesNotExist);
 
         let key = DefaultHubShareKey {};
         if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, key)) {
@@ -610,8 +610,8 @@ module triex::fee_policy {
     /// missing piece of configuration resolves to zero: an unconfigured
     /// collection, an unconfigured class, an absent default. The result is also
     /// clamped to the ceiling as a belt over the write-time assert.
-    public fun hub_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
-        let class_id = self.hub_share_class(collection_id);
+    public fun operator_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
+        let class_id = self.operator_share_class(collection_id);
         let key = HubShareClassKey { class_id };
         if (!df::exists_with_type<HubShareClassKey, HubShareClass>(&self.id, key)) {
             return 0
@@ -620,10 +620,10 @@ module triex::fee_policy {
         let class: &HubShareClass = df::borrow(&self.id, key);
         let bps = if (epoch >= class.effective_epoch) class.next_bps else class.current_bps;
 
-        bps.min(constants::max_hub_share_bps())
+        bps.min(constants::max_operator_share_bps())
     }
 
-    public fun hub_share_class_exists(self: &FeePolicy, class_id: u16): bool {
+    public fun operator_share_class_exists(self: &FeePolicy, class_id: u16): bool {
         df::exists_with_type<HubShareClassKey, HubShareClass>(
             &self.id,
             HubShareClassKey { class_id },
@@ -632,7 +632,7 @@ module triex::fee_policy {
 
     /// Share class a collection is priced in, falling back to the default class
     /// and then to class 0.
-    public fun hub_share_class(self: &FeePolicy, collection_id: ID): u16 {
+    public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
         let assignment = HubShareAssignmentKey { collection_id };
         if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, assignment)) {
             return *df::borrow<HubShareAssignmentKey, u16>(&self.id, assignment)

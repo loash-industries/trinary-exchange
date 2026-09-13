@@ -605,7 +605,7 @@ module triex::multicoin_pool {
         let previous_quantity = self.get_order(order_id).quantity();
 
         let pool_inner = self.load_inner_mut();
-        let hub_bps = policy.hub_share_bps_at(pool_inner.collection_id, ctx.epoch());
+        let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let (cancel_quantity, order) = pool_inner
             .book
             .modify_order(order_id, new_quantity, clock.timestamp_ms());
@@ -674,7 +674,7 @@ module triex::multicoin_pool {
         ctx: &mut TxContext,
     ) {
         let pool_inner = self.load_inner_mut();
-        let hub_bps = policy.hub_share_bps_at(pool_inner.collection_id, ctx.epoch());
+        let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let mut order = pool_inner.book.cancel_order(order_id);
         assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
         let (settled, owed, fee_release) = pool_inner
@@ -859,7 +859,7 @@ module triex::multicoin_pool {
     /// Withdraw accumulated quote fees into a Coin for treasury custody, paying
     /// out the hub operator's accrued share in the same transaction.
     ///
-    /// The hub leg comes first: if `hub_owed > 0` and a beneficiary is
+    /// The hub leg comes first: if `operator_owed > 0` and a beneficiary is
     /// configured, it is paid before the treasury takes anything, so a sweep by
     /// either party settles both. An absent beneficiary skips the leg rather
     /// than aborting — the share stays encumbered, the treasury still cannot
@@ -879,13 +879,13 @@ module triex::multicoin_pool {
         let pool_id = pool_inner.pool_id;
         let collection_id = pool_inner.collection_id;
 
-        if (pool_inner.vault.hub_owed() > 0) {
+        if (pool_inner.vault.operator_owed() > 0) {
             let beneficiary = registry.beneficiary(collection_id);
             if (beneficiary.is_some()) {
                 let beneficiary = beneficiary.destroy_some();
                 let share = pool_inner
                     .vault
-                    .claim_hub_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
+                    .claim_operator_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
                 transfer::public_transfer(share, beneficiary);
             };
         };
@@ -912,7 +912,7 @@ module triex::multicoin_pool {
     /// lets either batch many pools into one PTB.
     ///
     /// Returns `(hub_amount, treasury_amount)`.
-    public fun claim_hub_share<QuoteAsset>(
+    public fun claim_operator_share<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         registry: &HubRegistry,
         triex_registry: &Registry,
@@ -923,11 +923,11 @@ module triex::multicoin_pool {
         let pool_id = pool_inner.pool_id;
         let collection_id = pool_inner.collection_id;
 
-        let hub_amount = pool_inner.vault.hub_owed();
+        let hub_amount = pool_inner.vault.operator_owed();
         if (hub_amount > 0) {
             // With money actually owed, an absent beneficiary *is* a
             // misconfiguration. Abort rather than burn the share or bank it for
-            // the treasury: `hub_owed` stays encumbered until claimed, so setting
+            // the treasury: `operator_owed` stays encumbered until claimed, so setting
             // an address later still pays.
             let beneficiary = registry.beneficiary(collection_id);
             assert!(beneficiary.is_some(), ENoHubBeneficiary);
@@ -935,7 +935,7 @@ module triex::multicoin_pool {
 
             let share = pool_inner
                 .vault
-                .claim_hub_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
+                .claim_operator_share(pool_id, beneficiary, clock.timestamp_ms(), ctx);
             transfer::public_transfer(share, beneficiary);
         };
 
@@ -1149,8 +1149,8 @@ module triex::multicoin_pool {
 
     /// The hub operator's accrued, claimable share. Exact at all times — credited
     /// at recognition, so there is no unsettled remainder beside it.
-    public fun hub_owed<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
-        self.load_inner().vault.hub_owed()
+    public fun operator_owed<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
+        self.load_inner().vault.operator_owed()
     }
 
     /// Get the Order struct.
@@ -1391,7 +1391,7 @@ module triex::multicoin_pool {
             // The hub's share rate, resolved once per transaction and threaded to
             // every recognition below — a fill with N maker matches must not do N
             // dynamic-field walks.
-            let hub_bps = policy.hub_share_bps_at(pool_inner.collection_id, ctx.epoch());
+            let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
             let mut order_info = order_info::new(
                 pool_inner.pool_id,
                 trading_account.id(),
@@ -1472,7 +1472,7 @@ module triex::multicoin_pool {
             // — the deposit above moved it into the reserve, and only the maker
             // half of that deposit is escrow — so the hub is credited its share
             // of the taker half here, exactly.
-            pool_inner.vault.credit_hub_share(taker_fee_amount, hub_bps);
+            pool_inner.vault.credit_operator_share(taker_fee_amount, hub_bps);
             // One deposit per account charged, so each reaches the reserve
             // attributed to whoever paid it: the ask taker for their own fee,
             // each ask maker for the fee taken out of their fill proceeds.
@@ -1490,7 +1490,7 @@ module triex::multicoin_pool {
                         proceeds_fee.amount(),
                         clock.timestamp_ms(),
                     );
-                pool_inner.vault.credit_hub_share(proceeds_fee.amount(), hub_bps);
+                pool_inner.vault.credit_operator_share(proceeds_fee.amount(), hub_bps);
                 fee_idx = fee_idx + 1;
             };
             // Escrow these fills earned out, plus the share retained from any

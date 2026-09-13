@@ -97,10 +97,10 @@ ladders and dry-run quotes are untouched by it. The rate ships at **0% for every
 hub**, applies only to collections the admin has explicitly assigned to a share
 class, and — like every other rate here — takes effect no earlier than the
 **next epoch boundary**, visible on-chain beforehand through
-`hub_share_bps_at()`. The share is credited the moment revenue is recognized, at
+`operator_share_bps_at()`. The share is credited the moment revenue is recognized, at
 the rate live in that instant, so a rate change can only affect revenue that has
 not happened yet — there is no deferred settlement whose timing anyone could
-game, and `hub_owed()` is exact at all times.
+game, and `operator_owed()` is exact at all times.
 
 Where the share is paid is configuration, not inference: `HubRegistry` holds an
 explicit `collection_id -> address`, so a hub changing hands, a capability parked
@@ -111,7 +111,7 @@ their own payout address against their `OwnerCap<StorageUnit>`; that registratio
 is single-valued and revocable, and an adapter can only move *where* a share is
 paid — never a rate, the reserve, or a balance already accrued. Accrued-but-unclaimed balance pays whoever is configured at claim
 time, which is a settlement matter between a hub's buyer and seller — the
-`hub_owed()` view and the claim events are the record of it.
+`operator_owed()` view and the claim events are the record of it.
 
 ### What the AdminCap can NOT do
 
@@ -121,9 +121,9 @@ power than it sounds. It cannot:
 
 - Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
 - Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
-  `hub_owed`, which is exact at all times — a sweep pays the operator's share to
+  `operator_owed`, which is exact at all times — a sweep pays the operator's share to
   the operator and can never reach it
-- Redirect a hub share: `claim_hub_share` and `withdraw_pool_fees` pay only the
+- Redirect a operator share: `claim_operator_share` and `withdraw_pool_fees` pay only the
   address `HubRegistry` records, never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)

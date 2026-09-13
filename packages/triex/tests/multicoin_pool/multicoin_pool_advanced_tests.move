@@ -1340,7 +1340,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             // is configured, so the operator's share is zero and the whole
             // retention is immediately the treasury's — nothing provisional,
             // nothing to settle before the sweep.
-            assert!(pool.hub_owed() == 0, 4);
+            assert!(pool.operator_owed() == 0, 4);
             assert!(pool.withdrawable_pool_fees() == retained, 5);
 
             return_shared(ta);
@@ -1551,7 +1551,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             // split was applied at recognition, no hub is configured, so every
             // fee in it belongs to the treasury with nothing held back.
             let reserve = pool.quote_fee_reserve_balance();
-            assert!(pool.hub_owed() == 0, 5);
+            assert!(pool.operator_owed() == 0, 5);
             assert!(pool.withdrawable_pool_fees() == reserve, 6);
             return_shared(ta);
             return_shared(clock);
@@ -3325,7 +3325,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             // recognition. No hub is configured, so all of it is immediately
             // sweepable.
             let reserve = pool.quote_fee_reserve_balance();
-            assert!(pool.hub_owed() == 0, 8);
+            assert!(pool.operator_owed() == 0, 8);
             assert!(pool.withdrawable_pool_fees() == reserve, 9);
 
             return_shared(ta);

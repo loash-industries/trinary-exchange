@@ -7,7 +7,7 @@
 /// history to keep — nothing ever asks for a past epoch's rate after that
 /// epoch's revenue has been recognized.
 #[test_only]
-module triex::fee_policy_hub_share_tests {
+module triex::fee_policy_operator_share_tests {
     use std::unit_test::{assert_eq, destroy};
     use sui::test_scenario::{begin, end};
     use triex::{constants, fee_policy::{Self, FeePolicy}, registry};
@@ -32,9 +32,9 @@ module triex::fee_policy_hub_share_tests {
         let mut test = begin(OWNER);
         let policy = fee_policy::create_for_testing(test.ctx());
 
-        assert_eq!(policy.hub_share_class(a_collection()), 0);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 0), 0);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 99), 0);
+        assert_eq!(policy.operator_share_class(a_collection()), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 99), 0);
 
         destroy(policy);
         end(test);
@@ -49,14 +49,14 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
 
         // Epoch 0 is the epoch the write happened in: revenue already hosted
         // cannot be re-priced by it.
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 0), 0);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 1_000);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 50), 1_000);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 50), 1_000);
 
         destroy(cap);
         destroy(policy);
@@ -72,16 +72,16 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
 
         test.next_epoch(OWNER); // epoch 1 — 1_000 live
-        policy.stage_hub_share_class(CLASS_STANDARD, 2_000, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_STANDARD, 2_000, &cap, test.ctx());
 
         // Still this epoch: the running rate is untouched by the pending stage.
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 1_000);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
         // Next epoch: the staged rate is the rate.
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 2), 2_000);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 2), 2_000);
 
         destroy(cap);
         destroy(policy);
@@ -96,13 +96,13 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_500, &cap, test.ctx());
-        policy.stage_hub_share_class(CLASS_STANDARD, 2_500, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_500, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_STANDARD, 2_500, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
 
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 0), 0);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 2_500);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_500);
 
         destroy(cap);
         destroy(policy);
@@ -117,16 +117,16 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
-        policy.stage_hub_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
-        policy.assign_hub_share_class(another_collection(), CLASS_PARTNER, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
+        policy.assign_operator_share_class(another_collection(), CLASS_PARTNER, &cap);
 
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 1_000);
-        assert_eq!(policy.hub_share_bps_at(another_collection(), 1), 2_500);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
+        assert_eq!(policy.operator_share_bps_at(another_collection(), 1), 2_500);
 
-        policy.assign_hub_share_class(a_collection(), CLASS_PARTNER, &cap);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 2_500);
+        policy.assign_operator_share_class(a_collection(), CLASS_PARTNER, &cap);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_500);
 
         destroy(cap);
         destroy(policy);
@@ -139,16 +139,16 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
-        policy.set_default_hub_share_class(CLASS_STANDARD, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 1_000, &cap, test.ctx());
+        policy.set_default_operator_share_class(CLASS_STANDARD, &cap);
 
-        assert_eq!(policy.hub_share_class(another_collection()), CLASS_STANDARD);
-        assert_eq!(policy.hub_share_bps_at(another_collection(), 1), 1_000);
+        assert_eq!(policy.operator_share_class(another_collection()), CLASS_STANDARD);
+        assert_eq!(policy.operator_share_bps_at(another_collection(), 1), 1_000);
 
         // An explicit assignment still wins over the default.
-        policy.stage_hub_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
-        policy.assign_hub_share_class(another_collection(), CLASS_PARTNER, &cap);
-        assert_eq!(policy.hub_share_bps_at(another_collection(), 1), 2_500);
+        policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
+        policy.assign_operator_share_class(another_collection(), CLASS_PARTNER, &cap);
+        assert_eq!(policy.operator_share_bps_at(another_collection(), 1), 2_500);
 
         destroy(cap);
         destroy(policy);
@@ -163,13 +163,13 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(CLASS_STANDARD, 2_000, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
+        policy.stage_operator_share_class(CLASS_STANDARD, 2_000, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
         test.next_epoch(OWNER);
-        policy.stage_hub_share_class(CLASS_STANDARD, 0, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_STANDARD, 0, &cap, test.ctx());
 
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), 2_000);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 2), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_000);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 2), 0);
 
         destroy(cap);
         destroy(policy);
@@ -185,9 +185,9 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.stage_hub_share_class(
+        policy.stage_operator_share_class(
             CLASS_STANDARD,
-            constants::max_hub_share_bps() + 1,
+            constants::max_operator_share_bps() + 1,
             &cap,
             test.ctx(),
         );
@@ -208,7 +208,7 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.assign_hub_share_class(a_collection(), CLASS_PARTNER, &cap);
+        policy.assign_operator_share_class(a_collection(), CLASS_PARTNER, &cap);
 
         destroy(cap);
         destroy(policy);
@@ -222,7 +222,7 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.set_default_hub_share_class(CLASS_PARTNER, &cap);
+        policy.set_default_operator_share_class(CLASS_PARTNER, &cap);
 
         destroy(cap);
         destroy(policy);
@@ -235,10 +235,10 @@ module triex::fee_policy_hub_share_tests {
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        let max = constants::max_hub_share_bps();
-        policy.stage_hub_share_class(CLASS_STANDARD, max, &cap, test.ctx());
-        policy.assign_hub_share_class(a_collection(), CLASS_STANDARD, &cap);
-        assert_eq!(policy.hub_share_bps_at(a_collection(), 1), max);
+        let max = constants::max_operator_share_bps();
+        policy.stage_operator_share_class(CLASS_STANDARD, max, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_STANDARD, &cap);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), max);
 
         destroy(cap);
         destroy(policy);
