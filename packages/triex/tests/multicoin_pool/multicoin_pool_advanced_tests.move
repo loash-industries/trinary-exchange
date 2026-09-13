@@ -2011,12 +2011,12 @@ module triex::integration_multicoin_pool_advanced_tests {
 
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let policy = test.take_shared<FeePolicy>();
+        let mut policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
 
         let _pool_id = multicoin_pool::create_permissionless_pool<USDC>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_IRON,
             mint_for_testing<CRED>(constants::pool_creation_fee() - 1, test.ctx()),
@@ -2040,12 +2040,12 @@ module triex::integration_multicoin_pool_advanced_tests {
         // Create permissionless pool (requires exact CRED creation fee)
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let policy = test.take_shared<FeePolicy>();
+        let mut policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
 
         let pool_id = multicoin_pool::create_permissionless_pool<USDC>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_IRON,
             mint_for_testing<CRED>(constants::pool_creation_fee(), test.ctx()),
@@ -2287,12 +2287,12 @@ module triex::integration_multicoin_pool_advanced_tests {
         test.next_tx(OWNER);
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let policy = test.take_shared<FeePolicy>();
+        let mut policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
 
         multicoin_pool::create_pool_admin<USDC>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_GOLD,
             &admin_cap,
@@ -2499,13 +2499,13 @@ module triex::integration_multicoin_pool_advanced_tests {
         // Create permissionless pool for ASSET_GOLD with USDC quote
         test.next_tx(OWNER);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let policy = test.take_shared<FeePolicy>();
+        let mut policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
         let creation_fee = mint_for_testing<CRED>(constants::pool_creation_fee(), test.ctx());
 
         let pool_id_1 = multicoin_pool::create_permissionless_pool<USDC>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_GOLD,
             creation_fee,
@@ -2525,13 +2525,13 @@ module triex::integration_multicoin_pool_advanced_tests {
         // Create another permissionless pool for ASSET_SILVER
         test.next_tx(OWNER);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let policy = test.take_shared<FeePolicy>();
+        let mut policy = test.take_shared<FeePolicy>();
         let collection = test.take_shared<Collection>();
         let creation_fee = mint_for_testing<CRED>(constants::pool_creation_fee(), test.ctx());
 
         let pool_id_2 = multicoin_pool::create_permissionless_pool<USDC>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_SILVER,
             creation_fee,

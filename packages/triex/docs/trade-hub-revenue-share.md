@@ -7,13 +7,23 @@ machinery (`fee_basis` ring, holdback, `settle_operator_share`, forfeiture, segm
 ladder) is deleted, `cancel_order`/`modify_order`/`cancel_orders`/
 `cancel_all_orders` on `multicoin_pool` take `&FeePolicy`, and both
 `claim_operator_share` and `withdraw_pool_fees` pay operator and treasury in one
-transaction. The sections between here and the Revision describe the original
-deferred design; they are kept because the Revision is written against them and
-most of their reasoning (the shared-pot accounting, the recognition-site list,
-the escrow/revenue boundary, configuration and attribution) carries over
-unchanged. [Rollout 03](#03--operator-self-service) is half-landed — the
-authorization gate is in, the adapter package that drives it is not — and the
-[open questions](#open-questions) are outstanding.*
+transaction.*
+
+*A second revision then removed the standalone registry and every rotation
+surface with it: the beneficiary is a `collection_id → address` dynamic field on
+`FeePolicy`, **pinned to the deployer by the transaction that creates a
+collection's first pool**, readable by the payout paths, and destructible (never
+re-pointable) by the admin cap. There is no operator self-service, no adapter
+witness, and no delegation of fee revenue to other beneficiaries on chain —
+re-dividing a hub's revenue is deliberately external to the Triex contracts.
+Sections below that describe `OperatorRegistry`, witness-gated rotation, or
+[Rollout 03](#03--operator-self-service) record the superseded design.*
+
+*The sections between here and the Revision describe the original deferred
+design; they are kept because the Revision is written against them and most of
+their reasoning (the shared-pot accounting, the recognition-site list, the
+escrow/revenue boundary, configuration and attribution) carries over unchanged.
+The [open questions](#open-questions) are outstanding.*
 
 How Triex can pay a storage unit owner (a "trade hub operator") a configurable
 share of the trading fees earned on their hub — without moving a coin on the
@@ -349,7 +359,8 @@ The exchange already solved "configurable pricing, per group, without
 per-pool fan-out" once: `FeePolicy` holds fee *classes*, pools store a 2-byte
 class id, and a negotiated deal is just a class with one pool in it. The rate
 side of revenue share should reuse that idiom rather than invent a second
-configuration surface. The *payout address* should not — see below.
+configuration surface. The *payout address* now lives there too — see below for
+the original argument against that, and what removed its premise.
 
 `FeePolicy` is a `key` object with a `UID` (`fee_policy.move:138`) but no
 versioned inner, so its struct cannot gain fields on upgrade — **dynamic
@@ -361,31 +372,29 @@ fields on its `id` can**. Three tables, all additive, all admin-written:
 | `OperatorShareKey` | `ID` (collection) → `u16` | Which class each entity is in. Absent → default class |
 | `DefaultOperatorShareKey` | `u16` | Class for hubs nobody has configured. Ships as class 0 = 0 bps |
 
-### Where the beneficiary must *not* live
+### Where the beneficiary lives
 
-The payout address is the one piece of this configuration an operator writes
-themselves, and that disqualifies `FeePolicy` from holding it.
-`fee_policy.move:7` states the constraint as an invariant on the module:
+*(Superseded reasoning, kept for the record: an earlier design held the
+beneficiary in a standalone `OperatorRegistry`, because operator self-service
+rotation was a user-reachable write and `fee_policy.move` states an invariant
+that no user-reachable path on the trading flow may take the policy `&mut` —
+immutable reads of a shared object commute, a write does not. Cutting rotation
+entirely removed that premise.)*
 
-> *`FeePolicy` must stay read-mostly. Writes are admin-only and epoch-cadence by
-> design; nothing on any user-reachable path may ever take it `&mut`.*
+The beneficiary is a fourth dynamic field on `FeePolicy`:
+`OperatorBeneficiaryKey` (`collection_id`) → `address`. It is written exactly
+once, by `register_operator_beneficiary` inside `create_pool` — the transaction
+that deploys a collection's first pool pins its deployer, set-if-absent, so a
+later pool on the same collection cannot capture it. The admin cap can
+**destroy** a mapping (`destroy_operator_beneficiary`), which halts claims while
+the share stays encumbered; it cannot re-point one. Nobody can: a hub changing
+hands, or an operator wanting revenue split with someone else, is settled
+outside Triex, with the `operator_owed()` view and the claim events as the
+on-chain record.
 
-Operator self-service rotation is a user-reachable path, and it would take
-`&mut` on the single global object every trade on the exchange reads immutably.
-Immutable reads of a shared object commute; a write does not. A cap holder could
-also simply rotate in a loop. The three tables above are fine there — admin-only,
-epoch-cadence, exactly what the invariant allows — but the beneficiary is not.
-
-So it gets its own small shared object:
-
-| Object | Holds | Written by | Read by |
-|---|---|---|---|
-| `FeePolicy` | rate ladder, class assignment, default class | admin, epoch cadence | `settle_operator_share` |
-| `OperatorRegistry` | `ID` (collection) → `address` | the operator, via the gated setter below | `claim_operator_share` |
-
-`OperatorRegistry` keeps rotation one write per hub rather than one per pool, and —
-the point — **the trading path touches neither object.** Contention is confined
-to rotations sequencing against concurrent claims, and neither is on a trade.
+**The trading path still touches nothing new.** Pool creation is the one
+user-reachable `&mut FeePolicy`, and it is rare by nature and never on the flow
+of an order; the payout paths read the mapping immutably.
 
 This is what "configurable by entity" buys in practice: a standard class at
 10%, a launch-partner class at 25%, and a single anchor hub in a class of its
@@ -440,34 +449,21 @@ the open question, and there are three reasons not to:
 
 ### So: resolve for decisions, configure for payment
 
-`OperatorRegistry`'s `collection_id → address` table stays the source of truth for
-where money goes. The ownership walk above is how you *decide* what to put in it,
-and how you detect that a hub changed hands.
+The `collection_id → address` mapping on `FeePolicy` stays the source of truth
+for where money goes. The ownership walk above is how you *decide* whether the
+pinned address is still the right counterparty, and how you detect that a hub
+changed hands — but detection informs an off-chain settlement, not an on-chain
+write. The three reasons above not to *pay* off the resolution are also the
+reasons the contracts offer no rotation at all: every rotation surface is a
+surface that a moved cap, a parked cap, or a sponsor-side mutation can
+eventually steer. Pinning the deployer once, at deployment, is the whole
+authorization story, and anything past it — a sale, a tribe treasury split, a
+delegation — is external to Triex by design.
 
-Rotation can still be trustless without coupling the exchange to the game
-world. The SSU owner presents their `OwnerCap<StorageUnit>` and the
-`VaultConfig` to a thin adapter package, which checks
-`is_authorized(cap, vault_config.storage_unit_id())` and
-`vault_config.collection_id() == pool.collection_id()`, then mints a witness for
-`set_hub_beneficiary<W: drop>` on `OperatorRegistry`. Triex stays collection-agnostic
-and dependency-free; the operator self-serves; and the standing payout target
-remains an explicit address that a hub sale, a parked cap, or a tribe change
-cannot silently move.
-
-> **The witness has to be a *registered* type, not just any `drop` type.** A
-> bare `<W: drop>` bound authorizes nothing — anyone can publish
-> `public struct Fake has drop {}` and call `set_hub_beneficiary<Fake>` to point
-> any hub's payouts at themselves. The gate only exists if the callee pins the
-> type: store the adapter's `TypeName` (admin-set, one value) and assert
-> `type_name::with_defining_ids<W>() == registered`. That is the idiom
-> `assert_class_matches_quote` already uses for quote types, and it keeps Triex
-> free of any dependency on the adapter — it compares a name, it does not import
-> a module.
-
-> **Leave an admin override.** `delete_owner_cap` is sponsor-callable in
-> world-contracts. A destroyed cap means the operator can never rotate again
-> while the stale address keeps collecting, and no amount of adapter design fixes
-> that from the operator's side.
+> **A destroyed mapping is a halt, not a redirect.** The admin's only lever is
+> `destroy_operator_beneficiary`. Claims then abort while `operator_owed` stays
+> encumbered — the treasury cannot take the share, and a redeployment that
+> re-pins a fresh address resumes payment.
 
 > **Decide the sale case explicitly.** Accrued-but-unclaimed balance pays to
 > whoever is configured at claim time, which after a hub sale may be the wrong
@@ -481,7 +477,7 @@ cannot silently move.
 
 `claim_operator_share<QuoteAsset>(pool, policy, registry, clock, ctx)` settles any
 outstanding basis, zeroes `operator_owed`, splits that much off the reserve, and
-transfers it to the beneficiary `registry` records for the collection. No
+transfers it to the beneficiary `policy` records for the collection. No
 capability required — the destination comes from configuration, not from the
 caller, so there is nothing to steal by calling it. That lets Triex run a payout
 cron, lets the operator self-serve, and lets either side batch dozens of pools
@@ -554,9 +550,9 @@ What the mechanism cannot do:
   rate still nominally in bounds — which is why
   [Recognition sites](#recognition-sites) is the section to review hardest.
 - **Serialize the exchange.** The trading path reads no new object and writes one
-  `u64` on a pool it already holds mutably — no new event, and no policy read. Both
-  `FeePolicy` and `OperatorRegistry` are touched only by settlement and payout, neither
-  of which is on a trade.
+  `u64` on a pool it already holds mutably — no new event, and no policy read.
+  The beneficiary mapping on `FeePolicy` is written by pool creation and read by
+  payout, neither of which is on a trade.
 
 ---
 
@@ -568,8 +564,8 @@ decision was worth its price. What landed: `operator_owed` written eagerly by
 `credit_operator_share` / `recognize_locked_maker_fees` in `multicoin_vault`; the
 staged `OperatorShareClass` pair in `fee_policy` (segments deleted);
 `fee_basis.move` deleted; the four cancel/modify signatures on `multicoin_pool`
-take `&FeePolicy`; `claim_operator_share(reg, registry, clock)` pays operator then
-treasury; `withdraw_pool_fees(reg, cap, …)` pays the operator before the
+take `&FeePolicy`; `claim_operator_share(policy, registry, clock)` pays operator
+then treasury; `withdraw_pool_fees(policy, cap, …)` pays the operator before the
 treasury takes anything. Pinned by `operator_owed_counts_recognized_revenue_exactly_once`,
 `one_claim_pays_the_operator_and_the_treasury`,
 `the_admin_sweep_pays_the_operator_in_the_same_transaction`,
@@ -630,7 +626,7 @@ Everything between recognition and `operator_owed` goes:
 |---|---|
 | `operator_owed` | written at recognition instead of at settle |
 | `encumbered()` | collapses to `locked_maker_fees + operator_owed` — no `u128`, no ceiling term |
-| `OperatorRegistry`, the witness gate, rotation | untouched |
+| The beneficiary mapping | moved onto `FeePolicy`, pinned at deployment; the registry, witness gate and rotation are gone (second revision, see the status note up top) |
 | `claim_operator_share` | drops the settle; gains the treasury leg (below) |
 | Staged rates | a `current`/`next` pair in `ClassSchedule`'s shape — with the `from_epoch` gate written and tested, per the `cancel_retention_bps` warning in [Timing](#why-the-buckets-are-per-epoch) |
 | `MAX_OPERATOR_SHARE_BPS` | checked at write, clamped at read, stated in `CAPABILITIES.md` |
@@ -706,11 +702,11 @@ decision this forces, decided in the open: the treasury leg turns protocol
 revenue from an admin-cap *pull* into an automatic *push* to
 `Registry.treasury_address()` — the same configured address the creation fee
 already goes to — so `claim_operator_share` takes `&Registry` alongside
-`&OperatorRegistry` and neither destination comes from the caller. The admin pull
+`&FeePolicy` and neither destination comes from the caller. The admin pull
 still exists (`withdraw_pool_fees`, capped at the exact remainder), and it pays
 the operator's accrued share to the beneficiary first, skipping that leg only
-when no beneficiary is configured — the share stays encumbered, so a
-misconfigured hub can delay its own payout but never block the treasury or
+when the mapping has been destroyed — the share stays encumbered, so a
+destroyed mapping can delay a hub's payout but never hand it to the treasury or
 lose the claim.
 
 ### Dynamic and per-trade shares
@@ -840,9 +836,9 @@ and `:1042`.
 |---|---|
 | `operator_owed`, `encumbered()`, `credit_operator_share`, eager `recognize_locked_maker_fees`, claim primitive | `vault/multicoin_vault.move` |
 | Staged `current`/`next` rate pair, class assignment, default class | `fee_policy.move` (dynamic fields) |
-| `collection_id -> address` | `hub_registry.move` |
-| `claim_operator_share` (pays both parties), hub-paying `withdraw_pool_fees`, `operator_owed()` view, `&FeePolicy` on the cancel/modify signatures | `multicoin_pool.move` |
-| `MAX_OPERATOR_SHARE_BPS = 4000` | `helper/constants.move` |
+| `collection_id -> address`, pinned at deployment, admin-destructible | `fee_policy.move` (dynamic field) |
+| `claim_operator_share` (pays both parties), hub-paying `withdraw_pool_fees`, `operator_owed()` view, `&FeePolicy` on the cancel/modify signatures, beneficiary registration in `create_pool` | `multicoin_pool.move` |
+| `MAX_OPERATOR_SHARE_BPS = 10000` | `helper/constants.move` |
 
 The basis ring (`state/fee_basis.move`), the holdback, `settle_operator_share`, the
 forfeiture events and `HUB_BASIS_WINDOW_EPOCHS` are gone — see the
@@ -856,34 +852,22 @@ Default 0 bps means **no hub is paid anything** until a collection is assigned a
 class — but see [the wart](#the-one-wart-is-not-free) for the one thing the deploy
 does change on day one.
 
-`OperatorRegistry` writes are admin-only until 03. That is deliberate: the beneficiary
-table is useful before the self-service path exists, and shipping it admin-gated
-first means the registered-witness setter gets reviewed as an authorization change
-rather than as a rider on fee accounting.
+The beneficiary needs no configuration step at all: it is pinned by the pool
+deployment itself, and the admin's only lever over it is destruction.
 
 ### 03 — Operator self-service
 
-**The gate is implemented; the adapter is not.** `set_authorized_adapter<W>`,
-`clear_authorized_adapter` and `set_beneficiary_with_witness<W>` are in
-`hub_registry.move`, with the forgery they exist to stop pinned by
-`a_forged_witness_cannot_rotate_the_beneficiary`. The path stays closed until an
-adapter is registered, so shipping the registry does not ship a rotation surface.
+**Cut.** The witness-gated rotation (`set_authorized_adapter<W>`,
+`set_beneficiary_with_witness<W>`, the adapter package against
+`warehouse-receipts` and `world-contracts`) was implemented and then removed
+along with the registry itself: there is deliberately no on-chain path by which
+an operator — or anyone — re-points or delegates a hub's revenue. The payout
+address is fixed at deployment; everything downstream of it (a sale, a tribe
+split, a delegation) is an off-chain settlement, reconciled from the
+`operator_owed()` view and the claim events.
 
-What remains is the adapter package, which cannot live in `triex`: it needs
-`warehouse-receipts` and `world-contracts` as dependencies to take an
-`OwnerCap<StorageUnit>` and a `VaultConfig`, check
-`is_authorized(cap, vault_config.storage_unit_id())` and
-`vault_config.collection_id() == pool.collection_id()`, and only then mint the
-witness. Keeping it out is the point — Triex stays collection-agnostic and
-dependency-free.
-
-Register its `TypeName` in the same transaction that publishes it, and keep the
-admin setter as the standing override: `delete_owner_cap` is sponsor-callable, so
-an operator can lose the cap the adapter checks and otherwise never rotate again
-while a stale address keeps collecting.
-
-Pair it with a hub-operator dashboard reading the settlement, claim and forfeiture
-events.
+What remains worth building is the read side: a hub-operator dashboard over the
+claim events.
 
 ---
 
@@ -917,11 +901,10 @@ Not a contract question, but the one most likely to decide whether this works. A
 basis has to be settled before its bucket ages out, per pool, and
 [the claim load](#the-operational-shape-of-a-claim) scales with a hub's inventory
 breadth rather than its revenue. Whoever runs it is making a commitment to
-operators; if it is Triex, say so, because the trustless rotation in
-[Rollout 03](#03--operator-self-service) then controls the destination and not the
-timeliness. (Mooted entirely by the
+operators; if it is Triex, say so. (Mooted entirely by the
 [Revision](#revision-split-at-recognition): with no settlement step, the only
-recurring job left is the payout claim itself, which carries no deadline.)
+recurring job left is the payout claim itself, which carries no deadline — and
+the claim is permissionless, with both destinations fixed by configuration.)
 
 **What is the entity of record?**
 Storage unit is the natural on-chain key and what this design assumes. If

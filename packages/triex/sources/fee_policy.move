@@ -5,10 +5,12 @@
 /// class with one pool in it.
 ///
 /// INVARIANT: `FeePolicy` must stay read-mostly. Writes are admin-only and
-/// epoch-cadence by design; nothing on any user-reachable path may ever take it
+/// epoch-cadence by design; nothing on any *trading* path may ever take it
 /// `&mut`. Immutable reads of a shared object commute, so arbitrarily many
 /// trades read this object in parallel — exactly as the whole network reads
 /// `Clock` — but a write path on user flow would serialize the entire exchange.
+/// The one user-reachable write is pool creation, which pins the operator
+/// beneficiary — rare by nature, and never on the flow of an order.
 ///
 /// Schedule changes are staged: `update_class` writes `next` with
 /// `effective_epoch = now + 1`, and reads pick `next` once its epoch arrives.
@@ -467,11 +469,13 @@ module triex::fee_policy {
     //
     // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
     // fields on an upgrade — dynamic fields on its `id` can. Everything below is
-    // additive, and all of it is admin-written at epoch cadence, which is what the
-    // module invariant allows. The operator-written half of this configuration —
-    // the payout address — deliberately lives in `hub_registry` instead, because a
-    // user-reachable `&mut` on this object would serialize every trade that reads
-    // it.
+    // additive. The rates are admin-written at epoch cadence, which is what the
+    // module invariant allows. The payout address is written exactly once, by
+    // pool creation, and destroyed only by the admin cap — there is no
+    // operator-reachable rotation path, so the only user-reachable `&mut` on
+    // this object is the (rare) pool-creation transaction. Re-pointing revenue
+    // at another party is deliberately not a thing these contracts do; any such
+    // delegation is settled outside Triex.
     //
     // The rate is applied eagerly, at the moment revenue is recognized — see
     // `docs/trade-hub-revenue-share.md`, "Revision: split at recognition".
@@ -487,6 +491,12 @@ module triex::fee_policy {
 
     /// Class a collection nobody has configured falls into.
     public struct DefaultOperatorShareKey has copy, drop, store {}
+
+    /// collection_id -> the address that collection's share is paid to.
+    /// Written exactly once, by the transaction that deploys the collection's
+    /// first pool; destroyed only via the admin cap. Absent means a claim
+    /// aborts rather than guessing.
+    public struct OperatorBeneficiaryKey has copy, drop, store { collection_id: ID }
 
     /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
     /// at `effective_epoch`, and reads compare against the running epoch so
@@ -512,6 +522,15 @@ module triex::fee_policy {
     public struct OperatorShareClassAssigned has copy, drop {
         collection_id: ID,
         class_id: u16,
+    }
+
+    public struct OperatorBeneficiaryRegistered has copy, drop {
+        collection_id: ID,
+        beneficiary: address,
+    }
+
+    public struct OperatorBeneficiaryDestroyed has copy, drop {
+        collection_id: ID,
     }
 
     /// Re-price a hub-share class, effective next epoch.
@@ -644,5 +663,61 @@ module triex::fee_policy {
         };
 
         0
+    }
+
+    /// Record where a collection's operator share is paid, if nothing is
+    /// recorded yet. First write wins: the address is pinned by the transaction
+    /// that deploys the collection's first pool, and after that the contracts
+    /// offer no way to re-point it — a hub changing hands, or an operator
+    /// wanting revenue elsewhere, is a settlement matter external to Triex.
+    /// The admin cap can destroy a mapping, never redirect one.
+    ///
+    /// `public(package)` so the only caller is pool creation. The set-if-absent
+    /// contract is what makes creating a *second* pool for a collection safe:
+    /// it cannot capture a beneficiary someone else's deployment established.
+    public(package) fun register_operator_beneficiary(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+    ) {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            return
+        };
+
+        df::add(&mut self.id, key, beneficiary);
+        event::emit(OperatorBeneficiaryRegistered { collection_id, beneficiary });
+    }
+
+    /// Destroy a collection's payout mapping. Accrual continues — the rate is a
+    /// property of the share class, not of the mapping — but claims abort until
+    /// the collection deploys again, so the share stays encumbered rather than
+    /// paying an address the admin has disowned.
+    public fun destroy_operator_beneficiary(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        _cap: &TriexAdminCap,
+    ) {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            df::remove<OperatorBeneficiaryKey, address>(&mut self.id, key);
+            event::emit(OperatorBeneficiaryDestroyed { collection_id });
+        };
+    }
+
+    public fun operator_beneficiary(self: &FeePolicy, collection_id: ID): Option<address> {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            option::some(*df::borrow<OperatorBeneficiaryKey, address>(&self.id, key))
+        } else {
+            option::none()
+        }
+    }
+
+    public fun has_operator_beneficiary(self: &FeePolicy, collection_id: ID): bool {
+        df::exists_with_type<OperatorBeneficiaryKey, address>(
+            &self.id,
+            OperatorBeneficiaryKey { collection_id },
+        )
     }
 }

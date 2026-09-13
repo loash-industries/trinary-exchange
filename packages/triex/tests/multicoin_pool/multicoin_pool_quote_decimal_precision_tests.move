@@ -138,7 +138,7 @@ module triex::multicoin_pool_quote_decimal_precision_tests {
         policy.set_multicoin_default_class<QuoteAsset>(QUOTE_FEE_CLASS, &admin_cap);
         let pool_id = multicoin_pool::create_pool_admin<QuoteAsset>(
             &mut registry,
-            &policy,
+            &mut policy,
             &collection,
             ASSET_GOLD,
             &admin_cap,

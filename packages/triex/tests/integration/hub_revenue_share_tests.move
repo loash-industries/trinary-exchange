@@ -1,11 +1,12 @@
 /// End-to-end tests for trade hub revenue share, eager-split design.
 ///
-/// The unit suites cover the reserve arithmetic (`multicoin_vault_tests`), the
-/// staged rate pair (`fee_policy_operator_share_tests`) and the beneficiary table
-/// (`hub_registry_tests`). These drive the whole thing through real orders,
-/// because the two failure modes that matter most are only reachable that way:
-/// a credit that counts the same fee twice (or counts refundable escrow at
-/// all), and a payout that reaches the wrong party or strands the other's.
+/// The unit suites cover the reserve arithmetic (`multicoin_vault_tests`) and
+/// the staged rate pair and beneficiary mapping
+/// (`fee_policy_operator_share_tests`). These drive the whole thing through
+/// real orders, because the two failure modes that matter most are only
+/// reachable that way: a credit that counts the same fee twice (or counts
+/// refundable escrow at all), and a payout that reaches the wrong party or
+/// strands the other's.
 #[test_only]
 module triex::integration_hub_revenue_share_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
@@ -17,8 +18,7 @@ module triex::integration_hub_revenue_share_tests {
     };
     use triex::{
         constants,
-        fee_policy::{Self, FeePolicy},
-        hub_registry::{Self, OperatorRegistry},
+        fee_policy::FeePolicy,
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         quote_fee,
@@ -30,12 +30,14 @@ module triex::integration_hub_revenue_share_tests {
     const OWNER: address = @0x1;
     const ALICE: address = @0xA;
     const BOB: address = @0xB;
-    /// The hub operator's payout address. Deliberately not a trader.
+    /// The hub operator's payout address: the account that deploys the pool,
+    /// which is what pins the beneficiary. Deliberately not a trader.
     const OPERATOR: address = @0x0B0B;
     /// The treasury's payout address. Deliberately not the admin who signs.
     const TREASURY: address = @0x77EA;
 
     const ASSET_GOLD: u64 = 1;
+    const ASSET_SILVER: u64 = 2;
     const HUB_CLASS: u16 = 7;
 
     // === Helpers ===
@@ -44,14 +46,15 @@ module triex::integration_hub_revenue_share_tests {
         1_000_000 * constants::float_scaling()
     }
 
-    /// A pool, two funded accounts, gold in Bob's account, a shared hub
-    /// registry, and the treasury pointed at a distinct address.
+    /// A pool deployed by `OPERATOR` — which is what pins the beneficiary —
+    /// two funded accounts, gold in Bob's account, and the treasury pointed at
+    /// a distinct address.
     fun setup(test: &mut Scenario): (ID, ID, ID, CollectionCap) {
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             test,
         );
         let pool_id = mc_utils::setup_multicoin_pool(
-            OWNER,
+            OPERATOR,
             registry_id,
             collection_id,
             ASSET_GOLD,
@@ -79,8 +82,6 @@ module triex::integration_hub_revenue_share_tests {
         bob.deposit_multicoin(gold, test.ctx());
         return_shared(bob);
 
-        hub_registry::init_for_testing(test.ctx());
-
         // The treasury leg of a claim pays a configured address, not the admin
         // who happens to sign — point it somewhere no other actor uses.
         test.next_tx(OWNER);
@@ -95,20 +96,29 @@ module triex::integration_hub_revenue_share_tests {
         (pool_id, alice_ta, bob_ta, collection_cap)
     }
 
-    /// Put `collection_id` in a class priced at `bps`, effective next epoch, and
-    /// point its payouts at `OPERATOR`.
+    /// Put `collection_id` in a class priced at `bps`, effective next epoch.
+    /// The payout address needs no configuring here: `setup` deployed the pool
+    /// as `OPERATOR`, which pinned it.
     fun configure_hub(collection_id: ID, bps: u64, test: &mut Scenario) {
         test.next_tx(OWNER);
         let mut policy = test.take_shared<FeePolicy>();
-        let mut reg = test.take_shared<OperatorRegistry>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
         policy.stage_operator_share_class(HUB_CLASS, bps, &cap, test.ctx());
         policy.assign_operator_share_class(collection_id, HUB_CLASS, &cap);
-        reg.set_beneficiary(collection_id, OPERATOR, &cap);
 
         unit_test::destroy(cap);
-        return_shared(reg);
+        return_shared(policy);
+    }
+
+    /// Admin-destroy the mapping pool creation pinned, leaving the collection
+    /// with a rate but no payout address.
+    fun destroy_beneficiary(collection_id: ID, test: &mut Scenario) {
+        test.next_tx(OWNER);
+        let mut policy = test.take_shared<FeePolicy>();
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        policy.destroy_operator_beneficiary(collection_id, &cap);
+        unit_test::destroy(cap);
         return_shared(policy);
     }
 
@@ -321,12 +331,12 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(BOB); // any caller
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<OperatorRegistry>();
+            let policy = test.take_shared<FeePolicy>();
             let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
 
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &reg,
+                &policy,
                 &triex_reg,
                 &clock,
                 test.ctx(),
@@ -338,7 +348,7 @@ module triex::integration_hub_revenue_share_tests {
 
             return_shared(clock);
             return_shared(triex_reg);
-            return_shared(reg);
+            return_shared(policy);
             return_shared(pool);
         };
 
@@ -386,7 +396,7 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<OperatorRegistry>();
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
 
@@ -394,7 +404,7 @@ module triex::integration_hub_revenue_share_tests {
             let remainder = pool.withdrawable_pool_fees();
             assert!(share > 0);
 
-            let swept = pool.withdraw_pool_fees(&reg, &cap, remainder, &clock, test.ctx());
+            let swept = pool.withdraw_pool_fees(&policy, &cap, remainder, &clock, test.ctx());
             assert!(swept.value() == remainder);
             assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
@@ -402,7 +412,7 @@ module triex::integration_hub_revenue_share_tests {
             unit_test::destroy(swept);
             unit_test::destroy(cap);
             return_shared(clock);
-            return_shared(reg);
+            return_shared(policy);
             return_shared(pool);
 
             // The operator's coin arrived in the same transaction.
@@ -510,24 +520,33 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// A pool with nothing owed and nothing earned claims to zero rather than
-    /// demanding a beneficiary. A payout cron batches many pools into one PTB
-    /// and will meet plenty of idle ones; requiring an address there would let
-    /// a single unconfigured pool abort the whole batch.
+    /// demanding a beneficiary — even after the admin has destroyed the
+    /// mapping. A payout cron batches many pools into one PTB and will meet
+    /// plenty of idle ones; requiring an address there would let a single
+    /// unconfigured pool abort the whole batch.
     #[test]
-    fun claiming_an_idle_pool_is_a_noop_even_unconfigured() {
+    fun claiming_an_idle_pool_is_a_noop_even_without_a_beneficiary() {
         let mut test = begin(OWNER);
         let (pool_id, _alice_ta, _bob_ta, collection_cap) = setup(&mut test);
+        let collection_id = {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let id = pool.collection_id();
+            return_shared(pool);
+            id
+        };
+
+        destroy_beneficiary(collection_id, &mut test);
 
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<OperatorRegistry>();
+            let policy = test.take_shared<FeePolicy>();
             let triex_reg = test.take_shared<Registry>();
             let clock = test.take_shared<Clock>();
 
-            assert!(!reg.has_beneficiary(pool.collection_id()));
+            assert!(!policy.has_operator_beneficiary(collection_id));
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &reg,
+                &policy,
                 &triex_reg,
                 &clock,
                 test.ctx(),
@@ -537,7 +556,7 @@ module triex::integration_hub_revenue_share_tests {
 
             return_shared(clock);
             return_shared(triex_reg);
-            return_shared(reg);
+            return_shared(policy);
             return_shared(pool);
         };
 
@@ -545,9 +564,9 @@ module triex::integration_hub_revenue_share_tests {
         end(test);
     }
 
-    /// But once something *is* owed, an absent beneficiary is a misconfiguration
-    /// and aborts rather than banking the share. `operator_owed` stays encumbered, so
-    /// setting an address later still pays.
+    /// But once something *is* owed, a destroyed mapping aborts the claim
+    /// rather than banking the share. `operator_owed` stays encumbered, so a
+    /// redeployment restoring the mapping still pays.
     #[test]
     #[expected_failure(abort_code = triex::multicoin_pool::ENoOperatorBeneficiary)]
     fun claiming_without_a_beneficiary_aborts() {
@@ -560,16 +579,9 @@ module triex::integration_hub_revenue_share_tests {
             id
         };
 
-        // A rate, but no payout address.
-        test.next_tx(OWNER);
-        {
-            let mut policy = test.take_shared<FeePolicy>();
-            let cap = registry::get_admin_cap_for_testing(test.ctx());
-            policy.stage_operator_share_class(HUB_CLASS, 1_000, &cap, test.ctx());
-            policy.assign_operator_share_class(collection_id, HUB_CLASS, &cap);
-            unit_test::destroy(cap);
-            return_shared(policy);
-        };
+        // A rate, but the payout mapping destroyed out from under it.
+        configure_hub(collection_id, 1_000, &mut test);
+        destroy_beneficiary(collection_id, &mut test);
         test.next_epoch(OWNER);
 
         let price = 2 * constants::float_scaling();
@@ -578,15 +590,15 @@ module triex::integration_hub_revenue_share_tests {
 
         test.next_tx(OWNER);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let reg = test.take_shared<OperatorRegistry>();
+        let policy = test.take_shared<FeePolicy>();
         let triex_reg = test.take_shared<Registry>();
         let clock = test.take_shared<Clock>();
 
-        pool.claim_operator_share(&reg, &triex_reg, &clock, test.ctx());
+        pool.claim_operator_share(&policy, &triex_reg, &clock, test.ctx());
 
         return_shared(clock);
         return_shared(triex_reg);
-        return_shared(reg);
+        return_shared(policy);
         return_shared(pool);
         unit_test::destroy(collection_cap);
         end(test);
@@ -623,6 +635,39 @@ module triex::integration_hub_revenue_share_tests {
             let expected = (((retained as u128) * (bps as u128)) / 10_000) as u64;
             assert!(pool.operator_owed() == expected);
             return_shared(pool);
+        };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// Deploying a collection's first pool pins the deployer as beneficiary;
+    /// deploying a second pool on the same collection — by anyone — leaves it
+    /// untouched. First write wins is the whole rotation story: the contracts
+    /// offer no re-point, so a hub changing hands settles outside Triex.
+    #[test]
+    fun the_first_deployment_pins_the_beneficiary_and_later_ones_cannot() {
+        let mut test = begin(OWNER);
+        let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
+            &mut test,
+        );
+
+        mc_utils::setup_multicoin_pool(OPERATOR, registry_id, collection_id, ASSET_GOLD, &mut test);
+        test.next_tx(OWNER);
+        {
+            let policy = test.take_shared<FeePolicy>();
+            assert!(policy.operator_beneficiary(collection_id) == option::some(OPERATOR));
+            return_shared(policy);
+        };
+
+        // A second pool on the same collection, deployed by a different party,
+        // cannot capture the mapping.
+        mc_utils::setup_multicoin_pool(ALICE, registry_id, collection_id, ASSET_SILVER, &mut test);
+        test.next_tx(OWNER);
+        {
+            let policy = test.take_shared<FeePolicy>();
+            assert!(policy.operator_beneficiary(collection_id) == option::some(OPERATOR));
+            return_shared(policy);
         };
 
         unit_test::destroy(collection_cap);

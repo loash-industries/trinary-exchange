@@ -779,7 +779,7 @@ module triex::multicoin_vault_tests {
         vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
         vault.lock_maker_fees_for_testing(4_000);
 
-        vault.recognize_locked_maker_fees(1_500, max_bps());
+        vault.recognize_locked_maker_fees(1_500, 4_000);
         assert!(vault.quote_fee_reserve_balance() == 10_000);
         assert!(vault.locked_maker_fees() == 2_500);
         // 40% of 1_500 = 600 to the hub, exactly; the remaining 900 plus the
@@ -803,7 +803,7 @@ module triex::multicoin_vault_tests {
 
         // Per-fill flooring can never exceed the once-floored lock, but the
         // counter saturates rather than underflowing if it ever did.
-        vault.recognize_locked_maker_fees(4_000, max_bps());
+        vault.recognize_locked_maker_fees(4_000, 4_000);
         assert!(vault.locked_maker_fees() == 0);
         // The hub is credited off the actual decrement, not the request. Off the
         // request it would be 40% of 4_000 = 1_600 — a claim on revenue that was
@@ -915,13 +915,13 @@ module triex::multicoin_vault_tests {
     #[test]
     fun test_hub_credit_floors() {
         // The credit floors, so a unit of revenue can never mint more than its
-        // ceiling share of a claim. One unit at 40% credits zero.
+        // rate's share of a claim. One unit at 40% credits zero.
         let mut test = begin(OWNER);
         let (collection_id, collection_cap) = setup_collection(&mut test);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
 
-        vault.credit_operator_share(1, max_bps());
+        vault.credit_operator_share(1, 4_000);
         assert!(vault.operator_owed() == 0);
         assert_solvent(&vault);
 
@@ -982,7 +982,7 @@ module triex::multicoin_vault_tests {
 
         // 2_000 of escrow left locked, 1_500 recognized at 40% (= 600 owed).
         vault.lock_maker_fees_for_testing(3_500);
-        vault.recognize_locked_maker_fees(1_500, max_bps());
+        vault.recognize_locked_maker_fees(1_500, 4_000);
 
         assert!(vault.locked_maker_fees() == 2_000);
         assert!(vault.operator_owed() == 600);
@@ -1005,7 +1005,7 @@ module triex::multicoin_vault_tests {
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
         vault.lock_maker_fees_for_testing(1_000);
-        vault.recognize_locked_maker_fees(1_000, max_bps());
+        vault.recognize_locked_maker_fees(1_000, 4_000);
         assert!(vault.operator_owed() == 400);
 
         // 400 is the hub's, so 601 is one unit too many.
@@ -1088,7 +1088,7 @@ module triex::multicoin_vault_tests {
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         vault.deposit_quote_fees(mint_for_testing<USDC>(10_000, test.ctx()).into_balance());
         vault.lock_maker_fees_for_testing(6_000);
-        vault.recognize_locked_maker_fees(2_000, max_bps());
+        vault.recognize_locked_maker_fees(2_000, 4_000);
         assert!(vault.operator_owed() == 800);
 
         // Refund the escrow that is still locked.
@@ -1124,7 +1124,7 @@ module triex::multicoin_vault_tests {
         // 1_000 recognized at 10%, then 2_000 at 40% — not one blended rate.
         vault.recognize_locked_maker_fees(1_000, 1_000);
         assert!(vault.operator_owed() == 100);
-        vault.recognize_locked_maker_fees(2_000, max_bps());
+        vault.recognize_locked_maker_fees(2_000, 4_000);
         assert!(vault.operator_owed() == 900);
         assert_solvent(&vault);
 
@@ -1153,7 +1153,7 @@ module triex::multicoin_vault_tests {
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
         vault.lock_maker_fees_for_testing(100);
-        vault.recognize_locked_maker_fees(100, max_bps());
+        vault.recognize_locked_maker_fees(100, 4_000);
         assert!(vault.operator_owed() == 40);
 
         // Escrow is already zero, so this refund drains revenue the operator is owed

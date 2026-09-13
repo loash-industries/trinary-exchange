@@ -12,7 +12,6 @@ module triex::integration_multicoin_pool_order_management_tests {
         constants,
         fee_policy::FeePolicy,
         fill::Fill,
-        hub_registry::{Self, OperatorRegistry},
         integration_multicoin_test_utils as mc_utils,
         math,
         multicoin_pool::{Self, MultiCoinPool},
@@ -2562,25 +2561,22 @@ module triex::integration_multicoin_pool_order_management_tests {
         };
 
         test.next_tx(OWNER);
-        hub_registry::init_for_testing(test.ctx());
-
-        test.next_tx(OWNER);
         {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let hub_reg = test.take_shared<OperatorRegistry>();
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let reserve_before = pool.quote_fee_reserve_balance();
             assert!(reserve_before > 0, 2);
 
             // With the split applied at recognition, the whole reserve is exact:
-            // no hub is configured, so nothing accrued to an operator and the
-            // sweep takes everything with no settle in front of it.
+            // no share class is assigned, so nothing accrued to an operator and
+            // the sweep takes everything with no settle in front of it.
             assert!(pool.operator_owed() == 0, 3);
             assert!(pool.withdrawable_pool_fees() == reserve_before, 4);
 
             let fee_coin = pool.withdraw_pool_fees(
-                &hub_reg,
+                &policy,
                 &admin_cap,
                 reserve_before,
                 &clock,
@@ -2591,7 +2587,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
             unit_test::destroy(fee_coin);
             return_shared(clock);
-            return_shared(hub_reg);
+            return_shared(policy);
             return_shared(pool);
             unit_test::destroy(admin_cap);
         };
