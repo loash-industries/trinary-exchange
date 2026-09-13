@@ -40,7 +40,7 @@ use_environment = "testnet"
 manifest_digest = "5745706258F61D6CE210904B3E6AE87A73CE9D31A6F93BE4718C442529332A87"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
-[pinned.testnet.triexbook]
+[pinned.testnet.triex]
 source = { root = true }
 use_environment = "testnet"
 manifest_digest = "AB98EE00FF8402D65BF4CE85230803CE2F28139F5AF63158525C8D5E8A97B67D"
@@ -82,7 +82,7 @@ use_environment = "testnet_stillness"
 manifest_digest = "16363423CD37589C5B9A56E3F9E984FED988276E0134635135B45CB4480A9484"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
-[pinned.testnet_stillness.triexbook]
+[pinned.testnet_stillness.triex]
 source = { root = true }
 use_environment = "testnet_stillness"
 manifest_digest = "FF1E1C3CF71A08112FD2DCBC99AE9710356302D9C53F863B0CD947DB3FD9745F"
