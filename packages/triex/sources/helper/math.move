@@ -72,6 +72,35 @@ module triex::math {
         qty.min(cap as u128) as u64
     }
 
+    /// The smallest base quantity that converts to a non-zero raw quote amount at
+    /// `price` — a minimum order size, derived from the price instead of configured.
+    ///
+    /// `qty_to_quote` floors, so a fill of fewer base units than this settles for
+    /// zero quote: the taker would receive base without paying for it, and the
+    /// maker's `filled_quantity` would advance uncompensated. An order below this
+    /// bound can never produce a fill the matcher will accept, so placement rejects
+    /// it rather than letting it rest as permanently unfillable dust. Deriving the
+    /// bound from the order's own price is what makes it work for a base priced at
+    /// 0.000000001 quote and one priced at 10 billion quote without anyone choosing a
+    /// per-pool constant.
+    ///
+    /// Under multicoin scaling (`price_scaling == 1`) the conversion is a bare
+    /// product, so any non-zero quantity already yields non-zero quote and the
+    /// answer is 1 — the zero-quote case is specific to the coin pools' fixed-point
+    /// division.
+    public fun min_qty_for_nonzero_quote(price: u64, price_scaling: u64): u64 {
+        // Unreachable for a resting order — `MIN_PRICE` is 1 — but the fixed-point
+        // reciprocal below would divide by zero, so it is guarded rather than
+        // assumed. Quantizing to 1 is the identity, matching the multicoin branch.
+        if (price == 0) return 1;
+        if (price_scaling == FLOAT_SCALING) {
+            // ceil(FLOAT_SCALING / price): the reciprocal of the price, rounded up.
+            div_round_up(1, price)
+        } else {
+            1
+        }
+    }
+
     /// Multiply two floating numbers.
     /// This function will round down the result.
     public fun mul(x: u64, y: u64): u64 {

@@ -354,3 +354,93 @@ a computation win. If shallow-book gas matters more than depth headroom for coin
 the 64/64 slice tuning is the dial to turn, and that decision is now measurable. A
 `bench_depth_600` was written and dropped: it exceeds the test harness's per-test time
 budget.
+
+---
+
+## 10. Follow-up: the two gaps the DeepBook comparison surfaced
+
+A systematic comparison against DeepBook v3 (`../deepbookv3`, upstream `5f21dea8`) after the
+conversion landed turned up two defects worth fixing immediately. Both are pre-existing
+triex behaviour, not products of the BigVector work.
+
+### 10.1 The kill switch did not exist, in two independent ways
+
+`registry::disable_version` asserted `version != constants::current_version()`, so the running
+package could not be halted at all: the only response to a live exploit was to publish a new
+package first. DeepBook has no such assert.
+
+Removing it alone would not have been enough, and this is the part worth remembering. Pools
+cache `allowed_versions` in `PoolInner` and check the *cached* copy, so a registry-level
+disable only bites once it is pushed to each pool via `update_allowed_versions` (admin) or the
+permissionless `update_pool_allowed_versions`. Both read `registry::allowed_versions()`, which
+went through the **version-gated** `load_inner()`. So disabling the running version made
+`allowed_versions()` abort, which made both propagation paths abort — the flag would flip and
+no pool could ever observe it. DeepBook's `allowed_versions()` reads `load_value()` directly
+for exactly this reason ([their registry.move:400-403](https://github.com/MystenLabs/deepbookv3/blob/main/packages/deepbook/sources/registry.move)).
+
+Both are fixed: the assert is gone (code 6 left unrecycled), and `allowed_versions()` now
+bypasses the gate with a comment explaining that gating it would be circular. Four tests in
+`tests/registry_kill_switch_tests.move` pin the halt, the *propagate-while-halted* step, its
+permissionlessness, and recovery.
+
+### 10.2 Fills could settle for zero quote
+
+`qty_to_quote` floors, so any fill of fewer than `FLOAT_SCALING / price` base units converted
+to **zero** quote: the taker received base without paying, while the maker's `filled_quantity`
+advanced uncompensated. Reproduced before fixing — a taker buying 999 raw base units against
+an ask at a raw price of `1e6` received all 999 for 0 quote and 0 fees.
+
+The economic loss is bounded under one raw quote unit per fill, so this is a rounding leak
+rather than a drain, but it is still base moving for no payment. It is also specific to the
+coin pools: multicoin's `price_scaling == 1` path multiplies instead of dividing, so no fill
+can floor to zero there.
+
+**Fixed without introducing a configured size parameter**, which is the point. A per-pool tick
+size, lot size or minimum order size — DeepBook's approach — cannot be sized here: coin pools
+list bases priced anywhere from `0.000000001` to `10,000,000,000` quote, and pool creation is
+permissionless, so nobody trustworthy is choosing the number. Instead the bound is *derived*
+from each order's own price by `math::min_qty_for_nonzero_quote`, the fixed-point reciprocal
+of the price, which self-sizes across the whole range:
+
+| raw price | human price (9-dec quote) | bound |
+| --- | --- | --- |
+| 1 | 0.000000001 | 1,000,000,000 |
+| 1e6 | 0.001 | 1,000 |
+| 1e9 | 1.0 | 1 |
+| max_price | — | 1 |
+
+Two enforcement points:
+- `coin_order_info::match_maker` declines a **live** fill worth zero quote. Expiries are
+  exempt — they move no quote, they return the maker's own principal — which also keeps
+  expired orders reachable for cleanup behind a sub-bound remainder.
+- `coin_order_info::validate_inputs` rejects a limit order below the bound at its own price,
+  since it could never produce an acceptable fill and would rest as unfillable dust. Market
+  orders are exempt: they match at each maker's price, not the sentinel they carry, and never
+  rest. This reuses DeepBook's code 1, `EOrderBelowMinimumSize`.
+
+`coin_book::get_quantity_out` mirrors the refusal so a quote never promises a fill the matcher
+would decline.
+
+**Deliberately *not* done: quantizing fills to a multiple of the bound.** The first attempt did,
+and `pool_quote_decimal_precision_tests::test_q6_fractional_price_fee_captured` caught it — a
+6-decimal quote puts ordinary prices near `1e6`, so the bound is ~667 raw units and quantizing
+shaved *normal* trades. Only the zero case is refused; the taker keeps a rounding benefit under
+one raw quote unit per fill, as in any fixed-point book. Escrow is safe either way, since
+sum-of-floors never exceeds the floor-of-sum a bid maker locked at placement.
+
+Seven tests in `tests/coin_book/coin_book_zero_quote_tests.move` pin the arithmetic, both
+enforcement points, the market-order path, and — importantly — that an ordinary fill is *not*
+truncated.
+
+### Still open from the comparison
+
+Not addressed here, in rough priority: hoisting `validate_proof` to the top of
+`place_order_int` / `cancel_order` / `modify_order` (currently ~80 lines after the first state
+write — not exploitable, since settlement validates unconditionally and an abort reverts, but
+fragile); `client_order_id`, which is absent everywhere and is a breaking ABI change once
+frozen; `cancel_live_order(s)`, whose absence makes cancel-replace races abort wholesale;
+`coin_account::update` never being called, so `Account.epoch` never advances and volumes
+accumulate for the pool's lifetime; `burn_cred` always burning zero; `place_post_only_limit_order`;
+inverse quoting (`get_quantity_in`); non-aborting top-of-book getters; renaming
+`pool_trade_params` to reflect that it reports the entry rung; and binding a pool to a specific
+`FeePolicy` object id.

@@ -168,12 +168,15 @@ module triex::coin_book {
                         math::quote_to_qty(quantity_to_match, cur_price, self.price_scaling).min(
                             cur_quantity,
                         );
-                    quantity_out = quantity_out + matched_base_quantity;
                     let matched_quote_quantity = math::qty_to_quote(
                         matched_base_quantity,
                         cur_price,
                         self.price_scaling,
                     );
+                    // The matcher declines a live fill worth no quote, so a quote must
+                    // not promise one either, or the two disagree.
+                    if (matched_base_quantity > 0 && matched_quote_quantity == 0) break;
+                    quantity_out = quantity_out + matched_base_quantity;
                     quantity_in_left = quantity_in_left - matched_quote_quantity;
                     if (!fee_waived) {
                         quantity_in_left =
@@ -191,6 +194,8 @@ module triex::coin_book {
                         cur_price,
                         self.price_scaling,
                     );
+                    // As above: a fill worth no quote is one the matcher refuses.
+                    if (matched_base_quantity > 0 && matched_quote_quantity == 0) break;
                     let fee = if (fee_waived) {
                         0
                     } else {
