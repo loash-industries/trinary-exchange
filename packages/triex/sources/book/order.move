@@ -310,6 +310,13 @@ module triex::order {
         (self.order_id, self.fee_refunded, self.fee_retained)
     }
 
+    #[test_only]
+    /// Fields of an `OrderModified` for tests asserting the fee split reported on
+    /// the modify-down matches the refund the vault emitted.
+    public fun modified_event_parts(self: &OrderModified): (u64, u64, u64) {
+        (self.order_id, self.fee_refunded, self.fee_retained)
+    }
+
     public(package) fun emit_order_canceled(
         self: &Order,
         pool_id: ID,

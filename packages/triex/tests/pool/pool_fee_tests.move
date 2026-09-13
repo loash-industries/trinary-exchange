@@ -154,6 +154,11 @@ module triex::pool_fee_tests {
         pool_test_utils::test_refund_rounding_dust_favors_the_retention();
     }
 
+    #[test]
+    fun test_modify_refund_rounding_dust_favors_the_retention() {
+        pool_test_utils::test_modify_refund_rounding_dust_favors_the_retention();
+    }
+
     // === Conservation of funds ===
 
     #[test]

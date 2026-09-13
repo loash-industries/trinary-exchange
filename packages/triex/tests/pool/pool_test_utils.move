@@ -7725,6 +7725,112 @@ module triex::pool_test_utils {
         end(test);
     }
 
+    /// The modify-down analog of `test_refund_rounding_dust_favors_the_retention`:
+    /// at discrete quote amounts both the released escrow and its refund floor,
+    /// the dust lands in the retained half, and the two halves reported on the
+    /// `OrderModified` event sum to exactly the escrow released — so the vault
+    /// counters and the maker's refund are exact to the base quote unit.
+    public(package) fun test_modify_refund_rounding_dust_favors_the_retention() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let trading_account_id_alice = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            trading_account_id_alice,
+            &mut test,
+        );
+
+        // 2000 base at price 1.0 => 2000 quote notional.
+        let price = 1 * constants::float_scaling();
+        let quantity = 2000;
+        let escrow = 18; // floor(2000 * 0.9%)
+        // Cutting to 700 releases the escrow on 1300 quote: floor(11.7) = 11,
+        // of which floor(11 * 80%) = 8 refunds — not 8.8.
+        let new_quantity = 700;
+        let cancelled_principal = 1300;
+        let released = 11;
+        let expected_refund = 8;
+        let expected_retained = 3; // the dust lands here
+
+        let order_id;
+        {
+            let order_info = place_limit_order<SUI, USDC>(
+                ALICE,
+                pool_id,
+                trading_account_id_alice,
+                constants::no_restriction(),
+                constants::self_matching_allowed(),
+                price,
+                quantity,
+                true,
+                constants::max_u64(),
+                &mut test,
+            );
+            order_id = order_info.order_id();
+        };
+
+        test.next_tx(ALICE);
+        {
+            let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            assert!(pool.locked_maker_fees() == escrow, 0);
+            return_shared(pool);
+        };
+
+        let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
+
+        test.next_tx(ALICE);
+        {
+            let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id_alice,
+            );
+            let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+            pool.modify_order(
+                &mut trading_account,
+                &trade_proof,
+                order_id,
+                new_quantity,
+                &clock,
+                test.ctx(),
+            );
+
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            assert!(refunds.length() == 1, 1);
+            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+            assert!(amount == expected_refund, 2);
+
+            let modifies = event::events_by_type<order::OrderModified>();
+            assert!(modifies.length() == 1, 3);
+            let (_mid, fee_refunded, fee_retained) = order::modified_event_parts(&modifies[0]);
+            assert!(fee_refunded == expected_refund, 4);
+            assert!(fee_retained == expected_retained, 5);
+            // The halves still sum exactly to the escrow released, so the escrow
+            // counter decrements without drift.
+            assert!(fee_refunded + fee_retained == released, 6);
+            assert!(pool.locked_maker_fees() == escrow - released, 7);
+            assert!(pool.quote_fee_reserve_balance() == escrow - expected_refund, 8);
+            assert!(pool.withdrawable_pool_fees() == expected_retained, 9);
+
+            return_shared(trading_account);
+            return_shared(clock);
+            return_shared(pool);
+        };
+
+        let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
+        // The maker gets back the cancelled principal plus exactly 8 of the
+        // nominal 8.8 fee refund — dust rounds against the maker, which is the
+        // only safe direction for a solvency counter.
+        assert!(balance_after - balance_before == cancelled_principal + expected_refund, 10);
+
+        end(test);
+    }
+
     /// A resting order buys no tier progress, however large it is and however often
     /// it is cancelled. This is the constraint the whole fees-paid metric exists to
     /// satisfy: escrow is refundable until it trades, so counting it at placement
