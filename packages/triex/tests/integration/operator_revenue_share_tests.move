@@ -16,6 +16,7 @@ module triex::integration_hub_revenue_share_tests {
         coin::Coin,
         test_scenario::{Scenario, begin, end, return_shared}
     };
+    use token::cred::CRED;
     use triex::{
         constants,
         fee_policy::FeePolicy,
@@ -251,6 +252,52 @@ module triex::integration_hub_revenue_share_tests {
         let owed = pool.operator_owed();
         return_shared(pool);
         owed
+    }
+
+    /// Everything the system holds, in each asset: the vault's free balances,
+    /// the fee reserve, and both traders' free balances. Settled amounts a
+    /// trader has not yet withdrawn are coins sitting in the vault, so they are
+    /// counted where the coins are. Returns `(gold, quote, cred)`.
+    ///
+    /// Trading only ever moves units between these places; only a fee payout
+    /// removes any — so across placements, fills, cancels and settlement
+    /// withdrawals this total is invariant, and after a claim it is short by
+    /// exactly the two coins the claim minted.
+    fun system_totals(
+        pool_id: ID,
+        collection_id: ID,
+        trading_accounts: vector<ID>,
+        test: &mut Scenario,
+    ): (u64, u64, u64) {
+        test.next_tx(OWNER);
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let (vault_base, vault_quote, vault_cred) = pool.vault_balances();
+        let mut base = vault_base;
+        let mut quote = vault_quote + pool.quote_fee_reserve_balance();
+        let mut cred = vault_cred;
+        return_shared(pool);
+
+        let mut i = 0;
+        while (i < trading_accounts.length()) {
+            let ta = test.take_shared_by_id<TradingAccount>(trading_accounts[i]);
+            base = base + ta.multicoin_balance(collection_id, ASSET_GOLD);
+            quote = quote + ta.balance<USDC>();
+            cred = cred + ta.balance<CRED>();
+            return_shared(ta);
+            i = i + 1;
+        };
+
+        (base, quote, cred)
+    }
+
+    fun withdraw_settled(trader: address, pool_id: ID, ta_id: ID, test: &mut Scenario) {
+        test.next_tx(trader);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
+        pool.withdraw_settled_amounts(&mut ta, &proof, test.ctx());
+        return_shared(ta);
+        return_shared(pool);
     }
 
     // === Tests ===
@@ -662,6 +709,187 @@ module triex::integration_hub_revenue_share_tests {
             assert!(policy.operator_beneficiary(collection_id) == option::some(OPERATOR));
             return_shared(policy);
         };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// Acceptance: a complete lifecycle on the pool type that actually carries
+    /// the revenue share accounts for every unit that entered — with the share
+    /// active and every flooring site forced to floor.
+    ///
+    /// The suite's other conservation tests run on the coin `Pool`, whose vault
+    /// has no `operator_owed`, and the claim test above drains the reserve to
+    /// zero only because its clean full fill leaves no locked residue. This is
+    /// the missing case: partial fills at a price with a raw-unit tail, a
+    /// cancel of the remainder, both traders withdrawing everything they are
+    /// owed, and one permissionless claim paying both parties — after which
+    /// the vault must hold *nothing* except the residue its documentation
+    /// admits to: up to one raw quote unit per escrow release, permanently
+    /// counted as locked. Asserted three ways, so a leak cannot hide:
+    /// destinations sum back to the baseline exactly, the vault's free
+    /// balances are zero in all three assets, and the residue respects its
+    /// documented per-release bound.
+    #[test]
+    fun full_lifecycle_leaves_nothing_behind_but_the_pinned_residue() {
+        let mut test = begin(OWNER);
+        let (pool_id, collection_id, registry_id, alice_ta, bob_ta, collection_cap) = setup(
+            &mut test,
+        );
+        let trading_accounts = vector[alice_ta, bob_ta];
+
+        // 33.33%, so the operator credit floors at every recognition rather
+        // than dividing anything evenly.
+        configure_hub(collection_id, 3_333, &mut test);
+        test.next_epoch(OWNER);
+
+        // A price with a raw-unit tail: no bite's notional, fee, split or
+        // share credit lands on a whole number.
+        let price = 3 * constants::float_scaling() + 7;
+        let bites = vector[13u64, 7, 23, 11, 29, 17, 3, 41, 5, 19];
+        let mut total_bites = 0;
+        let mut b = 0;
+        while (b < bites.length()) {
+            total_bites = total_bites + bites[b];
+            b = b + 1;
+        };
+        // Rest more than the bites will consume, so a remainder is left to
+        // cancel and the cancel-retention leg recognizes revenue too.
+        let quantity = total_bites + 20;
+
+        // Baseline after all setup, so pool-creation costs sit outside the
+        // window.
+        let (base_before, quote_before, cred_before) = system_totals(
+            pool_id,
+            collection_id,
+            trading_accounts,
+            &mut test,
+        );
+
+        let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, quantity, &mut test);
+        assert!(maker_fee > 0);
+
+        // Bob eats the bid down in ten uneven bites. Each fill recognizes
+        // escrow and charges his taker fee out of proceeds; the reserve must
+        // cover its claims at every step, and no fill may move value in or
+        // out of the system.
+        let mut i = 0;
+        while (i < bites.length()) {
+            sell_into_the_book(pool_id, bob_ta, price, bites[i], &mut test);
+            assert_solvent(pool_id, &mut test);
+            i = i + 1;
+        };
+
+        // Cancelling the remainder refunds the unfilled escrow's share and
+        // retains the rest — the last recognition.
+        cancel_the_order(pool_id, alice_ta, order_id, &mut test);
+        assert_solvent(pool_id, &mut test);
+
+        // Nothing has left the system yet: fills, the cancel and all the fee
+        // reclassification only moved units between the traders, the vault
+        // and the reserve.
+        {
+            let (base, quote, cred) = system_totals(
+                pool_id,
+                collection_id,
+                trading_accounts,
+                &mut test,
+            );
+            assert!(base == base_before, 0);
+            assert!(quote == quote_before, 1);
+            assert!(cred == cred_before, 2);
+        };
+
+        // Both traders drain every settled balance out of the vault.
+        withdraw_settled(ALICE, pool_id, alice_ta, &mut test);
+        withdraw_settled(BOB, pool_id, bob_ta, &mut test);
+
+        // One permissionless claim pays the operator and the treasury.
+        let (hub_paid, treasury_paid) = {
+            test.next_tx(BOB); // any caller
+            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
+            let triex_reg = test.take_shared_by_id<Registry>(registry_id);
+            let clock = test.take_shared<Clock>();
+            let (hub_paid, treasury_paid) = pool.claim_operator_share(
+                &policy,
+                &triex_reg,
+                &clock,
+                test.ctx(),
+            );
+            return_shared(clock);
+            return_shared(triex_reg);
+            return_shared(policy);
+            return_shared(pool);
+            (hub_paid, treasury_paid)
+        };
+        assert!(hub_paid > 0, 3);
+        assert!(treasury_paid > 0, 4);
+
+        // The vault is empty in all three assets, and the reserve holds
+        // exactly the residue — still counted as locked, claimable by no one,
+        // inside its documented bound of one raw unit per release (ten fills
+        // plus the cancel).
+        let residue = {
+            test.next_tx(OWNER);
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let (vault_base, vault_quote, vault_cred) = pool.vault_balances();
+            assert!(vault_base == 0, 5);
+            assert!(vault_quote == 0, 6);
+            assert!(vault_cred == 0, 7);
+
+            let residue = pool.locked_maker_fees();
+            assert!(residue > 0, 8); // the dusty case is actually exercised
+            assert!(residue <= bites.length() + 1, 9);
+            assert!(pool.quote_fee_reserve_balance() == residue, 10);
+            assert!(pool.operator_owed() == 0, 11);
+            assert!(pool.withdrawable_pool_fees() == 0, 12);
+            return_shared(pool);
+            residue
+        };
+
+        // The payout coins reached their configured destinations, at exactly
+        // the claimed amounts.
+        test.next_tx(OPERATOR);
+        {
+            let paid = test.take_from_sender<Coin<USDC>>();
+            assert!(paid.value() == hub_paid, 13);
+            unit_test::destroy(paid);
+        };
+        test.next_tx(TREASURY);
+        {
+            let swept = test.take_from_sender<Coin<USDC>>();
+            assert!(swept.value() == treasury_paid, 14);
+            unit_test::destroy(swept);
+        };
+
+        // Conservation, exactly: every quote unit that entered is now with a
+        // trader, with the operator, with the treasury, or is the pinned
+        // residue — and base and CRED never leaked at all.
+        let (base_after, quote_after, cred_after) = system_totals(
+            pool_id,
+            collection_id,
+            trading_accounts,
+            &mut test,
+        );
+        assert!(base_after == base_before, 15);
+        assert!(cred_after == cred_before, 16);
+        assert!(quote_after + hub_paid + treasury_paid == quote_before, 17);
+        // And what remains inside the system beyond the traders' own holdings
+        // is the residue alone.
+        let traders_quote = {
+            test.next_tx(OWNER);
+            let mut traders_quote = 0;
+            let mut t = 0;
+            while (t < trading_accounts.length()) {
+                let ta = test.take_shared_by_id<TradingAccount>(trading_accounts[t]);
+                traders_quote = traders_quote + ta.balance<USDC>();
+                return_shared(ta);
+                t = t + 1;
+            };
+            traders_quote
+        };
+        assert!(quote_after == traders_quote + residue, 18);
 
         unit_test::destroy(collection_cap);
         end(test);
