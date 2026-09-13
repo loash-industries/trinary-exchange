@@ -87,7 +87,7 @@ read it as such.
 #### How much of a fee can be diverted to a hub operator
 
 Multicoin pools can pay the storage unit they trade against a share of the fees
-recognized on them. `MAX_HUB_SHARE_BPS` is **40%** (`constants.move`), and it
+recognized on them. `MAX_OPERATOR_SHARE_BPS` is **40%** (`constants.move`), and it
 bounds both what the admin can configure and what a recognition can credit — the
 vault re-checks it rather than trusting the policy to have done so.
 
@@ -102,7 +102,7 @@ the rate live in that instant, so a rate change can only affect revenue that has
 not happened yet — there is no deferred settlement whose timing anyone could
 game, and `operator_owed()` is exact at all times.
 
-Where the share is paid is configuration, not inference: `HubRegistry` holds an
+Where the share is paid is configuration, not inference: `OperatorRegistry` holds an
 explicit `collection_id -> address`, so a hub changing hands, a capability parked
 on another object, or a game-side change to a character's wallet cannot silently
 redirect money. Rotation is admin-only unless the admin has registered an adapter
@@ -124,7 +124,7 @@ power than it sounds. It cannot:
   `operator_owed`, which is exact at all times — a sweep pays the operator's share to
   the operator and can never reach it
 - Redirect a operator share: `claim_operator_share` and `withdraw_pool_fees` pay only the
-  address `HubRegistry` records, never the caller
+  address `OperatorRegistry` records, never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled)

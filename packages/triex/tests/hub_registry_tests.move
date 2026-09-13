@@ -10,7 +10,7 @@
 module triex::hub_registry_tests {
     use std::unit_test::{assert_eq, destroy};
     use sui::test_scenario::{begin, end, return_shared};
-    use triex::{hub_registry::{Self, HubRegistry}, registry};
+    use triex::{hub_registry::{Self, OperatorRegistry}, registry};
 
     const OWNER: address = @0x1;
     const ALICE: address = @0xA;
@@ -35,10 +35,10 @@ module triex::hub_registry_tests {
         object::id_from_address(@0xDECAF)
     }
 
-    fun with_registry(test: &mut sui::test_scenario::Scenario): HubRegistry {
+    fun with_registry(test: &mut sui::test_scenario::Scenario): OperatorRegistry {
         hub_registry::init_for_testing(test.ctx());
         test.next_tx(OWNER);
-        test.take_shared<HubRegistry>()
+        test.take_shared<OperatorRegistry>()
     }
 
     #[test]

@@ -177,9 +177,9 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = fee_policy::EHubShareAboveCeiling)]
+    #[expected_failure(abort_code = fee_policy::EOperatorShareAboveCeiling)]
     fun staging_above_the_ceiling_aborts() {
-        // MAX_HUB_SHARE_BPS is a trust commitment stated in CAPABILITIES.md, so the
+        // MAX_OPERATOR_SHARE_BPS is a trust commitment stated in CAPABILITIES.md, so the
         // admin cannot exceed it even by mistake.
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
@@ -198,7 +198,7 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = fee_policy::EHubShareClassDoesNotExist)]
+    #[expected_failure(abort_code = fee_policy::EOperatorShareClassDoesNotExist)]
     fun assigning_to_a_class_that_does_not_exist_aborts() {
         // Without this the id is simply wrong and resolves to zero, so a mistyped
         // class leaves the hub earning nothing — the one misconfiguration here that
@@ -216,7 +216,7 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = fee_policy::EHubShareClassDoesNotExist)]
+    #[expected_failure(abort_code = fee_policy::EOperatorShareClassDoesNotExist)]
     fun defaulting_to_a_class_that_does_not_exist_aborts() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());

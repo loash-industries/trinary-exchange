@@ -1,4 +1,4 @@
-/// Hub registry holds where each trade hub's share of the fees earned on it is
+/// Operator registry holds where each trade hub's share of the fees earned on it is
 /// paid: `collection_id -> address`.
 ///
 /// This is deliberately not a table on `FeePolicy`. The payout address is the one
@@ -28,7 +28,7 @@ module triex::hub_registry {
     const EUnauthorizedAdapter: u64 = 1;
 
     // === Structs ===
-    public struct HubRegistry has key {
+    public struct OperatorRegistry has key {
         id: UID,
         /// collection_id -> the address that collection's share is paid to.
         /// Absent means nothing has been configured, and a claim aborts rather
@@ -41,7 +41,7 @@ module triex::hub_registry {
     }
 
     // === Events ===
-    public struct HubBeneficiarySet has copy, drop {
+    public struct OperatorBeneficiarySet has copy, drop {
         collection_id: ID,
         beneficiary: address,
         /// False when the admin cap set it, true when a registered adapter did.
@@ -49,17 +49,17 @@ module triex::hub_registry {
         by_adapter: bool,
     }
 
-    public struct HubBeneficiaryCleared has copy, drop {
+    public struct OperatorBeneficiaryCleared has copy, drop {
         collection_id: ID,
     }
 
-    public struct HubAdapterAuthorized has copy, drop {
+    public struct OperatorAdapterAuthorized has copy, drop {
         adapter: Option<TypeName>,
     }
 
     // === Init ===
     fun init(ctx: &mut TxContext) {
-        transfer::share_object(HubRegistry {
+        transfer::share_object(OperatorRegistry {
             id: object::new(ctx),
             beneficiaries: table::new(ctx),
             authorized_adapter: option::none(),
@@ -76,7 +76,7 @@ module triex::hub_registry {
     /// events are the record of it — the contract cannot arbitrate a hub sale it
     /// has no way to observe.
     public fun set_beneficiary(
-        self: &mut HubRegistry,
+        self: &mut OperatorRegistry,
         collection_id: ID,
         beneficiary: address,
         _cap: &TriexAdminCap,
@@ -94,18 +94,18 @@ module triex::hub_registry {
     /// free of any dependency on the game world: it compares a name, it does not
     /// link a module.
     public fun set_authorized_adapter<W: drop>(
-        self: &mut HubRegistry,
+        self: &mut OperatorRegistry,
         _cap: &TriexAdminCap,
     ) {
         let adapter = type_name::with_defining_ids<W>();
         self.authorized_adapter = option::some(adapter);
-        event::emit(HubAdapterAuthorized { adapter: option::some(adapter) });
+        event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
     }
 
     /// Withdraw self-service, leaving the admin cap as the only way to rotate.
-    public fun clear_authorized_adapter(self: &mut HubRegistry, _cap: &TriexAdminCap) {
+    public fun clear_authorized_adapter(self: &mut OperatorRegistry, _cap: &TriexAdminCap) {
         self.authorized_adapter = option::none();
-        event::emit(HubAdapterAuthorized { adapter: option::none() });
+        event::emit(OperatorAdapterAuthorized { adapter: option::none() });
     }
 
     // === Public-Mutative Functions * OPERATOR SELF-SERVICE ===
@@ -132,7 +132,7 @@ module triex::hub_registry {
     /// settled into `operator_owed` — the worst a compromised adapter redirects is
     /// future claims, and `clear_authorized_adapter` stops it.
     public fun set_beneficiary_with_witness<W: drop>(
-        self: &mut HubRegistry,
+        self: &mut OperatorRegistry,
         collection_id: ID,
         beneficiary: address,
         _witness: W,
@@ -147,7 +147,7 @@ module triex::hub_registry {
     }
 
     fun write_beneficiary(
-        self: &mut HubRegistry,
+        self: &mut OperatorRegistry,
         collection_id: ID,
         beneficiary: address,
         by_adapter: bool,
@@ -158,25 +158,25 @@ module triex::hub_registry {
             self.beneficiaries.add(collection_id, beneficiary);
         };
 
-        event::emit(HubBeneficiarySet { collection_id, beneficiary, by_adapter });
+        event::emit(OperatorBeneficiarySet { collection_id, beneficiary, by_adapter });
     }
 
     /// Stop paying a collection. Accrual continues — the basis is a property of
     /// the pool, not of the configuration — so restoring a beneficiary restores
     /// the claim, up to the basis window.
     public fun clear_beneficiary(
-        self: &mut HubRegistry,
+        self: &mut OperatorRegistry,
         collection_id: ID,
         _cap: &TriexAdminCap,
     ) {
         if (self.beneficiaries.contains(collection_id)) {
             self.beneficiaries.remove(collection_id);
-            event::emit(HubBeneficiaryCleared { collection_id });
+            event::emit(OperatorBeneficiaryCleared { collection_id });
         };
     }
 
     // === Public-View Functions ===
-    public fun beneficiary(self: &HubRegistry, collection_id: ID): Option<address> {
+    public fun beneficiary(self: &OperatorRegistry, collection_id: ID): Option<address> {
         if (self.beneficiaries.contains(collection_id)) {
             option::some(*self.beneficiaries.borrow(collection_id))
         } else {
@@ -184,12 +184,12 @@ module triex::hub_registry {
         }
     }
 
-    public fun has_beneficiary(self: &HubRegistry, collection_id: ID): bool {
+    public fun has_beneficiary(self: &OperatorRegistry, collection_id: ID): bool {
         self.beneficiaries.contains(collection_id)
     }
 
     /// The registered adapter type, if self-service is enabled.
-    public fun authorized_adapter(self: &HubRegistry): Option<TypeName> {
+    public fun authorized_adapter(self: &OperatorRegistry): Option<TypeName> {
         self.authorized_adapter
     }
 

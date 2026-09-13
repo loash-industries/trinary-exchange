@@ -26,11 +26,11 @@ module triex::multicoin_vault {
     const EFeesLocked: u64 = 6;
     const ENoBalanceToSettle: u64 = 7;
     const EHasOwedBalances: u64 = 8;
-    const EHubShareAboveCeiling: u64 = 9;
+    const EOperatorShareAboveCeiling: u64 = 9;
 
     // === Events ===
     /// `operator_owed` paid out to the beneficiary configured for the collection.
-    public struct HubShareClaimed has copy, drop {
+    public struct OperatorShareClaimed has copy, drop {
         pool_id: ID,
         collection_id: ID,
         beneficiary: address,
@@ -211,7 +211,7 @@ module triex::multicoin_vault {
         self.credit_operator_share(recognized, hub_bps);
     }
 
-    // === Hub share ===
+    // === Operator share ===
 
     /// Credit the hub its share of revenue recognized this instant, at the rate
     /// the caller resolved from `&FeePolicy` for the current epoch.
@@ -225,7 +225,7 @@ module triex::multicoin_vault {
     /// Deliberately emits nothing. A per-recognition event would land on the
     /// hottest path in the exchange — a fill with `N` maker matches recognizes
     /// `N + 1` times — for a feature that is off for every hub by default.
-    /// `operator_owed()` is a published view and `HubShareClaimed` records every
+    /// `operator_owed()` is a published view and `OperatorShareClaimed` records every
     /// payout; deposit-level telemetry already exists in `PoolFeesDeposited`.
     public(package) fun credit_operator_share<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
@@ -234,7 +234,7 @@ module triex::multicoin_vault {
     ) {
         // Belt over the policy's write-time assert and read-time clamp: a rate
         // above the ceiling must not mint a claim above it.
-        assert!(hub_bps <= constants::max_operator_share_bps(), EHubShareAboveCeiling);
+        assert!(hub_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
         if (amount == 0 || hub_bps == 0) return;
 
         let owed = (((amount as u128) * (hub_bps as u128)) / bps_precision()) as u64;
@@ -257,7 +257,7 @@ module triex::multicoin_vault {
         assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
         let share = self.quote_fee_reserve.split(amount);
 
-        event::emit(HubShareClaimed {
+        event::emit(OperatorShareClaimed {
             pool_id,
             collection_id: self.collection_id,
             beneficiary,

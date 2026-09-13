@@ -20,7 +20,7 @@ module triex::multicoin_pool {
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
-        hub_registry::HubRegistry,
+        hub_registry::OperatorRegistry,
         multicoin_vault::{Self, MultiCoinVault},
         order::Order,
         order_info::{Self, OrderInfo},
@@ -38,7 +38,7 @@ module triex::multicoin_pool {
     const EMinimumQuantityOutNotMet: u64 = 13;
     const EPoolNotRegistered: u64 = 14;
     const EQuoteNotApproved: u64 = 20;
-    const ENoHubBeneficiary: u64 = 21;
+    const ENoOperatorBeneficiary: u64 = 21;
     // qty × price (raw) would exceed u64::MAX — lower the quantity or price.
 
     // === Structs ===
@@ -869,7 +869,7 @@ module triex::multicoin_pool {
     /// `withdrawable_pool_fees()` is exact, not a ceiling-rate holdback.
     public fun withdraw_pool_fees<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        registry: &HubRegistry,
+        registry: &OperatorRegistry,
         _cap: &TriexAdminCap,
         amount: u64,
         clock: &Clock,
@@ -906,7 +906,7 @@ module triex::multicoin_pool {
     /// claim, both parties, atomically.
     ///
     /// No capability required. Both destinations come from configuration —
-    /// `HubRegistry` for the operator, `Registry.treasury_address()` for the
+    /// `OperatorRegistry` for the operator, `Registry.treasury_address()` for the
     /// treasury — not from the caller, so there is nothing to redirect by calling
     /// this. That lets Triex run a payout cron, lets an operator self-serve, and
     /// lets either batch many pools into one PTB.
@@ -914,7 +914,7 @@ module triex::multicoin_pool {
     /// Returns `(hub_amount, treasury_amount)`.
     public fun claim_operator_share<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        registry: &HubRegistry,
+        registry: &OperatorRegistry,
         triex_registry: &Registry,
         clock: &Clock,
         ctx: &mut TxContext,
@@ -930,7 +930,7 @@ module triex::multicoin_pool {
             // the treasury: `operator_owed` stays encumbered until claimed, so setting
             // an address later still pays.
             let beneficiary = registry.beneficiary(collection_id);
-            assert!(beneficiary.is_some(), ENoHubBeneficiary);
+            assert!(beneficiary.is_some(), ENoOperatorBeneficiary);
             let beneficiary = beneficiary.destroy_some();
 
             let share = pool_inner

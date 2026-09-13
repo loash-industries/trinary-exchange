@@ -18,7 +18,7 @@ module triex::integration_hub_revenue_share_tests {
     use triex::{
         constants,
         fee_policy::{Self, FeePolicy},
-        hub_registry::{Self, HubRegistry},
+        hub_registry::{Self, OperatorRegistry},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         quote_fee,
@@ -100,7 +100,7 @@ module triex::integration_hub_revenue_share_tests {
     fun configure_hub(collection_id: ID, bps: u64, test: &mut Scenario) {
         test.next_tx(OWNER);
         let mut policy = test.take_shared<FeePolicy>();
-        let mut reg = test.take_shared<HubRegistry>();
+        let mut reg = test.take_shared<OperatorRegistry>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
         policy.stage_operator_share_class(HUB_CLASS, bps, &cap, test.ctx());
@@ -321,7 +321,7 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(BOB); // any caller
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<HubRegistry>();
+            let reg = test.take_shared<OperatorRegistry>();
             let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
 
@@ -386,7 +386,7 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<HubRegistry>();
+            let reg = test.take_shared<OperatorRegistry>();
             let clock = test.take_shared<Clock>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
 
@@ -521,7 +521,7 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let reg = test.take_shared<HubRegistry>();
+            let reg = test.take_shared<OperatorRegistry>();
             let triex_reg = test.take_shared<Registry>();
             let clock = test.take_shared<Clock>();
 
@@ -549,7 +549,7 @@ module triex::integration_hub_revenue_share_tests {
     /// and aborts rather than banking the share. `operator_owed` stays encumbered, so
     /// setting an address later still pays.
     #[test]
-    #[expected_failure(abort_code = triex::multicoin_pool::ENoHubBeneficiary)]
+    #[expected_failure(abort_code = triex::multicoin_pool::ENoOperatorBeneficiary)]
     fun claiming_without_a_beneficiary_aborts() {
         let mut test = begin(OWNER);
         let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
@@ -578,7 +578,7 @@ module triex::integration_hub_revenue_share_tests {
 
         test.next_tx(OWNER);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let reg = test.take_shared<HubRegistry>();
+        let reg = test.take_shared<OperatorRegistry>();
         let triex_reg = test.take_shared<Registry>();
         let clock = test.take_shared<Clock>();
 

@@ -896,7 +896,7 @@ module triex::multicoin_vault_tests {
         end(test);
     }
 
-    // === Hub Revenue Share Tests ===
+    // === Operator Revenue Share Tests ===
     // The reserve carries a second claim beside escrow. These exercise the
     // arithmetic that keeps `reserve >= encumbered()` true, which is what makes
     // both claims payable out of one balance.
@@ -1019,9 +1019,9 @@ module triex::multicoin_vault_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = multicoin_vault::EHubShareAboveCeiling)]
+    #[expected_failure(abort_code = multicoin_vault::EOperatorShareAboveCeiling)]
     fun test_crediting_above_the_ceiling_aborts() {
-        // MAX_HUB_SHARE_BPS is the number stated in CAPABILITIES.md, so the vault
+        // MAX_OPERATOR_SHARE_BPS is the number stated in CAPABILITIES.md, so the vault
         // enforces it rather than trusting the policy to have done so.
         let mut test = begin(OWNER);
         let (collection_id, collection_cap) = setup_collection(&mut test);

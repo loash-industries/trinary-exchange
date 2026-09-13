@@ -1,4 +1,4 @@
-# Trade Hub Revenue Share
+# Trade Operator Revenue Share
 
 *Status: the implementation is the
 [Revision: split at recognition](#revision-split-at-recognition) — the share is
@@ -111,7 +111,7 @@ Route all of them through one accessor:
 
 ```
 encumbered() = locked_maker_fees + operator_owed + holdback()
-holdback()   = ceil(unsettled_basis × MAX_HUB_SHARE_BPS / 10000)
+holdback()   = ceil(unsettled_basis × MAX_OPERATOR_SHARE_BPS / 10000)
 ```
 
 and make the review rule mechanical: **nothing inside the vault reads
@@ -130,7 +130,7 @@ all six operations that touch the reserve:
 | Maker escrow deposited | `+M` | `+M` | — | — | Escrow is never basis |
 | `recognize(d)` | — | `−d` | `+d` | — | `d` leaves `locked` and re-enters at a fraction of itself |
 | `unlock(a)` | `−a` | `−a` | — | — | `a ≤ locked` always (see below) |
-| `settle` | — | — | `→0` | `+floor(basis × bps/10000)` | `bps ≤ MAX_HUB_SHARE_BPS`, and `floor ≤ ceil` |
+| `settle` | — | — | `→0` | `+floor(basis × bps/10000)` | `bps ≤ MAX_OPERATOR_SHARE_BPS`, and `floor ≤ ceil` |
 | `claim` | `−owed` | — | — | `→0` | The coin is there by the invariant |
 
 Two arithmetic details the invariant actually rests on, both easy to get
@@ -138,7 +138,7 @@ backwards:
 
 - **Round the holdback up and `owed` down.** Reversed, `settle` can credit one
   unit more than the holdback reserved and `reserve − encumbered()` underflows.
-- **Do the bps math in `u128`.** `basis × MAX_HUB_SHARE_BPS` overflows `u64`
+- **Do the bps math in `u128`.** `basis × MAX_OPERATOR_SHARE_BPS` overflows `u64`
   above ~4.6 × 10¹⁵ raw quote units. `quote_fee::fee_from_scaled_rate` and
   `split_released_fee` both widen before multiplying; match them.
 
@@ -226,7 +226,7 @@ when it matters.
 So the hub ladder is **append-only segments**, not current/next:
 
 ```
-HubShareClassKey: u16 → vector<{ from_epoch: u64, bps: u16 }>
+OperatorShareClassKey: u16 → vector<{ from_epoch: u64, bps: u16 }>
 ```
 
 The admin appends one segment per re-price, `from_epoch = ctx.epoch() + 1` (the
@@ -278,7 +278,7 @@ what each one is *not*.
 > Accruing `amount` there *and* the taker half in `settle_trading_account` *and*
 > the escrow at earn-out counts one bid order three times: `(T+M) + T + M` for a
 > `T + M` fee. That is not a rounding problem. The holdback is
-> `ceil(unsettled_basis × MAX_HUB_SHARE_BPS / 10000)`, so an over-stated basis
+> `ceil(unsettled_basis × MAX_OPERATOR_SHARE_BPS / 10000)`, so an over-stated basis
 > can demand more than the reserve holds — maker fee 1000, taker fee 1,
 > cancelled at the genesis 20% retention: real revenue 201, basis 1202, holdback
 > at a 40% ceiling 480. `reserve − encumbered()` underflows, and a `u64`
@@ -357,9 +357,9 @@ fields on its `id` can**. Three tables, all additive, all admin-written:
 
 | Table | Key → value | Purpose |
 |---|---|---|
-| `HubShareClassKey` | `u16` → `vector<{ from_epoch, bps }>` | The rate ladder, append-only (see [Timing](#why-the-buckets-are-per-epoch)). Re-price every hub in a class in one transaction |
-| `HubShareKey` | `ID` (collection) → `u16` | Which class each entity is in. Absent → default class |
-| `DefaultHubShareKey` | `u16` | Class for hubs nobody has configured. Ships as class 0 = 0 bps |
+| `OperatorShareClassKey` | `u16` → `vector<{ from_epoch, bps }>` | The rate ladder, append-only (see [Timing](#why-the-buckets-are-per-epoch)). Re-price every hub in a class in one transaction |
+| `OperatorShareKey` | `ID` (collection) → `u16` | Which class each entity is in. Absent → default class |
+| `DefaultOperatorShareKey` | `u16` | Class for hubs nobody has configured. Ships as class 0 = 0 bps |
 
 ### Where the beneficiary must *not* live
 
@@ -381,9 +381,9 @@ So it gets its own small shared object:
 | Object | Holds | Written by | Read by |
 |---|---|---|---|
 | `FeePolicy` | rate ladder, class assignment, default class | admin, epoch cadence | `settle_operator_share` |
-| `HubRegistry` | `ID` (collection) → `address` | the operator, via the gated setter below | `claim_operator_share` |
+| `OperatorRegistry` | `ID` (collection) → `address` | the operator, via the gated setter below | `claim_operator_share` |
 
-`HubRegistry` keeps rotation one write per hub rather than one per pool, and —
+`OperatorRegistry` keeps rotation one write per hub rather than one per pool, and —
 the point — **the trading path touches neither object.** Contention is confined
 to rotations sequencing against concurrent claims, and neither is on a trade.
 
@@ -440,7 +440,7 @@ the open question, and there are three reasons not to:
 
 ### So: resolve for decisions, configure for payment
 
-`HubRegistry`'s `collection_id → address` table stays the source of truth for
+`OperatorRegistry`'s `collection_id → address` table stays the source of truth for
 where money goes. The ownership walk above is how you *decide* what to put in it,
 and how you detect that a hub changed hands.
 
@@ -449,7 +449,7 @@ world. The SSU owner presents their `OwnerCap<StorageUnit>` and the
 `VaultConfig` to a thin adapter package, which checks
 `is_authorized(cap, vault_config.storage_unit_id())` and
 `vault_config.collection_id() == pool.collection_id()`, then mints a witness for
-`set_hub_beneficiary<W: drop>` on `HubRegistry`. Triex stays collection-agnostic
+`set_hub_beneficiary<W: drop>` on `OperatorRegistry`. Triex stays collection-agnostic
 and dependency-free; the operator self-serves; and the standing payout target
 remains an explicit address that a hub sale, a parked cap, or a tribe change
 cannot silently move.
@@ -489,20 +489,20 @@ into one PTB.
 
 Emit:
 
-- `HubShareSettled { pool_id, collection_id, epoch, basis, bps, owed }`
-- `HubShareClaimed { pool_id, collection_id, beneficiary, amount, timestamp }`
-- `HubBasisForfeited { pool_id, collection_id, epoch, amount }`
+- `OperatorShareSettled { pool_id, collection_id, epoch, basis, bps, owed }`
+- `OperatorShareClaimed { pool_id, collection_id, beneficiary, amount, timestamp }`
+- `OperatorBasisForfeited { pool_id, collection_id, epoch, amount }`
 
 Between them an operator reconciles every unit they are owed from events alone,
 including the rate each epoch was priced at — the standard the existing
 `PoolFeesDeposited` / `PoolFeesRefunded` pair already sets. Every unit of basis
-leaves the ring through exactly one of `HubShareSettled` or `HubBasisForfeited`,
+leaves the ring through exactly one of `OperatorShareSettled` or `OperatorBasisForfeited`,
 which is what makes the pair sufficient.
 
 > **No accrual event.** An earlier draft emitted one per recognition. That lands
 > on the hottest path in the exchange — a fill with `N` maker matches recognizes
 > `N + 1` times — for a feature that is off for every hub by default, and it buys
-> nothing reconciliation needs: `HubShareSettled` already carries each epoch's
+> nothing reconciliation needs: `OperatorShareSettled` already carries each epoch's
 > basis, and `PoolFeesDeposited` already carries deposit-level detail. The accrual
 > is a `u64` add and nothing else.
 
@@ -539,14 +539,14 @@ What the mechanism cannot do:
   maker's refundable fee is never counted, so cancel refunds cannot come up
   short.
 - **Be swept by the admin.** `withdrawable_quote_fees` subtracts every
-  counter, and the unsettled basis is held back at the `MAX_HUB_SHARE_BPS`
+  counter, and the unsettled basis is held back at the `MAX_OPERATOR_SHARE_BPS`
   ceiling. The treasury cannot take an accrued share.
 - **Be over-drawn by the operator.** `claim_operator_share` pays at most
   `operator_owed`, and only to the configured address. `reserve ≥ encumbered()`
   guarantees the coin is there.
 - **Change what traders pay.** This divides existing revenue. Taker and maker
   rates, tier ladders and quotes are untouched — dry-run quotes stay exact.
-- **Exceed a ceiling.** Bound class rates with `MAX_HUB_SHARE_BPS` and state
+- **Exceed a ceiling.** Bound class rates with `MAX_OPERATOR_SHARE_BPS` and state
   the number in `CAPABILITIES.md` the way `MAX_TAKER_FEE` is stated today, so
   the trust document stays true. Note what this bound is and is not: capping the
   *rate* only caps the payout if the *basis* is exact. A double-counted basis
@@ -555,7 +555,7 @@ What the mechanism cannot do:
   [Recognition sites](#recognition-sites) is the section to review hardest.
 - **Serialize the exchange.** The trading path reads no new object and writes one
   `u64` on a pool it already holds mutably — no new event, and no policy read. Both
-  `FeePolicy` and `HubRegistry` are touched only by settlement and payout, neither
+  `FeePolicy` and `OperatorRegistry` are touched only by settlement and payout, neither
   of which is on a trade.
 
 ---
@@ -566,7 +566,7 @@ What the mechanism cannot do:
 what forced the original deferred shape it replaced, and why undoing that
 decision was worth its price. What landed: `operator_owed` written eagerly by
 `credit_operator_share` / `recognize_locked_maker_fees` in `multicoin_vault`; the
-staged `HubShareClass` pair in `fee_policy` (segments deleted);
+staged `OperatorShareClass` pair in `fee_policy` (segments deleted);
 `fee_basis.move` deleted; the four cancel/modify signatures on `multicoin_pool`
 take `&FeePolicy`; `claim_operator_share(reg, registry, clock)` pays operator then
 treasury; `withdraw_pool_fees(reg, cap, …)` pays the operator before the
@@ -621,19 +621,19 @@ Everything between recognition and `operator_owed` goes:
 | Deleted | It existed to |
 |---|---|
 | `fee_basis.move`, `hub_basis`, the `uncredit` dance | hold revenue undivided until a rate could be read |
-| `holdback()` at the `MAX_HUB_SHARE_BPS` ceiling | cap a sweep that could not know the split |
+| `holdback()` at the `MAX_OPERATOR_SHARE_BPS` ceiling | cap a sweep that could not know the split |
 | `settle_operator_share`, the settle cron, the per-pool settle load | apply the rate late |
-| Forfeiture, `HubBasisForfeited`, the 30-epoch settle-by deadline | bound how late |
-| Append-only `HubShareSegment` ladder and its pruning | answer "what was epoch *N*'s rate" late |
+| Forfeiture, `OperatorBasisForfeited`, the 30-epoch settle-by deadline | bound how late |
+| Append-only `OperatorShareSegment` ladder and its pruning | answer "what was epoch *N*'s rate" late |
 
 | Survives | Changed how |
 |---|---|
 | `operator_owed` | written at recognition instead of at settle |
 | `encumbered()` | collapses to `locked_maker_fees + operator_owed` — no `u128`, no ceiling term |
-| `HubRegistry`, the witness gate, rotation | untouched |
+| `OperatorRegistry`, the witness gate, rotation | untouched |
 | `claim_operator_share` | drops the settle; gains the treasury leg (below) |
 | Staged rates | a `current`/`next` pair in `ClassSchedule`'s shape — with the `from_epoch` gate written and tested, per the `cancel_retention_bps` warning in [Timing](#why-the-buckets-are-per-epoch) |
-| `MAX_HUB_SHARE_BPS` | checked at write, clamped at read, stated in `CAPABILITIES.md` |
+| `MAX_OPERATOR_SHARE_BPS` | checked at write, clamped at read, stated in `CAPABILITIES.md` |
 
 ### What the rate read costs, and where it lands
 
@@ -706,7 +706,7 @@ decision this forces, decided in the open: the treasury leg turns protocol
 revenue from an admin-cap *pull* into an automatic *push* to
 `Registry.treasury_address()` — the same configured address the creation fee
 already goes to — so `claim_operator_share` takes `&Registry` alongside
-`&HubRegistry` and neither destination comes from the caller. The admin pull
+`&OperatorRegistry` and neither destination comes from the caller. The admin pull
 still exists (`withdraw_pool_fees`, capped at the exact remainder), and it pays
 the operator's accrued share to the beneficiary first, skipping that leg only
 when no beneficiary is configured — the share stays encumbered, so a
@@ -766,7 +766,7 @@ tree has already made the change; a fresh deploy needs none of this):
    and `operator_owed` carrying every obligation. Nothing is re-priced by the
    migration itself.
 2. **Upgrade.** New `PoolInner` version drops the `FeeBasis` field; the
-   `HubShareSegment` dynamic fields on `FeePolicy` are replaced by the staged
+   `OperatorShareSegment` dynamic fields on `FeePolicy` are replaced by the staged
    pair; the four cancel/modify signatures change behind the version gate.
 3. **Cut over.** SDK and prepare-endpoints ship the new signatures;
    `allowed_versions` retires the old package version once integrators are
@@ -842,7 +842,7 @@ and `:1042`.
 | Staged `current`/`next` rate pair, class assignment, default class | `fee_policy.move` (dynamic fields) |
 | `collection_id -> address` | `hub_registry.move` |
 | `claim_operator_share` (pays both parties), hub-paying `withdraw_pool_fees`, `operator_owed()` view, `&FeePolicy` on the cancel/modify signatures | `multicoin_pool.move` |
-| `MAX_HUB_SHARE_BPS = 4000` | `helper/constants.move` |
+| `MAX_OPERATOR_SHARE_BPS = 4000` | `helper/constants.move` |
 
 The basis ring (`state/fee_basis.move`), the holdback, `settle_operator_share`, the
 forfeiture events and `HUB_BASIS_WINDOW_EPOCHS` are gone — see the
@@ -856,7 +856,7 @@ Default 0 bps means **no hub is paid anything** until a collection is assigned a
 class — but see [the wart](#the-one-wart-is-not-free) for the one thing the deploy
 does change on day one.
 
-`HubRegistry` writes are admin-only until 03. That is deliberate: the beneficiary
+`OperatorRegistry` writes are admin-only until 03. That is deliberate: the beneficiary
 table is useful before the self-service path exists, and shipping it admin-gated
 first means the registered-witness setter gets reviewed as an authorization change
 rather than as a rider on fee accounting.
@@ -902,7 +902,7 @@ to be deliberate rather than incidental.
 `HUB_BASIS_WINDOW_EPOCHS` shipped at **30**, matching `TURNOVER_WINDOW_EPOCHS` —
 two trailing per-epoch windows over recognized revenue, and an operator reading
 one should not have to learn a second deadline. Eviction forfeits to the treasury
-and emits `HubBasisForfeited`, so it is recorded rather than quietly released.
+and emits `OperatorBasisForfeited`, so it is recorded rather than quietly released.
 
 What is still open is whether forfeiting is the right answer at all, and
 [the per-pool claim load](#the-operational-shape-of-a-claim) is what decides
@@ -939,6 +939,6 @@ currently goes whole to the treasury address; routing a slice is independent
 of everything above.
 
 **Ceiling and default?**
-`MAX_HUB_SHARE_BPS` is a trust commitment as much as a bound — and under this
+`MAX_OPERATOR_SHARE_BPS` is a trust commitment as much as a bound — and under this
 design it also sets how much of an unsettled basis the treasury has to hold
 back.

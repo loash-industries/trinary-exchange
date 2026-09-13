@@ -27,8 +27,8 @@ module triex::fee_policy {
     const EClassQuoteMismatch: u64 = 4;
     const EDuplicateGenesisClass: u64 = 5;
     const EInvalidQuoteUnit: u64 = 6;
-    const EHubShareAboveCeiling: u64 = 7;
-    const EHubShareClassDoesNotExist: u64 = 8;
+    const EOperatorShareAboveCeiling: u64 = 7;
+    const EOperatorShareClassDoesNotExist: u64 = 8;
 
     // === Constants ===
     const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -463,7 +463,7 @@ module triex::fee_policy {
         transfer::share_object(self)
     }
 
-    // === Hub revenue share ===
+    // === Operator revenue share ===
     //
     // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
     // fields on an upgrade — dynamic fields on its `id` can. Everything below is
@@ -480,13 +480,13 @@ module triex::fee_policy {
     // deferred basis that could ask "what was the rate in epoch N?" after N.
 
     /// class_id -> the staged rate pair for that class.
-    public struct HubShareClassKey has copy, drop, store { class_id: u16 }
+    public struct OperatorShareClassKey has copy, drop, store { class_id: u16 }
 
     /// collection_id -> the class that collection's hubs are priced in.
-    public struct HubShareAssignmentKey has copy, drop, store { collection_id: ID }
+    public struct OperatorShareAssignmentKey has copy, drop, store { collection_id: ID }
 
     /// Class a collection nobody has configured falls into.
-    public struct DefaultHubShareKey has copy, drop, store {}
+    public struct DefaultOperatorShareKey has copy, drop, store {}
 
     /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
     /// at `effective_epoch`, and reads compare against the running epoch so
@@ -497,19 +497,19 @@ module triex::fee_policy {
     /// staged, so "`FeePolicy` stages every rate change" is not a uniform
     /// precedent. A hub rate must be pre-announced: it is what an operator
     /// underwrites a hosting decision with.
-    public struct HubShareClass has copy, drop, store {
+    public struct OperatorShareClass has copy, drop, store {
         current_bps: u64,
         next_bps: u64,
         effective_epoch: u64,
     }
 
-    public struct HubShareClassUpdated has copy, drop {
+    public struct OperatorShareClassUpdated has copy, drop {
         class_id: u16,
         bps: u64,
         from_epoch: u64,
     }
 
-    public struct HubShareClassAssigned has copy, drop {
+    public struct OperatorShareClassAssigned has copy, drop {
         collection_id: ID,
         class_id: u16,
     }
@@ -527,21 +527,21 @@ module triex::fee_policy {
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
-        assert!(bps <= constants::max_operator_share_bps(), EHubShareAboveCeiling);
+        assert!(bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
 
         let from_epoch = ctx.epoch() + 1;
-        let key = HubShareClassKey { class_id };
+        let key = OperatorShareClassKey { class_id };
 
-        if (!df::exists_with_type<HubShareClassKey, HubShareClass>(&self.id, key)) {
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, key)) {
             // A new class starts at zero and the staged rate arrives next epoch:
             // no hub can be paid at a rate that was never announced.
             df::add(
                 &mut self.id,
                 key,
-                HubShareClass { current_bps: 0, next_bps: bps, effective_epoch: from_epoch },
+                OperatorShareClass { current_bps: 0, next_bps: bps, effective_epoch: from_epoch },
             );
         } else {
-            let class: &mut HubShareClass = df::borrow_mut(&mut self.id, key);
+            let class: &mut OperatorShareClass = df::borrow_mut(&mut self.id, key);
             // A pending `next` that has already come due is the running rate;
             // promote it before overwriting, so the stage below replaces the
             // future, never the present.
@@ -552,7 +552,7 @@ module triex::fee_policy {
             class.effective_epoch = from_epoch;
         };
 
-        event::emit(HubShareClassUpdated { class_id, bps, from_epoch });
+        event::emit(OperatorShareClassUpdated { class_id, bps, from_epoch });
     }
 
     /// Point a collection's hubs at a share class, effective immediately.
@@ -571,17 +571,17 @@ module triex::fee_policy {
         // An unconfigured class resolves to zero, so a mistyped id would leave the
         // hub silently earning nothing — the one failure this configuration can have
         // that nobody notices until an operator asks where their payment is.
-        assert!(self.operator_share_class_exists(class_id), EHubShareClassDoesNotExist);
+        assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
-        let key = HubShareAssignmentKey { collection_id };
-        if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, key)) {
+        let key = OperatorShareAssignmentKey { collection_id };
+        if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, key)) {
             let assigned: &mut u16 = df::borrow_mut(&mut self.id, key);
             *assigned = class_id;
         } else {
             df::add(&mut self.id, key, class_id);
         };
 
-        event::emit(HubShareClassAssigned { collection_id, class_id });
+        event::emit(OperatorShareClassAssigned { collection_id, class_id });
     }
 
     /// Class for collections nobody has configured. Absent means zero, which is
@@ -591,10 +591,10 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
-        assert!(self.operator_share_class_exists(class_id), EHubShareClassDoesNotExist);
+        assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
-        let key = DefaultHubShareKey {};
-        if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, key)) {
+        let key = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, key)) {
             let current: &mut u16 = df::borrow_mut(&mut self.id, key);
             *current = class_id;
         } else {
@@ -612,35 +612,35 @@ module triex::fee_policy {
     /// clamped to the ceiling as a belt over the write-time assert.
     public fun operator_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
         let class_id = self.operator_share_class(collection_id);
-        let key = HubShareClassKey { class_id };
-        if (!df::exists_with_type<HubShareClassKey, HubShareClass>(&self.id, key)) {
+        let key = OperatorShareClassKey { class_id };
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, key)) {
             return 0
         };
 
-        let class: &HubShareClass = df::borrow(&self.id, key);
+        let class: &OperatorShareClass = df::borrow(&self.id, key);
         let bps = if (epoch >= class.effective_epoch) class.next_bps else class.current_bps;
 
         bps.min(constants::max_operator_share_bps())
     }
 
     public fun operator_share_class_exists(self: &FeePolicy, class_id: u16): bool {
-        df::exists_with_type<HubShareClassKey, HubShareClass>(
+        df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(
             &self.id,
-            HubShareClassKey { class_id },
+            OperatorShareClassKey { class_id },
         )
     }
 
     /// Share class a collection is priced in, falling back to the default class
     /// and then to class 0.
     public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
-        let assignment = HubShareAssignmentKey { collection_id };
-        if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, assignment)) {
-            return *df::borrow<HubShareAssignmentKey, u16>(&self.id, assignment)
+        let assignment = OperatorShareAssignmentKey { collection_id };
+        if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, assignment)) {
+            return *df::borrow<OperatorShareAssignmentKey, u16>(&self.id, assignment)
         };
 
-        let default = DefaultHubShareKey {};
-        if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, default)) {
-            return *df::borrow<DefaultHubShareKey, u16>(&self.id, default)
+        let default = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default)) {
+            return *df::borrow<DefaultOperatorShareKey, u16>(&self.id, default)
         };
 
         0

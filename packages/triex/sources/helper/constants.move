@@ -78,7 +78,7 @@ module triex::constants {
     // points. A trust commitment as much as a bound, checked when a rate is
     // staged, clamped when it is read, and asserted again where the credit is
     // written. Stated in CAPABILITIES.md alongside MAX_TAKER_FEE.
-    const MAX_HUB_SHARE_BPS: u64 = 10000; // 100%
+    const MAX_OPERATOR_SHARE_BPS: u64 = 10000; // 100%
 
     // Upper bound on tiers in a fee schedule. Resolution is a linear scan, so this
     // is what keeps it bounded on the hot fill path.
@@ -229,7 +229,7 @@ module triex::constants {
     }
 
     public fun max_operator_share_bps(): u64 {
-        MAX_HUB_SHARE_BPS
+        MAX_OPERATOR_SHARE_BPS
     }
 
     public fun max_slice_size(): u64 {
