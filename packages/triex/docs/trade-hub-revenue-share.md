@@ -478,14 +478,22 @@ into one PTB.
 
 Emit:
 
-- `HubBasisAccrued { pool_id, collection_id, epoch, amount }`
-- `HubShareSettled { pool_id, epoch, basis, bps, owed }`
+- `HubShareSettled { pool_id, collection_id, epoch, basis, bps, owed }`
 - `HubShareClaimed { pool_id, collection_id, beneficiary, amount, timestamp }`
 - `HubBasisForfeited { pool_id, collection_id, epoch, amount }`
 
-Between them an operator reconciles every unit they are owed from events
-alone, including the rate each epoch was priced at — the standard the
-existing `PoolFeesDeposited` / `PoolFeesRefunded` pair already sets.
+Between them an operator reconciles every unit they are owed from events alone,
+including the rate each epoch was priced at — the standard the existing
+`PoolFeesDeposited` / `PoolFeesRefunded` pair already sets. Every unit of basis
+leaves the ring through exactly one of `HubShareSettled` or `HubBasisForfeited`,
+which is what makes the pair sufficient.
+
+> **No accrual event.** An earlier draft emitted one per recognition. That lands
+> on the hottest path in the exchange — a fill with `N` maker matches recognizes
+> `N + 1` times — for a feature that is off for every hub by default, and it buys
+> nothing reconciliation needs: `HubShareSettled` already carries each epoch's
+> basis, and `PoolFeesDeposited` already carries deposit-level detail. The accrual
+> is a `u64` add and nothing else.
 
 That last event is the one not to skip. A ring in `fee_turnover`'s shape evicts
 by overwriting a bucket and subtracting it from the running sum, which here means
@@ -534,9 +542,10 @@ What the mechanism cannot do:
   pays over the ceiling as measured against revenue actually collected, with the
   rate still nominally in bounds — which is why
   [Recognition sites](#recognition-sites) is the section to review hardest.
-- **Serialize the exchange.** The trading path reads no new object and writes
-  one `u64` on a pool it already holds mutably. The policy object is touched
-  only at settlement.
+- **Serialize the exchange.** The trading path reads no new object and writes one
+  `u64` on a pool it already holds mutably — no new event, and no policy read. Both
+  `FeePolicy` and `HubRegistry` are touched only by settlement and payout, neither
+  of which is on a trade.
 
 ---
 

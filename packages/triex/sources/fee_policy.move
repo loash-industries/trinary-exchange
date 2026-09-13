@@ -28,6 +28,7 @@ module triex::fee_policy {
     const EDuplicateGenesisClass: u64 = 5;
     const EInvalidQuoteUnit: u64 = 6;
     const EHubShareAboveCeiling: u64 = 7;
+    const EHubShareClassDoesNotExist: u64 = 8;
 
     // === Constants ===
     const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -568,6 +569,11 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        // An unconfigured class resolves to zero, so a mistyped id would leave the
+        // hub silently earning nothing — the one failure this configuration can have
+        // that nobody notices until an operator asks where their payment is.
+        assert!(self.hub_share_class_exists(class_id), EHubShareClassDoesNotExist);
+
         let key = HubShareAssignmentKey { collection_id };
         if (df::exists_with_type<HubShareAssignmentKey, u16>(&self.id, key)) {
             let assigned: &mut u16 = df::borrow_mut(&mut self.id, key);
@@ -586,6 +592,8 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        assert!(self.hub_share_class_exists(class_id), EHubShareClassDoesNotExist);
+
         let key = DefaultHubShareKey {};
         if (df::exists_with_type<DefaultHubShareKey, u16>(&self.id, key)) {
             let current: &mut u16 = df::borrow_mut(&mut self.id, key);
@@ -617,6 +625,13 @@ module triex::fee_policy {
         };
 
         0
+    }
+
+    public fun hub_share_class_exists(self: &FeePolicy, class_id: u16): bool {
+        df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(
+            &self.id,
+            HubShareClassKey { class_id },
+        )
     }
 
     /// Share class a collection is priced in, falling back to the default class

@@ -95,9 +95,12 @@ module triex::fee_basis {
     /// does not trade costs nothing until it does, and a second fill in the same
     /// epoch costs nothing at all.
     ///
-    /// The returned vector is empty in every case except an actual forfeiture,
-    /// which is the rare one — so the allocation does not land on the common
-    /// recognition path.
+    /// The vector is allocated on every call, empty in every case but an actual
+    /// forfeiture. That is the cost of making eviction reportable rather than
+    /// silent, and it is paid on the recognition path — an empty `vector[]` rather
+    /// than nothing at all. Returning the amounts is still the right trade: the
+    /// alternative is a basis that disappears with no record, which is the one
+    /// outcome an operator cannot audit.
     public(package) fun roll(self: &mut FeeBasis, epoch: u64): vector<EpochBasis> {
         let mut forfeited = vector[];
         if (epoch <= self.anchor_epoch) return forfeited;

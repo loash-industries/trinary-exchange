@@ -1151,4 +1151,65 @@ module triex::multicoin_vault_tests {
         destroy(collection_cap);
         end(test);
     }
+
+    #[test]
+    fun test_an_impossible_shortfall_blocks_the_sweep_without_bricking_the_view() {
+        // Regression. `unlock_quote_fees` decrements escrow by
+        // `amount.min(locked_maker_fees)` but the reserve by the full amount, so a
+        // refund larger than what is still counted as escrow eats recognized
+        // revenue. Order-level accounting makes that unreachable — a release never
+        // exceeds what its own order locked — but the counter is pool-wide and the
+        // existing code carries that `min` defensively rather than relying on it.
+        //
+        // Adding claims to the reserve turned the consequence from harmless into
+        // severe: `reserve - encumbered()` would underflow, and a `u64` underflow
+        // aborts, taking down `withdraw_pool_fees` *and* the public
+        // `withdrawable_pool_fees()` view permanently. Saturating keeps the sweep
+        // blocked — which is correct, the money is claimed — while leaving every
+        // read answerable.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(100);
+        vault.recognize_locked_maker_fees(test_pool_id(), 100, 0);
+        vault.settle_hub_basis(test_pool_id(), 0, max_bps());
+        assert!(vault.hub_owed() == 40);
+
+        // Escrow is already zero, so this refund drains revenue the operator is owed
+        // against.
+        vault.unlock_quote_fees(collection_id, 1, collection_id, 970, 0);
+        assert!(vault.quote_fee_reserve_balance() == 30);
+        assert!(vault.encumbered() == 40);
+
+        // Reads still answer, and the treasury is allowed nothing.
+        assert!(vault.withdrawable_quote_fees() == 0);
+
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = multicoin_vault::EInsufficientFeeReserve)]
+    fun test_a_shortfall_still_fails_loudly_on_the_claim() {
+        // The other half of the trade-off above: quiet on the sweep, loud on the
+        // claim. An operator must never be handed a coin the reserve cannot cover,
+        // so the claim keeps its hard assert and is where a real shortfall surfaces.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
+        vault.deposit_quote_fees(mint_for_testing<USDC>(1_000, test.ctx()).into_balance());
+        vault.lock_maker_fees_for_testing(100);
+        vault.recognize_locked_maker_fees(test_pool_id(), 100, 0);
+        vault.settle_hub_basis(test_pool_id(), 0, max_bps());
+        vault.unlock_quote_fees(collection_id, 1, collection_id, 970, 0);
+
+        let share = vault.claim_hub_share(test_pool_id(), ALICE, 0, test.ctx());
+
+        destroy(share);
+        destroy(vault);
+        destroy(collection_cap);
+        end(test);
+    }
 }

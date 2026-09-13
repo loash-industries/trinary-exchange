@@ -241,6 +241,38 @@ module triex::fee_policy_hub_share_tests {
     }
 
     #[test]
+    #[expected_failure(abort_code = fee_policy::EHubShareClassDoesNotExist)]
+    fun assigning_to_a_class_that_does_not_exist_aborts() {
+        // Without this the id is simply wrong and resolves to zero, so a mistyped
+        // class leaves the hub earning nothing — the one misconfiguration here that
+        // produces no error and no event, and surfaces only when an operator asks
+        // where their payment went.
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.assign_hub_share_class(a_collection(), CLASS_PARTNER, &cap);
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = fee_policy::EHubShareClassDoesNotExist)]
+    fun defaulting_to_a_class_that_does_not_exist_aborts() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_default_hub_share_class(CLASS_PARTNER, &cap);
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
     fun the_ceiling_itself_is_settable() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());

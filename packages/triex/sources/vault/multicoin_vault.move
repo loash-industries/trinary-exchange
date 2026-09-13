@@ -30,16 +30,6 @@ module triex::multicoin_vault {
     const EHubShareAboveCeiling: u64 = 9;
 
     // === Events ===
-    /// Revenue recognized on this pool, credited to the epoch whose hub-share
-    /// rate will price it. Emitted at each of the three recognition points, so an
-    /// operator can reconstruct a basis from events without an indexer.
-    public struct HubBasisAccrued has copy, drop {
-        pool_id: ID,
-        collection_id: ID,
-        epoch: u64,
-        amount: u64,
-    }
-
     /// A basis that aged out of the ring before anyone settled it. The amount
     /// stops being claimable and its holdback is released into the next treasury
     /// sweep — the settle-by deadline taking effect. Never silent: this is the
@@ -223,14 +213,26 @@ module triex::multicoin_vault {
     }
 
     /// Earned revenue in the reserve: what an admin sweep may take.
+    ///
+    /// Saturates at zero rather than aborting if the encumbrance ever exceeds the
+    /// reserve. That should be unreachable — every claim is matched by coins that
+    /// entered the reserve — but this figure is also a public view and the cap on
+    /// the admin sweep, and the two failure modes are not comparable: saturating
+    /// can only make the treasury take *less*, while aborting would take the view
+    /// and `withdraw_pool_fees` down permanently for the pool and leave indexers
+    /// reading a reverting getter.
+    ///
+    /// A genuine shortfall still surfaces, in the one place where it must: the
+    /// assert in `claim_hub_share`, where an operator would otherwise be paid coins
+    /// the reserve does not hold. Failing loudly on the claim and quietly on the
+    /// sweep puts the alarm on the side that would lose money.
     public(package) fun withdrawable_quote_fees<QuoteAsset>(
         self: &MultiCoinVault<QuoteAsset>,
     ): u64 {
         let reserve = self.quote_fee_reserve.value() as u128;
         let encumbered = self.encumbered();
-        // An encumbrance above the reserve would mean basis was credited for
-        // revenue that never arrived. Abort rather than saturate: the figure gates
-        // a payout, and a wrong one here is spendable.
+        if (encumbered >= reserve) return 0;
+
         (reserve - encumbered) as u64
     }
 
@@ -271,6 +273,14 @@ module triex::multicoin_vault {
 
     /// Credit recognized revenue to the epoch that earned it, and surface
     /// anything the roll forfeited. Every recognition point funnels through here.
+    ///
+    /// Deliberately emits nothing on the credit itself. An accrual event per
+    /// recognition would land on the hottest path in the exchange — a fill with `N`
+    /// maker matches recognizes `N + 1` times — for a feature that is off for every
+    /// hub by default. Reconciliation does not need it: `HubShareSettled` carries
+    /// each epoch's basis, rate and amount, `HubBasisForfeited` carries whatever
+    /// aged out, and between them every unit of basis is accounted for exactly once.
+    /// Deposit-level telemetry already exists in `PoolFeesDeposited`.
     fun accrue_hub_basis<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         pool_id: ID,
@@ -279,14 +289,6 @@ module triex::multicoin_vault {
     ) {
         let forfeited = self.hub_basis.accrue(epoch, amount);
         self.emit_forfeitures(pool_id, forfeited);
-        if (amount > 0) {
-            event::emit(HubBasisAccrued {
-                pool_id,
-                collection_id: self.collection_id,
-                epoch,
-                amount,
-            });
-        };
     }
 
     fun emit_forfeitures<QuoteAsset>(
@@ -612,6 +614,12 @@ module triex::multicoin_vault {
         );
     }
 
+    #[test_only]
+    /// Join quote straight into the fee reserve, bypassing both the escrow lock and
+    /// the hub basis. No production caller — the reserve is only ever fed through
+    /// `move_quote_to_fee_reserve`, which accrues. Kept for the suites that need to
+    /// stand up reserve balances without a trade, and `#[test_only]` so wiring it
+    /// into a real path cannot silently under-credit an operator.
     public(package) fun deposit_quote_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         fee_balance: Balance<QuoteAsset>,
