@@ -88,7 +88,7 @@ read it as such.
 
 Multicoin pools can pay the storage unit they trade against a share of the fees
 recognized on them. `MAX_HUB_SHARE_BPS` is **40%** (`constants.move`), and it
-bounds both what the admin can configure and what a settlement can credit — the
+bounds both what the admin can configure and what a recognition can credit — the
 vault re-checks it rather than trusting the policy to have done so.
 
 Read it as a bound on redistribution, not on cost: a share divides fees already
@@ -97,9 +97,10 @@ ladders and dry-run quotes are untouched by it. The rate ships at **0% for every
 hub**, applies only to collections the admin has explicitly assigned to a share
 class, and — like every other rate here — takes effect no earlier than the
 **next epoch boundary**, visible on-chain beforehand through
-`hub_share_bps_at()`. A share is settled against the rate of the epoch that
-earned the revenue, so a rate change never re-prices revenue already hosted, and
-a late settlement pays the same as a prompt one.
+`hub_share_bps_at()`. The share is credited the moment revenue is recognized, at
+the rate live in that instant, so a rate change can only affect revenue that has
+not happened yet — there is no deferred settlement whose timing anyone could
+game, and `hub_owed()` is exact at all times.
 
 Where the share is paid is configuration, not inference: `HubRegistry` holds an
 explicit `collection_id -> address`, so a hub changing hands, a capability parked
@@ -108,9 +109,9 @@ redirect money. Rotation is admin-only unless the admin has registered an adapte
 package by type (`set_authorized_adapter`), which lets a storage unit owner rotate
 their own payout address against their `OwnerCap<StorageUnit>`; that registration
 is single-valued and revocable, and an adapter can only move *where* a share is
-paid — never a rate, the reserve, or a balance already settled. Accrued-but-unclaimed balance pays whoever is configured at claim
-time, which is a settlement matter between a hub's buyer and seller — the accrual
-and claim events are the record of it.
+paid — never a rate, the reserve, or a balance already accrued. Accrued-but-unclaimed balance pays whoever is configured at claim
+time, which is a settlement matter between a hub's buyer and seller — the
+`hub_owed()` view and the claim events are the record of it.
 
 ### What the AdminCap can NOT do
 
@@ -120,10 +121,10 @@ power than it sounds. It cannot:
 
 - Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
 - Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
-  settled `hub_owed` *and* holds back the ceiling slice of any basis nobody has
-  settled yet, so a sweep cannot reach it even before it has been priced
-- Redirect a hub share: `claim_hub_share` pays only the address `HubRegistry`
-  records, never the caller
+  `hub_owed`, which is exact at all times — a sweep pays the operator's share to
+  the operator and can never reach it
+- Redirect a hub share: `claim_hub_share` and `withdraw_pool_fees` pay only the
+  address `HubRegistry` records, never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled)

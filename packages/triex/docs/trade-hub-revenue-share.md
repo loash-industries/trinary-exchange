@@ -1,13 +1,19 @@
 # Trade Hub Revenue Share
 
-*Status: [Rollout 02](#02--on-chain-accrual) is implemented — `fee_basis`,
-`hub_registry`, the vault counters, the `FeePolicy` ladder, and
-`settle_hub_share` / `claim_hub_share` on `multicoin_pool`. Shipping it is inert
-until a collection is assigned a share class; the one thing it does change on day
-one is the admin sweep, which now has to settle first
-([the wart](#the-one-wart-is-not-free)). [Rollout 03](#03--operator-self-service)
-is half-landed — the authorization gate is in, the adapter package that drives it
-is not — and the [open questions](#open-questions) are outstanding.*
+*Status: the implementation is the
+[Revision: split at recognition](#revision-split-at-recognition) — the share is
+credited eagerly into `hub_owed` at every recognition site, the deferral
+machinery (`fee_basis` ring, holdback, `settle_hub_share`, forfeiture, segment
+ladder) is deleted, `cancel_order`/`modify_order`/`cancel_orders`/
+`cancel_all_orders` on `multicoin_pool` take `&FeePolicy`, and both
+`claim_hub_share` and `withdraw_pool_fees` pay operator and treasury in one
+transaction. The sections between here and the Revision describe the original
+deferred design; they are kept because the Revision is written against them and
+most of their reasoning (the shared-pot accounting, the recognition-site list,
+the escrow/revenue boundary, configuration and attribution) carries over
+unchanged. [Rollout 03](#03--operator-self-service) is half-landed — the
+authorization gate is in, the adapter package that drives it is not — and the
+[open questions](#open-questions) are outstanding.*
 
 How Triex can pay a storage unit owner (a "trade hub operator") a configurable
 share of the trading fees earned on their hub — without moving a coin on the
@@ -17,7 +23,9 @@ trading path, and without changing a single public trading signature.
 > [Timing](#timing-accumulate-the-basis-apply-the-rate-later) ·
 > [Configuration](#configuration-per-entity-via-share-classes) ·
 > [Attribution](#attribution-who-actually-owns-a-hub) · [Payout](#payout) ·
-> [Guardrails](#guardrails) · [Alternative](#alternative-operator-surcharge-not-a-share) ·
+> [Guardrails](#guardrails) ·
+> [Revision](#revision-split-at-recognition) ·
+> [Alternative](#alternative-operator-surcharge-not-a-share) ·
 > [Rollout](#rollout) · [Open questions](#open-questions)
 
 ---
@@ -179,7 +187,9 @@ This resolves the one genuinely awkward constraint in the current codebase:
 take `&FeePolicy` — they settle against the retention rate snapshotted on the
 order — so a rate read is unavailable at two of the three recognition sites.
 Accumulating the basis means no rate is needed there at all. **No cached rate
-on the pool, and no sync call.**
+on the pool, and no sync call.** (This constraint is chosen, not physical —
+[Revision: split at recognition](#revision-split-at-recognition) records what
+relaxing it buys and costs.)
 
 What it does cost is an epoch. Bucketing the basis needs `ctx.epoch()`, and
 `clock.timestamp_ms()` is not an epoch — the policy stages on epoch numbers, so
@@ -550,6 +560,225 @@ What the mechanism cannot do:
 
 ---
 
+## Revision: split at recognition
+
+*Status: **implemented**. This section records the design that is now on chain,
+what forced the original deferred shape it replaced, and why undoing that
+decision was worth its price. What landed: `hub_owed` written eagerly by
+`credit_hub_share` / `recognize_locked_maker_fees` in `multicoin_vault`; the
+staged `HubShareClass` pair in `fee_policy` (segments deleted);
+`fee_basis.move` deleted; the four cancel/modify signatures on `multicoin_pool`
+take `&FeePolicy`; `claim_hub_share(reg, registry, clock)` pays operator then
+treasury; `withdraw_pool_fees(reg, cap, …)` pays the operator before the
+treasury takes anything. Pinned by `hub_owed_counts_recognized_revenue_exactly_once`,
+`one_claim_pays_the_operator_and_the_treasury`,
+`the_admin_sweep_pays_the_operator_in_the_same_transaction`,
+`a_staged_rate_change_applies_only_from_the_next_epoch`,
+`an_unconfigured_hub_accrues_nothing_and_never_blocks` and
+`cancel_retention_credits_the_hub`.*
+
+An end-to-end audit of the shipped mechanism produced three findings that turn
+out to share a root cause:
+
+- **No atomic dual sweep.** `claim_hub_share` pays the operator and leaves the
+  treasury's remainder in the reserve; `withdraw_pool_fees` pays the treasury
+  and cannot settle. "A claim by either party pays both parties" exists only as
+  a PTB convention, not as an entry function.
+- **Class assignment is retroactive while rates are not.**
+  `assign_hub_share_class` re-prices every unsettled epoch in the window the
+  moment it lands. Rates were epoch-pinned precisely to close the timing option
+  on permissionless settlement ([Timing](#why-the-buckets-are-per-epoch)); the
+  assignment is the one lever that escaped the pinning, and it reopens the
+  option — including a griefer settling an about-to-be-assigned collection at
+  0 bps and consuming its basis irrevocably.
+- **The machinery is all deferral.** The ring, the holdback at the ceiling, the
+  settle cron and its per-pool load, the 30-epoch forfeiture deadline, and the
+  append-only segment ladder with its pruning — none of it is the product. All
+  of it exists to move the rate read *later* than the revenue.
+
+The root cause is one sentence in [Timing](#timing-accumulate-the-basis-apply-the-rate-later):
+*a rate read is unavailable at two of the three recognition sites.* That was a
+**chosen** constraint — cancel and modify don't take `&FeePolicy` because this
+design refused to change a public trading signature — not a physical one. Relax
+it, and the deferral machinery does not need hardening. It needs deleting.
+
+### The shape
+
+Apply the split at the moment revenue is recognized. The rate is resolved live
+from `&FeePolicy`, the operator's cut lands in `hub_owed` immediately, and the
+remainder is the treasury's — exactly, at all times, with nothing provisional:
+
+```
+recognition (fill, expiry retention, cancel/modify retention, escrow earn-out)
+  ├─ bps  = resolve from &FeePolicy       (staged current/next, epoch-gated)
+  ├─ hub_owed += floor(amount × bps / 10000)
+  └─ the rest needs no counter: reserve − locked − hub_owed is the treasury's
+```
+
+`hub_owed` is unchanged in meaning — settled and claimable, zeroed by claim.
+Everything between recognition and `hub_owed` goes:
+
+| Deleted | It existed to |
+|---|---|
+| `fee_basis.move`, `hub_basis`, the `uncredit` dance | hold revenue undivided until a rate could be read |
+| `holdback()` at the `MAX_HUB_SHARE_BPS` ceiling | cap a sweep that could not know the split |
+| `settle_hub_share`, the settle cron, the per-pool settle load | apply the rate late |
+| Forfeiture, `HubBasisForfeited`, the 30-epoch settle-by deadline | bound how late |
+| Append-only `HubShareSegment` ladder and its pruning | answer "what was epoch *N*'s rate" late |
+
+| Survives | Changed how |
+|---|---|
+| `hub_owed` | written at recognition instead of at settle |
+| `encumbered()` | collapses to `locked_maker_fees + hub_owed` — no `u128`, no ceiling term |
+| `HubRegistry`, the witness gate, rotation | untouched |
+| `claim_hub_share` | drops the settle; gains the treasury leg (below) |
+| Staged rates | a `current`/`next` pair in `ClassSchedule`'s shape — with the `from_epoch` gate written and tested, per the `cancel_retention_bps` warning in [Timing](#why-the-buckets-are-per-epoch) |
+| `MAX_HUB_SHARE_BPS` | checked at write, clamped at read, stated in `CAPABILITIES.md` |
+
+### What the rate read costs, and where it lands
+
+Fills already have `&FeePolicy` in scope. The other recognition sites do not,
+so **`cancel_order`, `modify_order`, `cancel_orders` and `cancel_all_orders`
+gain a `&FeePolicy` parameter on `multicoin_pool.move`** — and only there. Coin
+pools have no `collection_id`, no hub, and therefore nothing to resolve; giving
+their cancels an unused parameter would be ceremony, so `pool.move`'s
+signatures are untouched and the break is confined to the pool type that pays
+hubs. It is still a public signature break: every SDK call site, every
+integrator PTB, every prepare-endpoint touching multicoin cancels rebuilt,
+coordinated through the `Versioned` gate and an `allowed_versions` cutover. It
+is the whole price, and it should be paid once, deliberately, not discovered.
+
+Resolve **once per transaction**, not per fill. Placement resolves the bps
+alongside `resolve_with_retention` and threads it down: the pool credits the
+bid-taker half via `credit_hub_share` right after settlement (so
+`QuoteFeeDeposit` itself is unchanged — the taker/maker split it already
+carries is all the vault needs), the proceeds loop credits each fee as it
+lands, and `recognize_locked_maker_fees` takes the bps and credits off the
+actual decrement. A fill with `N` maker matches must not do `N` dynamic-field
+walks.
+
+> **The no-break variant, for the record.** Snapshot the hub bps on the order
+> at placement, beside `maker_fee_rate` and `cancel_retention_bps` — then
+> cancel and modify split retention off the snapshot and no public signature
+> changes. It costs ~8 bytes per resting order, freezes the escrow's share rate
+> at placement, and — the reason it is not the recommendation — resolves
+> nothing live, so none of the dynamic rates below are reachable. If the
+> signature break is ever vetoed, this is the fallback, not the goal.
+
+### Epoch pinning comes free, and the timing option dies with settlement
+
+The shipped design works hard for one property: revenue recognized in epoch
+*N* is priced at epoch *N*'s rate, no matter when settlement runs. Under eager
+splitting, recognition and pricing are the same instant — the property holds
+**by construction**, with no segment history to keep or prune. Keep policy
+writes staged to `epoch + 1` and the operator-has-read-the-rate guarantee
+survives verbatim.
+
+The audit's assignment finding dissolves the same way: with no unsettled basis
+to re-price, `assign_hub_share_class` can only affect revenue that has not
+happened yet. And the settlement free option cannot exist, because there is no
+settlement to time.
+
+One divergence to state, not hide: a bid maker's escrow recognized at fill is
+priced at the *fill* epoch's rate, not the placement epoch's. That is identical
+to the shipped design — the basis accrues at recognition epoch too — and it is
+the correct divergence from how `maker_fee_rate` is snapshotted: the hub split
+divides revenue between hub and treasury, the trader's cost is the same either
+way, so there is nothing to protect the trader from.
+
+What is genuinely lost is **retroactive enablement**. Today the basis is held
+undivided for 30 epochs, so a class assigned after the fact still pays for the
+window. Eagerly, a hub earns from configuration forward, full stop. Accepted:
+it is the same rule every trader already lives under (turnover before the ring
+existed bought no tier), and it removes the onboarding footgun where a settle
+racing an assignment forfeits the past at 0 bps. The operational rule becomes
+one line: **assign the class before the hub earns anything you intend to pay
+for.**
+
+### The claim pays both parties
+
+With the split exact at all times, the audit's headline gap closes in one
+transfer. `claim_hub_share` pays `hub_owed` to the beneficiary **and** the
+remainder — `reserve − locked − hub_owed`, now exact, no holdback — to the
+treasury; `withdraw_pool_fees` needs no settle in front of it and the
+[wart](#the-one-wart-is-not-free) section above stops existing. The custody
+decision this forces, decided in the open: the treasury leg turns protocol
+revenue from an admin-cap *pull* into an automatic *push* to
+`Registry.treasury_address()` — the same configured address the creation fee
+already goes to — so `claim_hub_share` takes `&Registry` alongside
+`&HubRegistry` and neither destination comes from the caller. The admin pull
+still exists (`withdraw_pool_fees`, capped at the exact remainder), and it pays
+the operator's accrued share to the beneficiary first, skipping that leg only
+when no beneficiary is configured — the share stays encumbered, so a
+misconfigured hub can delay its own payout but never block the treasury or
+lose the claim.
+
+### Dynamic and per-trade shares
+
+This is the payoff of live resolution, and the reason the snapshot variant is
+the fallback rather than the plan. Once the resolver runs at recognition, its
+inputs are whatever is in scope: collection, `asset_id`, quote, the fill's
+notional, whether the revenue is fill fees or retention. Flat-per-class becomes
+flat-per-anything-computable — a promo rate on one asset, a different share on
+retention than on trade revenue, size-dependent splits — all policy-side table
+writes, no new trading-path shape.
+
+Stateful dynamism — a hub's share scaling with its own trailing volume — has a
+standing precedent to copy rather than an architecture to invent. Trader tiers
+are already *read-only ladder on `FeePolicy` + mutable counter on an object the
+transaction holds `&mut`* (`FeeSchedule` + the `fee_turnover` ring). A hub tier
+is the same construction one level up: ladder on `FeePolicy`, trailing-revenue
+ring on the vault the trade already writes. Nothing touches the
+`FeePolicy`-is-never-`&mut`-on-a-user-path invariant, which stays sacred.
+
+### What must not change
+
+- **Increment only at recognition, never at deposit.** The escrow/revenue
+  boundary is the same trap it was in
+  [Recognition sites](#recognition-sites): a bid's `taker + maker` deposit must
+  raise `hub_owed` by the taker share only, with the maker share entering at
+  earn-out off the **actual decrement** of `locked_maker_fees`. The identity
+  test `basis == reserve − locked` dies with the basis; its successor is
+  `reserve ≥ locked + hub_owed` held inductively, plus a round-trip test:
+  place, partially fill, cancel — `hub_owed` ends at exactly
+  `floor(recognized × bps)`, and the refund is whole.
+- **Cancel must never abort on rate resolution.** The resolver on the
+  cancel/modify path has to be total — absent collection, absent class, absent
+  default all resolve to 0, never abort. `hub_share_bps_at` already has this
+  shape; keep it, and pin it: an aborting resolver in `cancel_order` is a
+  fund-freezing bug, not a pricing bug. Test: cancelling on a pool whose
+  collection was never configured succeeds.
+- **The ceiling means what it says.** With no basis to over-state, capping the
+  rate finally *is* capping the payout — the caveat under
+  [Guardrails](#guardrails) about basis exactness retires. Keep the write-time
+  assert and the read-time clamp anyway; they are one line each.
+- **Widen before multiplying.** `amount × bps` in `u128`, as
+  `fee_from_scaled_rate` and `split_released_fee` already do.
+
+### Migration
+
+For any environment where the deferred design was live on chain (the source
+tree has already made the change; a fresh deploy needs none of this):
+
+1. **Drain the ring first.** One final settle sweep across every multicoin
+   pool — `settle_hub_share` at the pinned rates, forfeitures emitted for
+   anything already past the window — so the upgrade finds `hub_basis` empty
+   and `hub_owed` carrying every obligation. Nothing is re-priced by the
+   migration itself.
+2. **Upgrade.** New `PoolInner` version drops the `FeeBasis` field; the
+   `HubShareSegment` dynamic fields on `FeePolicy` are replaced by the staged
+   pair; the four cancel/modify signatures change behind the version gate.
+3. **Cut over.** SDK and prepare-endpoints ship the new signatures;
+   `allowed_versions` retires the old package version once integrators are
+   across.
+
+Resting orders need nothing: they carry `maker_fee_rate` and
+`cancel_retention_bps` as before, and the hub split of their future retention
+is resolved live at whatever epoch the cancel lands in — which is the design
+working, not a migration edge.
+
+---
+
 ## Alternative: operator surcharge, not a share
 
 Worth naming because it is a different product, not a variant. Instead of
@@ -604,24 +833,24 @@ and `:1042`.
 
 ### 02 — On-chain accrual
 
-**Implemented.** What landed:
+**Implemented, then superseded by the
+[Revision](#revision-split-at-recognition).** What is on chain now:
 
 | Piece | Where |
 |---|---|
-| Per-epoch basis ring, with reported eviction | `state/fee_basis.move` |
-| `hub_owed`, `hub_basis`, `encumbered()`, `holdback()`, settle/claim primitives | `vault/multicoin_vault.move` |
-| Append-only rate ladder, class assignment, default class | `fee_policy.move` (dynamic fields) |
+| `hub_owed`, `encumbered()`, `credit_hub_share`, eager `recognize_locked_maker_fees`, claim primitive | `vault/multicoin_vault.move` |
+| Staged `current`/`next` rate pair, class assignment, default class | `fee_policy.move` (dynamic fields) |
 | `collection_id -> address` | `hub_registry.move` |
-| `settle_hub_share`, `claim_hub_share`, `hub_*` views | `multicoin_pool.move` |
-| `HUB_BASIS_WINDOW_EPOCHS = 30`, `MAX_HUB_SHARE_BPS = 4000` | `helper/constants.move` |
+| `claim_hub_share` (pays both parties), hub-paying `withdraw_pool_fees`, `hub_owed()` view, `&FeePolicy` on the cancel/modify signatures | `multicoin_pool.move` |
+| `MAX_HUB_SHARE_BPS = 4000` | `helper/constants.move` |
+
+The basis ring (`state/fee_basis.move`), the holdback, `settle_hub_share`, the
+forfeiture events and `HUB_BASIS_WINDOW_EPOCHS` are gone — see the
+[Revision](#revision-split-at-recognition) for what each existed to do.
 
 Coin pools are untouched: `pool.move` and `vault/vault.move` have no
-`collection_id` and therefore no hub, so neither the counters nor the holdback
-exist there.
-
-No public or entry trading signature changed. Two `public(package)` vault
-functions gained parameters, as
-[Timing](#timing-accumulate-the-basis-apply-the-rate-later) sets out.
+`collection_id` and therefore no hub, so no counters exist there and their
+cancel/modify signatures did not change.
 
 Default 0 bps means **no hub is paid anything** until a collection is assigned a
 class — but see [the wart](#the-one-wart-is-not-free) for the one thing the deploy
@@ -679,7 +908,9 @@ What is still open is whether forfeiting is the right answer at all, and
 [the per-pool claim load](#the-operational-shape-of-a-claim) is what decides
 whether it ever bites: 30 epochs is generous for one pool and less so for an
 operator with a wide inventory and no automation. If the answer is "it should
-never happen", the fix is a deeper ring, not a different rule.
+never happen", the fix is a deeper ring, not a different rule — or the
+[Revision](#revision-split-at-recognition), under which there is no ring, no
+deadline, and nothing to forfeit.
 
 **Who runs the settle cron?**
 Not a contract question, but the one most likely to decide whether this works. A
@@ -688,7 +919,9 @@ basis has to be settled before its bucket ages out, per pool, and
 breadth rather than its revenue. Whoever runs it is making a commitment to
 operators; if it is Triex, say so, because the trustless rotation in
 [Rollout 03](#03--operator-self-service) then controls the destination and not the
-timeliness.
+timeliness. (Mooted entirely by the
+[Revision](#revision-split-at-recognition): with no settlement step, the only
+recurring job left is the payout claim itself, which carries no deadline.)
 
 **What is the entity of record?**
 Storage unit is the natural on-chain key and what this design assumes. If

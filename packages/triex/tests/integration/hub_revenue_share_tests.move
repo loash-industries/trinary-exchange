@@ -1,11 +1,11 @@
-/// End-to-end tests for trade hub revenue share.
+/// End-to-end tests for trade hub revenue share, eager-split design.
 ///
-/// The unit suites cover the ring (`fee_basis_tests`), the reserve arithmetic
-/// (`multicoin_vault_tests`), the rate ladder (`fee_policy_hub_share_tests`) and
-/// the beneficiary table (`hub_registry_tests`). These drive the whole thing
-/// through real orders, because the two failure modes that matter most are only
-/// reachable that way: a basis that counts the same fee twice, and a rate that
-/// depends on when someone chose to settle.
+/// The unit suites cover the reserve arithmetic (`multicoin_vault_tests`), the
+/// staged rate pair (`fee_policy_hub_share_tests`) and the beneficiary table
+/// (`hub_registry_tests`). These drive the whole thing through real orders,
+/// because the two failure modes that matter most are only reachable that way:
+/// a credit that counts the same fee twice (or counts refundable escrow at
+/// all), and a payout that reaches the wrong party or strands the other's.
 #[test_only]
 module triex::integration_hub_revenue_share_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
@@ -22,7 +22,7 @@ module triex::integration_hub_revenue_share_tests {
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         quote_fee,
-        registry,
+        registry::{Self, Registry},
         trading_account::TradingAccount,
         trading_account_tests::USDC
     };
@@ -32,6 +32,8 @@ module triex::integration_hub_revenue_share_tests {
     const BOB: address = @0xB;
     /// The hub operator's payout address. Deliberately not a trader.
     const OPERATOR: address = @0x0B0B;
+    /// The treasury's payout address. Deliberately not the admin who signs.
+    const TREASURY: address = @0x77EA;
 
     const ASSET_GOLD: u64 = 1;
     const HUB_CLASS: u16 = 7;
@@ -42,7 +44,8 @@ module triex::integration_hub_revenue_share_tests {
         1_000_000 * constants::float_scaling()
     }
 
-    /// A pool, two funded accounts, gold in Bob's account, and a shared registry.
+    /// A pool, two funded accounts, gold in Bob's account, a shared hub
+    /// registry, and the treasury pointed at a distinct address.
     fun setup(test: &mut Scenario): (ID, ID, ID, CollectionCap) {
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             test,
@@ -77,6 +80,17 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(bob);
 
         hub_registry::init_for_testing(test.ctx());
+
+        // The treasury leg of a claim pays a configured address, not the admin
+        // who happens to sign — point it somewhere no other actor uses.
+        test.next_tx(OWNER);
+        {
+            let mut reg = test.take_shared_by_id<Registry>(registry_id);
+            let cap = registry::get_admin_cap_for_testing(test.ctx());
+            reg.set_treasury_address(TREASURY, &cap);
+            unit_test::destroy(cap);
+            return_shared(reg);
+        };
 
         (pool_id, alice_ta, bob_ta, collection_cap)
     }
@@ -160,90 +174,53 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(pool);
     }
 
-    /// The identity that makes a basis trustworthy.
-    ///
-    /// With nothing settled, withdrawn or claimed, the recognized revenue sitting
-    /// in the reserve is exactly `reserve - locked_maker_fees`, and the basis must
-    /// equal it. Deposits add escrow and revenue together, refunds remove escrow
-    /// from both sides, and recognition moves value between them — so any
-    /// double-count shows up here immediately, and so does any missed site.
-    fun assert_basis_matches_revenue(pool_id: ID, test: &mut Scenario) {
+    fun cancel_the_order(pool_id: ID, ta_id: ID, order_id: u64, test: &mut Scenario) {
+        test.next_tx(ALICE);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
+        pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
+        return_shared(ta);
+        return_shared(clock);
+        return_shared(policy);
+        return_shared(pool);
+    }
+
+    /// Solvency: the reserve covers both claims against it, always.
+    fun assert_solvent(pool_id: ID, test: &mut Scenario) {
         test.next_tx(OWNER);
         let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let revenue = pool.quote_fee_reserve_balance() - pool.locked_maker_fees();
-        assert!(pool.hub_unsettled_basis() == (revenue as u128));
-        // And solvency: the reserve covers every claim against it.
         assert!(
             (pool.quote_fee_reserve_balance() as u128)
-                >= (pool.locked_maker_fees() as u128)
-                    + (pool.hub_owed() as u128)
-                    + pool.hub_holdback(),
+                >= (pool.locked_maker_fees() as u128) + (pool.hub_owed() as u128),
         );
         return_shared(pool);
     }
 
-    // === Tests ===
-
-    /// Regression: the basis must count recognized revenue exactly once.
-    ///
-    /// `move_quote_to_fee_reserve` is the shared deposit primitive, reached both by
-    /// the ask-proceeds loop with earned revenue and by `settle_trading_account`
-    /// with a bid's `taker + maker`. Treating it as a recognition site on its own —
-    /// and also crediting the taker half, and also the escrow at earn-out — counts
-    /// one bid three times. That is not a rounding error: the holdback is a slice
-    /// of the basis subtracted from the reserve, so an inflated basis becomes a
-    /// claim on coins that were never collected, `withdrawable_pool_fees` underflows
-    /// and aborts, and both the admin sweep and every future claim are dead for
-    /// that pool. Trading keeps working, so nothing surfaces until someone tries to
-    /// take money out.
-    #[test]
-    fun basis_counts_recognized_revenue_exactly_once() {
-        let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-        let price = 2 * constants::float_scaling();
-
-        // 1. A resting bid: taker fee is revenue, maker fee is escrow. A basis that
-        //    counted the deposit whole would already be wrong here.
-        let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
-        assert!(maker_fee > 0);
-        assert_basis_matches_revenue(pool_id, &mut test);
-
-        // 2. A partial fill earns out part of that escrow and charges the ask side
-        //    out of proceeds — two recognition points in one transaction.
-        sell_into_the_book(pool_id, bob_ta, price, 400, &mut test);
-        assert_basis_matches_revenue(pool_id, &mut test);
-
-        // 3. Cancelling the remainder refunds most of the leftover escrow and
-        //    retains the rest as revenue.
-        test.next_tx(ALICE);
-        {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let mut ta = test.take_shared_by_id<TradingAccount>(alice_ta);
-            let proof = ta.generate_proof_as_owner(test.ctx());
-            pool.cancel_order(&mut ta, &proof, order_id, &clock, test.ctx());
-            return_shared(ta);
-            return_shared(clock);
-            return_shared(pool);
-        };
-        assert_basis_matches_revenue(pool_id, &mut test);
-
-        // No escrow left outstanding, so the basis is now the whole reserve.
+    fun hub_owed(pool_id: ID, test: &mut Scenario): u64 {
         test.next_tx(OWNER);
-        {
-            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            assert!(pool.locked_maker_fees() == 0);
-            assert!(pool.hub_unsettled_basis() == (pool.quote_fee_reserve_balance() as u128));
-            return_shared(pool);
-        };
-
-        unit_test::destroy(collection_cap);
-        end(test);
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let owed = pool.hub_owed();
+        return_shared(pool);
+        owed
     }
 
-    /// The operator is paid its configured share, and the treasury keeps the rest.
+    // === Tests ===
+
+    /// Regression: the hub is credited on recognized revenue exactly once, and
+    /// never on refundable escrow.
+    ///
+    /// The band arithmetic is what makes this a strong exactly-once check
+    /// without replaying per-fill flooring: each recognition credits
+    /// `floor(amount × bps)`, so over `n` recognitions the total credit sits in
+    /// `[R × bps/10000 − n, R × bps/10000]` where `R` is total recognized
+    /// revenue. A double-counted site lands far above the band; a missed site
+    /// far below; escrow counted at deposit shows up as a credit while the
+    /// order is still open.
     #[test]
-    fun operator_is_paid_its_share_and_the_treasury_keeps_the_rest() {
+    fun hub_owed_counts_recognized_revenue_exactly_once() {
         let mut test = begin(OWNER);
         let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
         let collection_id = {
@@ -251,6 +228,72 @@ module triex::integration_hub_revenue_share_tests {
             let id = pool.collection_id();
             return_shared(pool);
             id
+        };
+
+        // Ceiling rate, so any escrow miscount is as visible as possible.
+        let bps = constants::max_hub_share_bps();
+        configure_hub(collection_id, bps, &mut test);
+        test.next_epoch(OWNER);
+
+        let price = 2 * constants::float_scaling();
+
+        // 1. A resting bid: the taker fee is zero (nothing filled) and the maker
+        //    fee is refundable escrow. A credit that counted the deposit whole
+        //    would already be wrong here.
+        let (order_id, taker_fee, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
+        assert!(taker_fee == 0);
+        assert!(maker_fee > 0);
+        assert!(hub_owed(pool_id, &mut test) == 0);
+        assert_solvent(pool_id, &mut test);
+
+        // 2. A partial fill earns out part of that escrow and charges the ask
+        //    side out of proceeds — two recognitions in one transaction.
+        sell_into_the_book(pool_id, bob_ta, price, 400, &mut test);
+        assert_solvent(pool_id, &mut test);
+
+        // 3. Cancelling the remainder refunds most of the leftover escrow and
+        //    retains the rest as revenue — the third recognition.
+        cancel_the_order(pool_id, alice_ta, order_id, &mut test);
+        assert_solvent(pool_id, &mut test);
+
+        // Everything has resolved: no escrow outstanding, so the reserve is
+        // exactly the recognized revenue, and the credits must band around its
+        // share. Four recognition events happened (bid escrow earn-out, ask
+        // taker fee, ask maker charged nothing here — Bob was the taker — and
+        // the cancel retention), so allow one unit of flooring per event.
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            assert!(pool.locked_maker_fees() == 0);
+            let revenue = pool.quote_fee_reserve_balance() as u128;
+            let owed = pool.hub_owed() as u128;
+            let exact_share = revenue * (bps as u128) / 10_000;
+            assert!(owed <= exact_share);
+            assert!(owed + 4 >= exact_share);
+            // And the treasury's view is the exact complement.
+            assert!((pool.withdrawable_pool_fees() as u128) == revenue - owed);
+            return_shared(pool);
+        };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// One permissionless claim pays both parties: the operator's accrued share
+    /// to the beneficiary, the treasury's remainder to the treasury address.
+    #[test]
+    fun one_claim_pays_the_operator_and_the_treasury() {
+        let mut test = begin(OWNER);
+        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
+        let (registry_id, collection_id) = {
+            test.next_tx(OWNER);
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let id = pool.collection_id();
+            return_shared(pool);
+            let reg = test.take_shared<Registry>();
+            let rid = object::id(&reg);
+            return_shared(reg);
+            (rid, id)
         };
 
         // 25% — a launch-partner rate, effective next epoch.
@@ -261,83 +304,123 @@ module triex::integration_hub_revenue_share_tests {
         rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
         sell_into_the_book(pool_id, bob_ta, price, 1000, &mut test);
 
-        let revenue;
-        test.next_tx(OWNER);
-        {
+        let (revenue, share) = {
+            test.next_tx(OWNER);
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             // A fully-filled bid leaves no escrow, so the reserve is all revenue.
             assert!(pool.locked_maker_fees() == 0);
-            revenue = pool.quote_fee_reserve_balance();
+            let revenue = pool.quote_fee_reserve_balance();
+            let share = pool.hub_owed();
             assert!(revenue > 0);
+            assert!(share > 0);
             return_shared(pool);
+            (revenue, share)
         };
 
-        // Settle, then claim.
-        let expected_share = ((revenue as u128) * 2_500 / 10_000) as u64;
-        test.next_tx(OWNER);
+        // The claim: no capability, both destinations from configuration.
+        test.next_tx(BOB); // any caller
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
             let reg = test.take_shared<HubRegistry>();
+            let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
 
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == expected_share);
-            assert!(pool.hub_owed() == expected_share);
-            // Settling replaced a ceiling-rate holdback with the real figure, so the
-            // treasury's share went up, not down.
-            assert!(pool.withdrawable_pool_fees() == revenue - expected_share);
-
-            assert!(pool.claim_hub_share(&policy, &reg, &clock, test.ctx()) == expected_share);
+            let (hub_paid, treasury_paid) = pool.claim_hub_share(
+                &reg,
+                &triex_reg,
+                &clock,
+                test.ctx(),
+            );
+            assert!(hub_paid == share);
+            assert!(treasury_paid == revenue - share);
             assert!(pool.hub_owed() == 0);
-            assert!(pool.quote_fee_reserve_balance() == revenue - expected_share);
-            assert!(pool.withdrawable_pool_fees() == revenue - expected_share);
+            assert!(pool.quote_fee_reserve_balance() == 0);
 
             return_shared(clock);
+            return_shared(triex_reg);
             return_shared(reg);
-            return_shared(policy);
             return_shared(pool);
         };
 
-        // The operator holds a coin for exactly its share — and it is the operator
-        // who holds it, not the caller who paid for the transaction.
+        // The operator holds a coin for exactly its share — the operator, not
+        // the caller who paid for the transaction.
         test.next_tx(OPERATOR);
         {
             let paid = test.take_from_sender<Coin<USDC>>();
-            assert!(paid.value() == expected_share);
+            assert!(paid.value() == share);
             unit_test::destroy(paid);
         };
 
-        // And the treasury can now sweep everything that is left, with no holdback
-        // standing in the way.
-        test.next_tx(OWNER);
+        // And the treasury address holds the remainder.
+        test.next_tx(TREASURY);
         {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let cap = registry::get_admin_cap_for_testing(test.ctx());
-
-            let swept = pool.withdraw_pool_fees(&cap, revenue - expected_share, &clock, test.ctx());
-            assert!(swept.value() == revenue - expected_share);
-            assert!(pool.quote_fee_reserve_balance() == 0);
-
+            let swept = test.take_from_sender<Coin<USDC>>();
+            assert!(swept.value() == revenue - share);
             unit_test::destroy(swept);
-            unit_test::destroy(cap);
-            return_shared(clock);
-            return_shared(pool);
         };
 
         unit_test::destroy(collection_cap);
         end(test);
     }
 
-    /// A late settlement pays the rate of the epoch that earned the revenue, not
-    /// whatever is live when someone gets round to calling it.
-    ///
-    /// This is what stops permissionless settlement from being a free option. If
-    /// the rate were resolved at settle time, an operator would wait out a cut and
-    /// rush ahead of a rise, and the admin would do the reverse — and since either
-    /// may call it, whoever gains would always call first.
+    /// The admin sweep pays the operator in the same transaction, before the
+    /// treasury takes anything.
     #[test]
-    fun a_late_settlement_uses_the_rate_of_the_epoch_that_earned_it() {
+    fun the_admin_sweep_pays_the_operator_in_the_same_transaction() {
+        let mut test = begin(OWNER);
+        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
+        let collection_id = {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let id = pool.collection_id();
+            return_shared(pool);
+            id
+        };
+
+        configure_hub(collection_id, 2_500, &mut test);
+        test.next_epoch(OWNER);
+
+        let price = 2 * constants::float_scaling();
+        rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
+        sell_into_the_book(pool_id, bob_ta, price, 1000, &mut test);
+
+        test.next_tx(OWNER);
+        {
+            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let reg = test.take_shared<HubRegistry>();
+            let clock = test.take_shared<Clock>();
+            let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+            let share = pool.hub_owed();
+            let remainder = pool.withdrawable_pool_fees();
+            assert!(share > 0);
+
+            let swept = pool.withdraw_pool_fees(&reg, &cap, remainder, &clock, test.ctx());
+            assert!(swept.value() == remainder);
+            assert!(pool.hub_owed() == 0);
+            assert!(pool.quote_fee_reserve_balance() == 0);
+
+            unit_test::destroy(swept);
+            unit_test::destroy(cap);
+            return_shared(clock);
+            return_shared(reg);
+            return_shared(pool);
+
+            // The operator's coin arrived in the same transaction.
+            test.next_tx(OPERATOR);
+            let paid = test.take_from_sender<Coin<USDC>>();
+            assert!(paid.value() == share);
+            unit_test::destroy(paid);
+        };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// A staged rate change applies only to revenue recognized from the next
+    /// epoch on. Revenue already credited is untouched — there is nothing left
+    /// to re-price.
+    #[test]
+    fun a_staged_rate_change_applies_only_from_the_next_epoch() {
         let mut test = begin(OWNER);
         let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
         let collection_id = {
@@ -350,23 +433,25 @@ module triex::integration_hub_revenue_share_tests {
         // 30% from epoch 1.
         configure_hub(collection_id, 3_000, &mut test);
         test.next_epoch(OWNER);
-        let earning_epoch = test.ctx().epoch();
 
         let price = 2 * constants::float_scaling();
         rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
         sell_into_the_book(pool_id, bob_ta, price, 1000, &mut test);
 
-        let revenue;
-        test.next_tx(OWNER);
-        {
+        let (revenue_1, owed_1) = {
+            test.next_tx(OWNER);
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            revenue = pool.quote_fee_reserve_balance();
-            assert!(pool.hub_basis_at(earning_epoch) == revenue);
+            let r = pool.quote_fee_reserve_balance();
+            let o = pool.hub_owed();
             return_shared(pool);
+            (r as u128, o as u128)
         };
+        // Credited at 30%, banded for per-recognition flooring.
+        assert!(owed_1 <= revenue_1 * 3_000 / 10_000);
+        assert!(owed_1 + 4 >= revenue_1 * 3_000 / 10_000);
 
-        // Now cut the rate to 5%, twice over, so a two-slot ladder would have lost
-        // the 30% entirely.
+        // Cut the rate to 5%. The already-credited 30% is history the cut
+        // cannot reach; only new revenue prices at 5%.
         test.next_tx(OWNER);
         {
             let mut policy = test.take_shared<FeePolicy>();
@@ -376,55 +461,18 @@ module triex::integration_hub_revenue_share_tests {
             return_shared(policy);
         };
         test.next_epoch(OWNER);
-        test.next_tx(OWNER);
-        {
-            let mut policy = test.take_shared<FeePolicy>();
-            let cap = registry::get_admin_cap_for_testing(test.ctx());
-            policy.stage_hub_share_class(HUB_CLASS, 100, &cap, test.ctx());
-            unit_test::destroy(cap);
-            return_shared(policy);
-        };
-        test.next_epoch(OWNER);
 
-        // Settled two epochs late, and still priced at 30%.
-        let expected_share = ((revenue as u128) * 3_000 / 10_000) as u64;
-        test.next_tx(OWNER);
-        {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == expected_share);
-            return_shared(policy);
-            return_shared(pool);
-        };
-
-        unit_test::destroy(collection_cap);
-        end(test);
-    }
-
-    /// An unconfigured hub settles to nothing, which is what makes deploying this
-    /// a no-op until someone opts a hub in.
-    #[test]
-    fun an_unconfigured_hub_settles_to_nothing() {
-        let mut test = begin(OWNER);
-        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
-
-        let price = 2 * constants::float_scaling();
         rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
         sell_into_the_book(pool_id, bob_ta, price, 1000, &mut test);
 
         test.next_tx(OWNER);
         {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
-            let revenue = pool.quote_fee_reserve_balance();
-
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0);
-            assert!(pool.hub_owed() == 0);
-            // And the holdback is gone, so the treasury gets the lot.
-            assert!(pool.hub_holdback() == 0);
-            assert!(pool.withdrawable_pool_fees() == revenue);
-
-            return_shared(policy);
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let revenue_2 = (pool.quote_fee_reserve_balance() as u128) - revenue_1;
+            let owed_2 = (pool.hub_owed() as u128) - owed_1;
+            // The second round credited at 5%, not 30% and not a blend.
+            assert!(owed_2 <= revenue_2 * 500 / 10_000);
+            assert!(owed_2 + 4 >= revenue_2 * 500 / 10_000);
             return_shared(pool);
         };
 
@@ -432,10 +480,39 @@ module triex::integration_hub_revenue_share_tests {
         end(test);
     }
 
-    /// A pool with nothing owed claims to zero rather than demanding a beneficiary.
-    /// A payout cron batches many pools into one PTB and will meet plenty of idle
-    /// ones; requiring an address there would let a single unconfigured pool abort
-    /// the whole batch.
+    /// An unconfigured hub accrues nothing, cancels still work, and the whole
+    /// reserve is immediately the treasury's — deploying this changes nothing
+    /// until someone opts a hub in, with no settle step in front of the sweep.
+    #[test]
+    fun an_unconfigured_hub_accrues_nothing_and_never_blocks() {
+        let mut test = begin(OWNER);
+        let (pool_id, alice_ta, bob_ta, collection_cap) = setup(&mut test);
+
+        let price = 2 * constants::float_scaling();
+        let (order_id, _, _) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
+        sell_into_the_book(pool_id, bob_ta, price, 400, &mut test);
+        // Cancellation resolves the rate too — zero — and must not abort on the
+        // absent configuration.
+        cancel_the_order(pool_id, alice_ta, order_id, &mut test);
+
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let revenue = pool.quote_fee_reserve_balance();
+            assert!(revenue > 0);
+            assert!(pool.hub_owed() == 0);
+            assert!(pool.withdrawable_pool_fees() == revenue);
+            return_shared(pool);
+        };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// A pool with nothing owed and nothing earned claims to zero rather than
+    /// demanding a beneficiary. A payout cron batches many pools into one PTB
+    /// and will meet plenty of idle ones; requiring an address there would let
+    /// a single unconfigured pool abort the whole batch.
     #[test]
     fun claiming_an_idle_pool_is_a_noop_even_unconfigured() {
         let mut test = begin(OWNER);
@@ -444,16 +521,23 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
             let reg = test.take_shared<HubRegistry>();
+            let triex_reg = test.take_shared<Registry>();
             let clock = test.take_shared<Clock>();
 
             assert!(!reg.has_beneficiary(pool.collection_id()));
-            assert!(pool.claim_hub_share(&policy, &reg, &clock, test.ctx()) == 0);
+            let (hub_paid, treasury_paid) = pool.claim_hub_share(
+                &reg,
+                &triex_reg,
+                &clock,
+                test.ctx(),
+            );
+            assert!(hub_paid == 0);
+            assert!(treasury_paid == 0);
 
             return_shared(clock);
+            return_shared(triex_reg);
             return_shared(reg);
-            return_shared(policy);
             return_shared(pool);
         };
 
@@ -494,49 +578,50 @@ module triex::integration_hub_revenue_share_tests {
 
         test.next_tx(OWNER);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let policy = test.take_shared<FeePolicy>();
         let reg = test.take_shared<HubRegistry>();
+        let triex_reg = test.take_shared<Registry>();
         let clock = test.take_shared<Clock>();
 
-        pool.claim_hub_share(&policy, &reg, &clock, test.ctx());
+        pool.claim_hub_share(&reg, &triex_reg, &clock, test.ctx());
 
         return_shared(clock);
+        return_shared(triex_reg);
         return_shared(reg);
-        return_shared(policy);
         return_shared(pool);
         unit_test::destroy(collection_cap);
         end(test);
     }
 
-    /// Cancel retention is revenue and accrues like any other, so an operator is
-    /// paid on it. Flagged in the design doc as a product decision; pinned here so
-    /// changing the answer has to be deliberate.
+    /// Cancel retention is revenue and is split like any other, so an operator
+    /// is paid on it — at the rate live when the cancel lands. Flagged in the
+    /// design doc as a product decision; pinned here so changing the answer has
+    /// to be deliberate. Exact, not banded: a lone cancel is one recognition.
     #[test]
-    fun cancel_retention_accrues_to_the_hub() {
+    fun cancel_retention_credits_the_hub() {
         let mut test = begin(OWNER);
         let (pool_id, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
-        let price = 2 * constants::float_scaling();
-
-        let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
-
-        test.next_tx(ALICE);
-        {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let mut ta = test.take_shared_by_id<TradingAccount>(alice_ta);
-            let proof = ta.generate_proof_as_owner(test.ctx());
-            pool.cancel_order(&mut ta, &proof, order_id, &clock, test.ctx());
-            return_shared(ta);
-            return_shared(clock);
+        let collection_id = {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let id = pool.collection_id();
             return_shared(pool);
+            id
         };
+
+        let bps = constants::max_hub_share_bps();
+        configure_hub(collection_id, bps, &mut test);
+        test.next_epoch(OWNER);
+
+        let price = 2 * constants::float_scaling();
+        let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
+        cancel_the_order(pool_id, alice_ta, order_id, &mut test);
 
         test.next_tx(OWNER);
         {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let (_, retained) = quote_fee::split_released_fee(maker_fee, 2000);
             assert!(retained > 0);
-            assert!(pool.hub_basis_at(test.ctx().epoch()) == retained);
+            let expected = (((retained as u128) * (bps as u128)) / 10_000) as u64;
+            assert!(pool.hub_owed() == expected);
             return_shared(pool);
         };
 

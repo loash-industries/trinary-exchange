@@ -74,18 +74,10 @@ module triex::constants {
     // reachable by raising the schedule's thresholds.
     const TURNOVER_WINDOW_EPOCHS: u64 = 30;
 
-    // Length of the ring a pool accumulates unsettled hub-share basis in, in
-    // epochs. Matches TURNOVER_WINDOW_EPOCHS deliberately: both are trailing
-    // per-epoch windows over recognized revenue, and an operator reading one
-    // should not have to learn a second deadline. This is the settle-by window
-    // published to hub operators — a bucket evicted unsettled is forfeited to the
-    // treasury, and says so in a `HubBasisForfeited` event.
-    const HUB_BASIS_WINDOW_EPOCHS: u64 = 30;
-
     // Ceiling on any hub's share of the fees recognized on its pools, in basis
-    // points. A trust commitment as much as a bound: it is also how much of an
-    // unsettled basis `withdraw_pool_fees` must hold back, since the sweep cannot
-    // read a rate. Stated in CAPABILITIES.md alongside MAX_TAKER_FEE.
+    // points. A trust commitment as much as a bound, checked when a rate is
+    // staged, clamped when it is read, and asserted again where the credit is
+    // written. Stated in CAPABILITIES.md alongside MAX_TAKER_FEE.
     const MAX_HUB_SHARE_BPS: u64 = 4000; // 40%
 
     // Upper bound on tiers in a fee schedule. Resolution is a linear scan, so this
@@ -234,10 +226,6 @@ module triex::constants {
 
     public fun max_fee_tiers(): u64 {
         MAX_FEE_TIERS
-    }
-
-    public fun hub_basis_window_epochs(): u64 {
-        HUB_BASIS_WINDOW_EPOCHS
     }
 
     public fun max_hub_share_bps(): u64 {

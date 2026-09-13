@@ -577,7 +577,7 @@ module triex::integration_multicoin_pool_basic_tests {
         let order_id = order_info.order_id();
 
         // Cancel the order
-        pool.cancel_order(&mut ta, &trade_proof, order_id, &clock, test.ctx());
+        pool.cancel_order(&policy, &mut ta, &trade_proof, order_id, &clock, test.ctx());
 
         // Order was successfully cancelled - we don't need to verify it's removed
         // since get_order would abort if called on a non-existent order

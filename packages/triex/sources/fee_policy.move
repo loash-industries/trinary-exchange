@@ -472,8 +472,14 @@ module triex::fee_policy {
     // the payout address — deliberately lives in `hub_registry` instead, because a
     // user-reachable `&mut` on this object would serialize every trade that reads
     // it.
+    //
+    // The rate is applied eagerly, at the moment revenue is recognized — see
+    // `docs/trade-hub-revenue-share.md`, "Revision: split at recognition".
+    // Recognition and pricing being the same instant is what lets a class hold a
+    // plain staged pair instead of an append-only history: there is never a
+    // deferred basis that could ask "what was the rate in epoch N?" after N.
 
-    /// class_id -> the rate ladder for that class.
+    /// class_id -> the staged rate pair for that class.
     public struct HubShareClassKey has copy, drop, store { class_id: u16 }
 
     /// collection_id -> the class that collection's hubs are priced in.
@@ -482,11 +488,19 @@ module triex::fee_policy {
     /// Class a collection nobody has configured falls into.
     public struct DefaultHubShareKey has copy, drop, store {}
 
-    /// One rung of a hub-share ladder: `bps` applies to every epoch from
-    /// `from_epoch` until the next segment's `from_epoch`.
-    public struct HubShareSegment has copy, drop, store {
-        from_epoch: u64,
-        bps: u64,
+    /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
+    /// at `effective_epoch`, and reads compare against the running epoch so
+    /// promotion needs no write.
+    ///
+    /// The `effective_epoch` gate is written here deliberately rather than
+    /// inherited by analogy — `cancel_retention_bps` on the fee classes is *not*
+    /// staged, so "`FeePolicy` stages every rate change" is not a uniform
+    /// precedent. A hub rate must be pre-announced: it is what an operator
+    /// underwrites a hosting decision with.
+    public struct HubShareClass has copy, drop, store {
+        current_bps: u64,
+        next_bps: u64,
+        effective_epoch: u64,
     }
 
     public struct HubShareClassUpdated has copy, drop {
@@ -502,19 +516,10 @@ module triex::fee_policy {
 
     /// Re-price a hub-share class, effective next epoch.
     ///
-    /// The ladder is **append-only**, not the `current`/`next` pair a
-    /// `ClassSchedule` keeps. A share is settled against the rate of the epoch that
-    /// earned the revenue, and settlement can lag by up to the basis window, so the
-    /// policy has to be able to answer "what was the rate in epoch N?" for any
-    /// epoch still in that window. A two-slot ladder loses that answer after the
-    /// second re-price — precisely when settlement is late, which is when it is
-    /// asked. Segments keep it.
-    ///
-    /// Pinning the rate to the epoch that earned it also takes the timing out of
-    /// settlement. `settle_hub_share` is permissionless; if a share were priced at
-    /// whatever the ladder said when someone called it, the call would be a free
-    /// option on every staged change — settle early to dodge a cut, wait to
-    /// capture a rise, and whichever party gains calls first.
+    /// Next epoch, never this one: a rate an operator has not had the chance to
+    /// read cannot apply to revenue they host after it lands. With the split
+    /// applied at recognition, that staging is the whole timing story — there is
+    /// no settlement step whose caller could gain by moving it.
     public fun stage_hub_share_class(
         self: &mut FeePolicy,
         class_id: u16,
@@ -524,45 +529,39 @@ module triex::fee_policy {
     ) {
         assert!(bps <= constants::max_hub_share_bps(), EHubShareAboveCeiling);
 
-        // Next epoch, never this one: a rate an operator has not had the chance to
-        // read cannot apply to revenue they have already hosted.
         let from_epoch = ctx.epoch() + 1;
         let key = HubShareClassKey { class_id };
 
-        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
-            df::add(&mut self.id, key, vector[HubShareSegment { from_epoch, bps }]);
+        if (!df::exists_with_type<HubShareClassKey, HubShareClass>(&self.id, key)) {
+            // A new class starts at zero and the staged rate arrives next epoch:
+            // no hub can be paid at a rate that was never announced.
+            df::add(
+                &mut self.id,
+                key,
+                HubShareClass { current_bps: 0, next_bps: bps, effective_epoch: from_epoch },
+            );
         } else {
-            let segments: &mut vector<HubShareSegment> = df::borrow_mut(&mut self.id, key);
-            let len = segments.length();
-            // Two re-prices in one epoch would give the same `from_epoch` twice and
-            // the ladder would stop being a function of the epoch. The later write
-            // replaces the earlier: neither has taken effect yet.
-            if (len > 0 && segments[len - 1].from_epoch == from_epoch) {
-                *segments.borrow_mut(len - 1) = HubShareSegment { from_epoch, bps };
-            } else {
-                segments.push_back(HubShareSegment { from_epoch, bps });
+            let class: &mut HubShareClass = df::borrow_mut(&mut self.id, key);
+            // A pending `next` that has already come due is the running rate;
+            // promote it before overwriting, so the stage below replaces the
+            // future, never the present.
+            if (ctx.epoch() >= class.effective_epoch) {
+                class.current_bps = class.next_bps;
             };
-            prune_hub_share_segments(segments, ctx.epoch());
+            class.next_bps = bps;
+            class.effective_epoch = from_epoch;
         };
 
         event::emit(HubShareClassUpdated { class_id, bps, from_epoch });
     }
 
-    /// Drop segments no epoch inside the basis window can still resolve to. The
-    /// window is the settle-by deadline, so a rate older than a basis that could
-    /// still be settled is unreachable by construction.
-    fun prune_hub_share_segments(segments: &mut vector<HubShareSegment>, epoch: u64) {
-        let window = constants::hub_basis_window_epochs();
-        let floor = if (epoch > window) epoch - window else 0;
-        // Keep the last segment at or below the floor: it is the rate the floor
-        // epoch itself resolves to. Anything before that one is shadowed.
-        while (segments.length() > 1 && segments[1].from_epoch <= floor) {
-            segments.remove(0);
-        };
-    }
-
-    /// Point a collection's hubs at a share class. One write re-prices every pool
-    /// of every asset in that collection.
+    /// Point a collection's hubs at a share class, effective immediately.
+    ///
+    /// Immediate is safe here in a way it was not under deferred settlement:
+    /// with the split applied at recognition, an assignment can only affect
+    /// revenue that has not happened yet. There is no unsettled basis for it to
+    /// re-price retroactively. One write re-prices every pool of every asset in
+    /// the collection, from now on.
     public fun assign_hub_share_class(
         self: &mut FeePolicy,
         collection_id: ID,
@@ -603,32 +602,29 @@ module triex::fee_policy {
         };
     }
 
-    /// The share rate that applied to revenue recognized in `epoch`, in bps.
+    /// The share rate applying to revenue this collection's pools recognize in
+    /// `epoch`, in bps.
     ///
-    /// Zero for an unconfigured collection, an unconfigured class, or an epoch
-    /// before the class's first segment — so an unconfigured exchange settles
-    /// every basis to nothing, and the feature is inert until someone configures
-    /// it.
+    /// **Total by design — this must never abort.** It is resolved on the
+    /// cancel and modify paths, where an abort would freeze user funds, so every
+    /// missing piece of configuration resolves to zero: an unconfigured
+    /// collection, an unconfigured class, an absent default. The result is also
+    /// clamped to the ceiling as a belt over the write-time assert.
     public fun hub_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
         let class_id = self.hub_share_class(collection_id);
         let key = HubShareClassKey { class_id };
-        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
+        if (!df::exists_with_type<HubShareClassKey, HubShareClass>(&self.id, key)) {
             return 0
         };
 
-        let segments: &vector<HubShareSegment> = df::borrow(&self.id, key);
-        let mut i = segments.length();
-        while (i > 0) {
-            i = i - 1;
-            let segment = &segments[i];
-            if (segment.from_epoch <= epoch) return segment.bps;
-        };
+        let class: &HubShareClass = df::borrow(&self.id, key);
+        let bps = if (epoch >= class.effective_epoch) class.next_bps else class.current_bps;
 
-        0
+        bps.min(constants::max_hub_share_bps())
     }
 
     public fun hub_share_class_exists(self: &FeePolicy, class_id: u16): bool {
-        df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(
+        df::exists_with_type<HubShareClassKey, HubShareClass>(
             &self.id,
             HubShareClassKey { class_id },
         )
@@ -649,14 +645,4 @@ module triex::fee_policy {
 
         0
     }
-
-    #[test_only]
-    public fun hub_share_segment_count(self: &FeePolicy, class_id: u16): u64 {
-        let key = HubShareClassKey { class_id };
-        if (!df::exists_with_type<HubShareClassKey, vector<HubShareSegment>>(&self.id, key)) {
-            return 0
-        };
-        df::borrow<HubShareClassKey, vector<HubShareSegment>>(&self.id, key).length()
-    }
-
 }

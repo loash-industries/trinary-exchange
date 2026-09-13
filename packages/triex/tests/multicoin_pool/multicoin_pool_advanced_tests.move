@@ -1234,12 +1234,14 @@ module triex::integration_multicoin_pool_advanced_tests {
         // Now modify the order
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             order_info.order_id(),
@@ -1254,6 +1256,7 @@ module triex::integration_multicoin_pool_advanced_tests {
         assert!(modified_order.status() == constants::live(), 1);
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(alice_bm);
         test.return_to_sender(alice_trade_cap);
@@ -1322,45 +1325,27 @@ module triex::integration_multicoin_pool_advanced_tests {
         test.next_tx(ALICE);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
             let proof = ta.generate_proof_as_owner(test.ctx());
-            pool.cancel_order(&mut ta, &proof, order_id, &clock, test.ctx());
+            pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
 
             // 80% leaves the reserve back to Alice; the 20% retention stays.
             let (refund, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
             assert!(pool.quote_fee_reserve_balance() == retained, 2);
             assert!(pool.locked_maker_fees() == 0, 3);
 
-            // The retention is recognized revenue, so it is now hub basis, and an
-            // unsettled basis is held back at the ceiling until someone prices it.
-            // The retention has stopped being a maker's claim without yet becoming
-            // wholly the treasury's.
-            let holdback = mc_utils::ceil_bps(retained, constants::max_hub_share_bps());
-            assert!(pool.hub_basis_at(test.ctx().epoch()) == retained, 4);
-            assert!(pool.hub_holdback() == (holdback as u128), 5);
-            assert!(pool.withdrawable_pool_fees() == retained - holdback, 6);
+            // The retention is recognized revenue, split at this instant. No hub
+            // is configured, so the operator's share is zero and the whole
+            // retention is immediately the treasury's — nothing provisional,
+            // nothing to settle before the sweep.
+            assert!(pool.hub_owed() == 0, 4);
+            assert!(pool.withdrawable_pool_fees() == retained, 5);
 
             return_shared(ta);
-            return_shared(clock);
-            return_shared(pool);
-        };
-
-        // Settling an unconfigured hub prices the basis at zero and hands the whole
-        // retention back to the treasury. This is what "deploying it changes
-        // nothing" actually costs: not a rate, but a settle call before the sweep.
-        test.next_tx(OWNER);
-        {
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
-            let (_, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
-
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 7);
-            assert!(pool.hub_owed() == 0, 8);
-            assert!(pool.hub_holdback() == 0, 9);
-            assert!(pool.withdrawable_pool_fees() == retained, 10);
-
             return_shared(policy);
+            return_shared(clock);
             return_shared(pool);
         };
 
@@ -1433,11 +1418,13 @@ module triex::integration_multicoin_pool_advanced_tests {
         test.next_tx(ALICE);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
             let proof = ta.generate_proof_as_owner(test.ctx());
-            pool.cancel_order(&mut ta, &proof, order_id, &clock, test.ctx());
+            pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
             return_shared(ta);
+            return_shared(policy);
             return_shared(clock);
             return_shared(pool);
         };
@@ -1560,15 +1547,12 @@ module triex::integration_multicoin_pool_advanced_tests {
             );
             assert!(order.status() == constants::filled(), 3);
             assert!(pool.locked_maker_fees() == 0, 4);
-            // No escrow outstanding, but the reserve is not wholly sweepable: every
-            // fee in it has been recognized, so all of it is unsettled hub basis and
-            // the ceiling slice is held back until settled.
+            // No escrow outstanding, and the reserve is wholly sweepable: the
+            // split was applied at recognition, no hub is configured, so every
+            // fee in it belongs to the treasury with nothing held back.
             let reserve = pool.quote_fee_reserve_balance();
-            let holdback = mc_utils::ceil_bps(reserve, constants::max_hub_share_bps());
-            assert!(pool.hub_holdback() == (holdback as u128), 5);
-            assert!(pool.withdrawable_pool_fees() == reserve - holdback, 6);
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 7);
-            assert!(pool.withdrawable_pool_fees() == reserve, 8);
+            assert!(pool.hub_owed() == 0, 5);
+            assert!(pool.withdrawable_pool_fees() == reserve, 6);
             return_shared(ta);
             return_shared(clock);
             return_shared(pool);
@@ -1854,14 +1838,16 @@ module triex::integration_multicoin_pool_advanced_tests {
         // No orders placed; cancel_all_orders should be a no-op (no abort).
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let trade_cap = test.take_from_sender<TradeCap>();
         let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
 
-        pool.cancel_all_orders(&mut ta, &trade_proof, &clock, test.ctx());
+        pool.cancel_all_orders(&policy, &mut ta, &trade_proof, &clock, test.ctx());
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(ta);
         test.return_to_sender(trade_cap);
@@ -2387,7 +2373,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&mut ta, &trade_proof, order_info_1.order_id(), &clock, test.ctx());
+        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_1.order_id(), &clock, test.ctx());
 
         return_shared(pool);
         return_shared(policy);
@@ -2422,7 +2408,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&mut ta, &trade_proof, order_info_2.order_id(), &clock, test.ctx());
+        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_2.order_id(), &clock, test.ctx());
 
         return_shared(pool);
         return_shared(policy);
@@ -2457,7 +2443,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&mut ta, &trade_proof, order_info_3.order_id(), &clock, test.ctx());
+        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_3.order_id(), &clock, test.ctx());
 
         return_shared(pool);
         return_shared(policy);
@@ -2492,7 +2478,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&mut ta, &trade_proof, order_info_4.order_id(), &clock, test.ctx());
+        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_4.order_id(), &clock, test.ctx());
 
         return_shared(pool);
         return_shared(policy);
@@ -3335,13 +3321,12 @@ module triex::integration_multicoin_pool_advanced_tests {
             // Only the retention is left, and no escrow is outstanding.
             assert!(pool.locked_maker_fees() == 0, 6);
             assert!(pool.quote_fee_reserve_balance() == alice_escrow - refund, 7);
-            // Expiry retention is recognized revenue like any other, so it accrues
-            // hub basis and carries the same holdback until settled.
+            // Expiry retention is recognized revenue like any other, split at
+            // recognition. No hub is configured, so all of it is immediately
+            // sweepable.
             let reserve = pool.quote_fee_reserve_balance();
-            let holdback = mc_utils::ceil_bps(reserve, constants::max_hub_share_bps());
-            assert!(pool.withdrawable_pool_fees() == reserve - holdback, 8);
-            assert!(pool.settle_hub_share(&policy, test.ctx()) == 0, 9);
-            assert!(pool.withdrawable_pool_fees() == reserve, 10);
+            assert!(pool.hub_owed() == 0, 8);
+            assert!(pool.withdrawable_pool_fees() == reserve, 9);
 
             return_shared(ta);
             return_shared(clock);
