@@ -204,11 +204,11 @@ module triex::multicoin_vault {
     public(package) fun recognize_locked_maker_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         amount: u64,
-        hub_bps: u64,
+        operator_bps: u64,
     ) {
         let recognized = amount.min(self.locked_maker_fees);
         self.locked_maker_fees = self.locked_maker_fees - recognized;
-        self.credit_operator_share(recognized, hub_bps);
+        self.credit_operator_share(recognized, operator_bps);
     }
 
     // === Operator share ===
@@ -230,14 +230,14 @@ module triex::multicoin_vault {
     public(package) fun credit_operator_share<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         amount: u64,
-        hub_bps: u64,
+        operator_bps: u64,
     ) {
         // Belt over the policy's write-time assert and read-time clamp: a rate
         // above the ceiling must not mint a claim above it.
-        assert!(hub_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
-        if (amount == 0 || hub_bps == 0) return;
+        assert!(operator_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
+        if (amount == 0 || operator_bps == 0) return;
 
-        let owed = (((amount as u128) * (hub_bps as u128)) / bps_precision()) as u64;
+        let owed = (((amount as u128) * (operator_bps as u128)) / bps_precision()) as u64;
         self.operator_owed = self.operator_owed + owed;
     }
 

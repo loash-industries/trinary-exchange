@@ -612,7 +612,7 @@ module triex::multicoin_pool {
         let previous_quantity = self.get_order(order_id).quantity();
 
         let pool_inner = self.load_inner_mut();
-        let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
+        let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let (cancel_quantity, order) = pool_inner
             .book
             .modify_order(order_id, new_quantity, clock.timestamp_ms());
@@ -653,7 +653,7 @@ module triex::multicoin_pool {
         // revenue recognized now, so the hub is credited its share of it now.
         pool_inner
             .vault
-            .recognize_locked_maker_fees(fee_release.release_retained(), hub_bps);
+            .recognize_locked_maker_fees(fee_release.release_retained(), operator_bps);
 
         order.emit_order_modified(
             pool_inner.pool_id,
@@ -681,7 +681,7 @@ module triex::multicoin_pool {
         ctx: &mut TxContext,
     ) {
         let pool_inner = self.load_inner_mut();
-        let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
+        let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
         let mut order = pool_inner.book.cancel_order(order_id);
         assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
         let (settled, owed, fee_release) = pool_inner
@@ -718,7 +718,7 @@ module triex::multicoin_pool {
         // split between hub and treasury at this instant's rate.
         pool_inner
             .vault
-            .recognize_locked_maker_fees(fee_release.release_retained(), hub_bps);
+            .recognize_locked_maker_fees(fee_release.release_retained(), operator_bps);
 
         order.emit_order_canceled(
             pool_inner.pool_id,
@@ -1400,7 +1400,7 @@ module triex::multicoin_pool {
             // The hub's share rate, resolved once per transaction and threaded to
             // every recognition below — a fill with N maker matches must not do N
             // dynamic-field walks.
-            let hub_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
+            let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
             let mut order_info = order_info::new(
                 pool_inner.pool_id,
                 trading_account.id(),
@@ -1481,7 +1481,7 @@ module triex::multicoin_pool {
             // — the deposit above moved it into the reserve, and only the maker
             // half of that deposit is escrow — so the hub is credited its share
             // of the taker half here, exactly.
-            pool_inner.vault.credit_operator_share(taker_fee_amount, hub_bps);
+            pool_inner.vault.credit_operator_share(taker_fee_amount, operator_bps);
             // One deposit per account charged, so each reaches the reserve
             // attributed to whoever paid it: the ask taker for their own fee,
             // each ask maker for the fee taken out of their fill proceeds.
@@ -1499,7 +1499,7 @@ module triex::multicoin_pool {
                         proceeds_fee.amount(),
                         clock.timestamp_ms(),
                     );
-                pool_inner.vault.credit_operator_share(proceeds_fee.amount(), hub_bps);
+                pool_inner.vault.credit_operator_share(proceeds_fee.amount(), operator_bps);
                 fee_idx = fee_idx + 1;
             };
             // Escrow these fills earned out, plus the share retained from any
@@ -1507,7 +1507,7 @@ module triex::multicoin_pool {
             // actual decrement is credited inside.
             pool_inner
                 .vault
-                .recognize_locked_maker_fees(fee_flows.recognized(), hub_bps);
+                .recognize_locked_maker_fees(fee_flows.recognized(), operator_bps);
             // The taker fee is revenue the moment it is charged, so it counts
             // toward this trader's tier — credited into the exchange-wide ring on
             // their own trading_account, after pricing, so the order never discounts
