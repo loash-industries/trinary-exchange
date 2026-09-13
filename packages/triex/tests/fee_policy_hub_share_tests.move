@@ -26,16 +26,43 @@ module triex::fee_policy_operator_share_tests {
 
     #[test]
     fun unconfigured_resolves_to_zero() {
-        // Deploying the ladder has to change nothing. An unassigned collection, an
-        // unconfigured class and a default that was never set must all price to
-        // zero, so every basis settles to nothing until someone opts a hub in.
+        // Deploying the ladder has to change nothing. A fresh policy ships with
+        // genesis class 0 at zero bps registered as the default, so an
+        // unassigned collection resolves to a real class that prices to zero
+        // until someone opts a hub in.
         let mut test = begin(OWNER);
         let policy = fee_policy::create_for_testing(test.ctx());
 
+        assert!(policy.operator_share_class_exists(0));
         assert_eq!(policy.operator_share_class(a_collection()), 0);
         assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
         assert_eq!(policy.operator_share_bps_at(a_collection(), 99), 0);
 
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    fun staging_class_zero_reprices_the_genesis_default() {
+        // Class 0 is the genesis default class, so staging it is the explicit
+        // "re-price every unassigned collection" operation — with the same
+        // next-epoch pre-announcement as any other class, and still shadowed by
+        // an explicit assignment.
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.stage_operator_share_class(0, 1_000, &cap, test.ctx());
+
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
+
+        policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
+        policy.assign_operator_share_class(a_collection(), CLASS_PARTNER, &cap);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_500);
+        assert_eq!(policy.operator_share_bps_at(another_collection(), 1), 1_000);
+
+        destroy(cap);
         destroy(policy);
         end(test);
     }

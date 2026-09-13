@@ -180,17 +180,36 @@ module triex::fee_policy {
     }
 
     // === Init ===
-    /// The policy object ships empty. Classes are created by the admin after
-    /// publish — pool creation requires a default class for the pool's quote, so
-    /// the bootstrap order is: approve quote, create class, create pools.
+    /// The fee tables ship empty — classes are created by the admin after
+    /// publish, and pool creation requires a default class for the pool's quote,
+    /// so the bootstrap order is: approve quote, create class, create pools. The
+    /// hub-share side ships configured instead: see `new_policy`.
     fun init(ctx: &mut TxContext) {
-        let policy = FeePolicy {
+        transfer::share_object(new_policy(ctx));
+    }
+
+    /// The one constructor. Seeds the genesis hub-share state that
+    /// `operator_share_class` relies on: class 0, starting at zero bps,
+    /// registered as the default class. Neither field has a removal path, so
+    /// resolution always lands on a real class — and class 0 has one defined
+    /// meaning, "the class unassigned collections pay", rather than being a
+    /// free id that happens to double as a fallback.
+    fun new_policy(ctx: &mut TxContext): FeePolicy {
+        let mut policy = FeePolicy {
             id: object::new(ctx),
             classes: table::new(ctx),
             default_classes: table::new(ctx),
             multicoin_default_classes: table::new(ctx),
         };
-        transfer::share_object(policy);
+
+        df::add(
+            &mut policy.id,
+            OperatorShareClassKey { class_id: 0 },
+            OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+        );
+        df::add(&mut policy.id, DefaultOperatorShareKey {}, 0u16);
+
+        policy
     }
 
     // === Public-Mutative Functions * ADMIN * ===
@@ -455,12 +474,7 @@ module triex::fee_policy {
     // === Test Functions ===
     #[test_only]
     public fun create_for_testing(ctx: &mut TxContext): FeePolicy {
-        FeePolicy {
-            id: object::new(ctx),
-            classes: table::new(ctx),
-            default_classes: table::new(ctx),
-            multicoin_default_classes: table::new(ctx),
-        }
+        new_policy(ctx)
     }
 
     #[test_only]
@@ -494,7 +508,8 @@ module triex::fee_policy {
     /// collection_id -> the class that collection's hubs are priced in.
     public struct OperatorShareAssignmentKey has copy, drop, store { collection_id: ID }
 
-    /// Class a collection nobody has configured falls into.
+    /// Class a collection nobody has configured falls into. Written at genesis
+    /// to class 0 and never removed, only re-pointed.
     public struct DefaultOperatorShareKey has copy, drop, store {}
 
     /// collection_id -> the address that collection's share is paid to.
@@ -553,6 +568,10 @@ module triex::fee_policy {
     /// read cannot apply to revenue they host after it lands. With the split
     /// applied at recognition, that staging is the whole timing story — there is
     /// no settlement step whose caller could gain by moving it.
+    ///
+    /// Class 0 exists from genesis as the default class, so staging class 0 is
+    /// the explicit "re-price every unassigned collection" operation — never a
+    /// fresh negotiated class that quietly doubles as a fallback.
     public fun stage_operator_share_class(
         self: &mut FeePolicy,
         class_id: u16,
@@ -611,8 +630,9 @@ module triex::fee_policy {
         event::emit(OperatorShareClassAssigned { collection_id, class_id });
     }
 
-    /// Class for collections nobody has configured. Absent means zero, which is
-    /// why deploying the feature changes nothing until a hub is assigned.
+    /// Class for collections nobody has configured. Ships pointing at genesis
+    /// class 0, which pays zero — deploying the feature changes nothing until a
+    /// hub is assigned, class 0 is re-priced, or the default is re-pointed.
     public fun set_default_operator_share_class(
         self: &mut FeePolicy,
         class_id: u16,
@@ -627,10 +647,11 @@ module triex::fee_policy {
     /// `epoch`, in bps.
     ///
     /// **Total by design — this must never abort.** It is resolved on the
-    /// cancel and modify paths, where an abort would freeze user funds, so every
-    /// missing piece of configuration resolves to zero: an unconfigured
-    /// collection, an unconfigured class, an absent default. The result is also
-    /// clamped to the ceiling as a belt over the write-time assert.
+    /// cancel and modify paths, where an abort would freeze user funds. An
+    /// unconfigured collection resolves through the genesis default (always
+    /// present), and the missing-class check below is a belt — both writers
+    /// assert the class exists, and genesis class 0 always does. The result is
+    /// also clamped to the ceiling as a belt over the write-time assert.
     public fun operator_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
         let class_id = self.operator_share_class(collection_id);
         let key = OperatorShareClassKey { class_id };
@@ -651,20 +672,16 @@ module triex::fee_policy {
         )
     }
 
-    /// Share class a collection is priced in, falling back to the default class
-    /// and then to class 0.
+    /// Share class a collection is priced in, falling back to the default
+    /// class. The default is written in `new_policy` and has no removal path,
+    /// so the borrow cannot miss.
     public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
         let assignment = OperatorShareAssignmentKey { collection_id };
         if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, assignment)) {
             return *df::borrow<OperatorShareAssignmentKey, u16>(&self.id, assignment)
         };
 
-        let default = DefaultOperatorShareKey {};
-        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default)) {
-            return *df::borrow<DefaultOperatorShareKey, u16>(&self.id, default)
-        };
-
-        0
+        *df::borrow<DefaultOperatorShareKey, u16>(&self.id, DefaultOperatorShareKey {})
     }
 
     /// Register the one witness type allowed to register beneficiaries,
