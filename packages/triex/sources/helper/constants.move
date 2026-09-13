@@ -10,7 +10,6 @@ module triex::constants {
     const DEFAULT_STAKE_REQUIRED: u64 = 100_000_000_000; // 100 CRED // #feat:stake
     const HALF: u64 = 500_000_000;
     const CRED_UNIT: u64 = 1_000_000;
-    const FEE_PENALTY_MULTIPLIER: u64 = 1_250_000_000; // 25% more than normal
     const EWMA_DF_KEY: vector<u8> = b"ewma";
     // #feat:refer
     // const REFERRAL_DF_KEY: vector<u8> = b"referral";
@@ -238,10 +237,6 @@ module triex::constants {
 
     public fun max_fan_out(): u64 {
         MAX_FAN_OUT
-    }
-
-    public fun fee_penalty_multiplier(): u64 {
-        FEE_PENALTY_MULTIPLIER
     }
 
     public fun default_ewma_alpha(): u64 {

@@ -110,20 +110,14 @@ module triex::integration_master_conversion_tests {
         utils::add_spam(&mut bob_balance, spam_delta);
         utils::sub_sui(&mut bob_balance, sui_delta);
 
-        let taker_quantity = quantity;
-        let maker_quantity = quantity;
-        // In new fee model: only bid orders (buyers) pay fees.
-        // Alice places 2 bid orders: maker (quantity) + taker (quantity) - pays fees.
-        // Bob places ask order (seller): pays NO fees.
-        let maker_fee = math::mul(
-            math::mul(constants::maybe_apply_fee(is_bid), math::mul(price, maker_quantity)),
-            95 * constants::float_scaling(),
-        );
-        let taker_fee = math::mul(
-            math::mul(constants::maybe_apply_fee(is_bid), math::mul(price, taker_quantity)),
-            95 * constants::float_scaling(),
-        );
-        utils::sub_cred(&mut alice_balance, maker_fee + taker_fee);
+        // Both sides pay, and they pay the same. `execute_cross_trading` crosses
+        // once each way: Alice rests a bid that Bob lifts, then Alice lifts what
+        // is left of Bob's ask. So each is maker on one leg and taker on the
+        // other, and the bill is quote-denominated — SPAM here, not CRED.
+        let half_quote = math::mul(price, quantity);
+        let both_legs = utils::maker_fee_on(half_quote) + utils::taker_fee_on(half_quote);
+        utils::sub_spam(&mut alice_balance, both_legs);
+        utils::sub_spam(&mut bob_balance, both_legs);
 
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);

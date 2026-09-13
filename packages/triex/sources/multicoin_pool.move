@@ -1216,8 +1216,10 @@ module triex::multicoin_pool {
         self.load_inner().vault.withdrawable_quote_fees()
     }
 
-    /// The hub operator's accrued, claimable share. Exact at all times — credited
-    /// at recognition, so there is no unsettled remainder beside it.
+    /// The hub operator's accrued, claimable share. Settled at all times —
+    /// credited at recognition, so there is no unsettled remainder beside it.
+    /// The amount floors per recognition event; see `operator_owed` on the
+    /// vault for what that costs.
     public fun operator_owed<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>): u64 {
         self.load_inner().vault.operator_owed()
     }

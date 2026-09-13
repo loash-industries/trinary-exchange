@@ -83,8 +83,15 @@ module triex::multicoin_vault {
         /// The portion of `quote_fee_reserve` a hub operator may claim. Written
         /// eagerly, at the moment revenue is recognized: each recognition credits
         /// `floor(recognized × bps / 10000)` at the rate the policy resolves for
-        /// the current epoch. Exact at all times — there is no provisional or
-        /// unsettled state between a trade and a claim.
+        /// the current epoch.
+        ///
+        /// Settled at all times — there is no provisional or unsettled state
+        /// between a trade and a claim. That is a statement about *timing*, not
+        /// about amount: the credit floors per recognition event, of which a
+        /// single transaction can produce one per fill, so the figure sits below
+        /// `bps` of the recognized total by up to one raw unit per event. The
+        /// remainder stays in the reserve as treasury revenue — the share is
+        /// never paid out of fees that were not collected.
         operator_owed: u64,
     }
 
