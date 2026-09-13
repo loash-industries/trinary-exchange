@@ -19,6 +19,9 @@ module triex::coin_order_info {
 
     // === Errors ===
     const EOrderInvalidPrice: u64 = 0;
+    /// Reuses the code DeepBook assigns the same condition, though the bound here is
+    /// derived from the order's own price rather than a per-pool constant.
+    const EOrderBelowMinimumSize: u64 = 1;
     const EInvalidExpireTimestamp: u64 = 3;
     const EInvalidOrderType: u64 = 4;
     const EPOSTOrderCrossesOrderbook: u64 = 5;
@@ -433,6 +436,20 @@ module triex::coin_order_info {
         order_info.price <= constants::max_price(),
             EOrderInvalidPrice,
         );
+        // A resting order smaller than one quote unit's worth of base at its own
+        // price can never produce a non-zero fill, since the matcher quantizes to
+        // exactly this bound — it would sit on the book forever as unfillable dust.
+        // Reject it at placement instead. The bound is read off the price, so it
+        // needs no per-pool minimum size: it is 1 for a base priced at or above one
+        // quote unit and scales up automatically as the price falls.
+        //
+        // Market orders returned above: they match at each maker's price, not at the
+        // sentinel price they carry, and they never rest.
+        assert!(
+            order_info.original_quantity >=
+        math::min_qty_for_nonzero_quote(order_info.price, order_info.price_scaling),
+            EOrderBelowMinimumSize,
+        );
     }
 
     /// Assert order types after partial fill against the order book.
@@ -498,6 +515,29 @@ module triex::coin_order_info {
         let expire_maker =
             self.self_matching_option() == constants::cancel_maker() &&
         maker.trading_account_id() == self.trading_account_id();
+        let expired = timestamp > maker.expire_timestamp() || expire_maker;
+        // Decline a live fill that would settle for no quote at all. `qty_to_quote`
+        // floors, so a small enough fill converts to zero: the taker would receive
+        // base without paying for it while the maker's `filled_quantity` advanced
+        // uncompensated. The threshold is read off the maker's price, so it costs no
+        // configured minimum and holds whatever the base is worth.
+        //
+        // Only the zero case is refused — fills are deliberately *not* rounded to a
+        // whole multiple of that threshold. Quantizing would also truncate ordinary
+        // fills, which matters because a quote with few decimals puts normal prices
+        // well below `FLOAT_SCALING`. Flooring the quote instead leaves the taker a
+        // rounding benefit under one raw quote unit per fill, which is what every
+        // fixed-point book does.
+        //
+        // An expiry is exempt: it moves no quote, it hands the maker their own
+        // principal back. That also keeps expired orders reachable for cleanup when
+        // the crossing amount is below the threshold.
+        if (!expired) {
+            let matchable = self.remaining_quantity().min(maker.quantity() - maker.filled_quantity());
+            if (math::qty_to_quote(matchable, maker.price(), self.price_scaling) == 0) {
+                return false
+            };
+        };
         let fill = maker.generate_fill(
             timestamp,
             self.remaining_quantity(),
