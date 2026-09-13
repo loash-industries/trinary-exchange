@@ -1,8 +1,8 @@
-/// Operator registry holds where each trade hub's share of the fees earned on it is
+/// Operator registry holds where each trade operator's share of the fees earned on it is
 /// paid: `collection_id -> address`.
 ///
 /// This is deliberately not a table on `FeePolicy`. The payout address is the one
-/// piece of revenue-share configuration a hub operator writes themselves, and
+/// piece of revenue-share configuration a operator operator writes themselves, and
 /// `fee_policy`'s module invariant is that nothing on a user-reachable path may
 /// ever take it `&mut` — every trade on the exchange reads that object
 /// immutably, and immutable reads of a shared object commute while a write does
@@ -18,7 +18,7 @@
 /// an adapter package that checks the caller's `OwnerCap<StorageUnit>` against
 /// the collection — lands separately, so it can be reviewed as an authorization
 /// change rather than as a rider on fee accounting.
-module triex::hub_registry {
+module triex::operator_registry {
     use std::type_name::{Self, TypeName};
     use sui::{event, table::{Self, Table}};
     use triex::registry::TriexAdminCap;
@@ -45,7 +45,7 @@ module triex::hub_registry {
         collection_id: ID,
         beneficiary: address,
         /// False when the admin cap set it, true when a registered adapter did.
-        /// An operator auditing their own hub wants to see which.
+        /// An operator auditing their own operator wants to see which.
         by_adapter: bool,
     }
 
@@ -73,7 +73,7 @@ module triex::hub_registry {
     /// A claim pays whoever is configured at claim time, so rotating between an
     /// accrual and a claim pays the new address for revenue the old one hosted.
     /// That is a settlement question between the two parties, and the accrual
-    /// events are the record of it — the contract cannot arbitrate a hub sale it
+    /// events are the record of it — the contract cannot arbitrate a operator sale it
     /// has no way to observe.
     public fun set_beneficiary(
         self: &mut OperatorRegistry,
