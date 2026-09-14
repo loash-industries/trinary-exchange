@@ -139,38 +139,6 @@ module triex::integration_test_utils {
         }
     }
 
-    public fun burn_cred<BaseAsset, QuoteAsset>(
-        sender: address,
-        pool_id: ID,
-        expected_amount_burned: u64,
-        test: &mut Scenario,
-    ) {
-        test.next_tx(sender);
-        {
-            cred::share_treasury_for_testing(test.ctx());
-        };
-        test.next_tx(sender);
-        {
-            let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let mut treasury = test.take_shared<ProtectedTreasury>();
-            let amount_burned = pool::burn_cred<BaseAsset, QuoteAsset>(
-                &mut pool,
-                &mut treasury,
-                test.ctx(),
-            );
-            if (amount_burned != expected_amount_burned) {
-                std::debug::print(&b"--- Burn Amount Mismatch ---");
-                std::debug::print(&b"actual:");
-                std::debug::print(&amount_burned);
-                std::debug::print(&b"expected:");
-                std::debug::print(&expected_amount_burned);
-            };
-            assert!(amount_burned == expected_amount_burned, 0);
-            return_shared(pool);
-            return_shared(treasury);
-        }
-    }
-
     public fun execute_cross_trading<BaseAsset, QuoteAsset>(
         pool_id: ID,
         trading_account_id_1: ID,

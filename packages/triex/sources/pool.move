@@ -8,7 +8,7 @@ module triex::pool {
         vec_set::{Self, VecSet},
         versioned::{Self, Versioned}
     };
-    use token::cred::{CRED, ProtectedTreasury};
+    use token::cred::CRED;
     use triex::{
         big_vector::BigVector,
         coin_account::Account,
@@ -67,11 +67,6 @@ module triex::pool {
         taker_fee: u64,
         maker_fee: u64,
         treasury_address: address,
-    }
-
-    public struct CredBurned<phantom BaseAsset, phantom QuoteAsset> has copy, drop, store {
-        pool_id: ID,
-        cred_burned: u64,
     }
 
     // #feat:refer
@@ -536,9 +531,7 @@ module triex::pool {
                 trading_account.id(),
                 cancel_quantity,
                 order,
-                self.pool_id,
                 self.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -590,9 +583,7 @@ module triex::pool {
             .process_cancel(
                 &mut order,
                 trading_account.id(),
-                self.pool_id,
                 self.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -867,27 +858,6 @@ module triex::pool {
     // }
 
     // === Public-Mutative Functions * OPERATIONAL * ===
-
-    /// Burns CRED tokens from the pool. Amount to burn is within history
-    /// #feat:rebate
-    public fun burn_cred<BaseAsset, QuoteAsset>(
-        self: &mut Pool<BaseAsset, QuoteAsset>,
-        treasury_cap: &mut ProtectedTreasury,
-        ctx: &mut TxContext,
-    ): u64 {
-        let self = self.load_inner_mut();
-        let balance_to_burn = self.state.history_mut().reset_balance_to_burn();
-        let cred_to_burn = self.vault.withdraw_cred_to_burn(balance_to_burn).into_coin(ctx);
-        let amount_burned = cred_to_burn.value();
-        token::cred::burn(treasury_cap, cred_to_burn);
-
-        event::emit(CredBurned<BaseAsset, QuoteAsset> {
-            pool_id: self.pool_id,
-            cred_burned: amount_burned,
-        });
-
-        amount_burned
-    }
 
     // #feat:refer
     // /// Mint a TriexReferral and set the additional bps for the referral.
@@ -1645,7 +1615,7 @@ module triex::pool {
             // the shared policy object, which stages changes per epoch itself,
             // so an order placed on an epoch-boundary transaction prices against
             // the freshly effective schedule with no promotion step here.
-            let pending = pool_inner.state.take_pending_turnover(trading_account.id(), ctx);
+            let pending = pool_inner.state.take_pending_turnover(trading_account.id());
             let turnover = trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
             let (
                 _tier,
@@ -1682,7 +1652,6 @@ module triex::pool {
                     // &ewma_state, // #feat:ewma
                     taker_fee_rate,
                     maker_fee_rate,
-                    pool_inner.pool_id,
                     ctx,
                 );
             // Makers whose orders expired during this match get the refundable

@@ -331,14 +331,11 @@ module triex::integration_master_flow_tests {
         test.next_epoch(utils::owner());
         assert!(test.ctx().epoch() == 29, 0);
 
-        let expected_amount_burned = 0;
         utils::add_cred(&mut alice_balance, 0);
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         utils::add_cred(&mut bob_balance, 0);
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
-
-        utils::burn_cred<SUI, USDC>(utils::alice(), pool1_id, expected_amount_burned, &mut test);
 
         end(test);
     }

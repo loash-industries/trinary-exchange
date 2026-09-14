@@ -13,7 +13,7 @@ module triex::multicoin_pool {
         vec_set::{Self, VecSet},
         versioned::{Self, Versioned}
     };
-    use token::cred::{CRED, ProtectedTreasury};
+    use token::cred::CRED;
     use triex::{
         account::Account,
         book::{Self, Book},
@@ -73,11 +73,6 @@ module triex::multicoin_pool {
         taker_fee: u64,
         maker_fee: u64,
         treasury_address: address,
-    }
-
-    public struct MultiCoinCredBurned<phantom QuoteAsset> has copy, drop, store {
-        pool_id: ID,
-        cred_burned: u64,
     }
 
     // === Public-Mutative Functions * POOL CREATION * ===
@@ -607,9 +602,7 @@ module triex::multicoin_pool {
                 trading_account.id(),
                 cancel_quantity,
                 order,
-                pool_inner.pool_id,
                 pool_inner.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -664,9 +657,7 @@ module triex::multicoin_pool {
             .process_cancel(
                 &mut order,
                 trading_account.id(),
-                pool_inner.pool_id,
                 pool_inner.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -850,27 +841,6 @@ module triex::multicoin_pool {
             clock.timestamp_ms(),
         );
         fee_coin
-    }
-
-    /// Burns CRED tokens from the pool.
-    /// #feat:rebate
-    public fun burn_cred<QuoteAsset>(
-        self: &mut MultiCoinPool<QuoteAsset>,
-        treasury_cap: &mut ProtectedTreasury,
-        ctx: &mut TxContext,
-    ): u64 {
-        let pool_inner = self.load_inner_mut();
-        let balance_to_burn = pool_inner.state.history_mut().reset_balance_to_burn();
-        let cred_to_burn = pool_inner.vault.withdraw_cred_to_burn(balance_to_burn).into_coin(ctx);
-        let amount_burned = cred_to_burn.value();
-        token::cred::burn(treasury_cap, cred_to_burn);
-
-        event::emit(MultiCoinCredBurned<QuoteAsset> {
-            pool_id: pool_inner.pool_id,
-            cred_burned: amount_burned,
-        });
-
-        amount_burned
     }
 
     // === Public-View Functions ===
@@ -1266,7 +1236,7 @@ module triex::multicoin_pool {
             // maker rate snapshotted onto it is the one they actually pay. The
             // fold lands this pool's pending maker credits in the trader's ring
             // first, and only then is the turnover read — see the twin in `pool`.
-            let pending = pool_inner.state.take_pending_turnover(trading_account.id(), ctx);
+            let pending = pool_inner.state.take_pending_turnover(trading_account.id());
             let turnover = trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
             let (
                 _tier,
@@ -1302,7 +1272,6 @@ module triex::multicoin_pool {
                     &mut order_info,
                     taker_fee_rate,
                     maker_fee_rate,
-                    pool_inner.pool_id,
                     ctx,
                 );
             // Makers whose orders expired during this match get the refundable

@@ -17,14 +17,9 @@ module triex::coin_account {
     /// Account data that is updated every epoch.
     /// One Account struct per TradingAccount object.
     public struct Account has copy, drop, store {
-        epoch: u64,
         open_orders: VecSet<u128>,
         taker_volume: u128,
         maker_volume: u128,
-        active_stake: u64, // #feat:stake
-        inactive_stake: u64, // #feat:stake
-        created_proposal: bool, // #feat:gov
-        voted_proposal: Option<ID>, // #feat:gov
         // unclaimed_rebates: Balances, // #feat:rebate
         settled_balances: Balances,
         owed_balances: Balances,
@@ -44,37 +39,9 @@ module triex::coin_account {
         self.open_orders
     }
 
-    public fun taker_volume(self: &Account): u128 {
-        self.taker_volume
-    }
-
-    public fun maker_volume(self: &Account): u128 {
-        self.maker_volume
-    }
-
     public fun total_volume(self: &Account): u128 {
         self.taker_volume + self.maker_volume
     }
-
-    // #feat:stake - DISABLED
-    // public fun active_stake(self: &Account): u64 {
-    //     self.active_stake
-    // }
-
-    // #feat:stake - DISABLED
-    // public fun inactive_stake(self: &Account): u64 {
-    //     self.inactive_stake
-    // }
-
-    // #feat:gov - DISABLED
-    // public fun created_proposal(self: &Account): bool {
-    //     self.created_proposal
-    // }
-
-    // #feat:gov - DISABLED
-    // public fun voted_proposal(self: &Account): Option<ID> {
-    //     self.voted_proposal
-    // }
 
     public fun settled_balances(self: &Account): Balances {
         self.settled_balances
@@ -86,16 +53,11 @@ module triex::coin_account {
     // }
 
     // === Public-Package Functions ===
-    public(package) fun empty(ctx: &TxContext): Account {
+    public(package) fun empty(): Account {
         Account {
-            epoch: ctx.epoch(),
             open_orders: vec_set::empty(),
             taker_volume: 0,
             maker_volume: 0,
-            active_stake: 0,
-            inactive_stake: 0,
-            created_proposal: false,
-            voted_proposal: option::none(),
             // unclaimed_rebates: balances::empty(), // #feat:rebate
             settled_balances: balances::empty(),
             owed_balances: balances::empty(),
@@ -148,27 +110,6 @@ module triex::coin_account {
         });
 
         total
-    }
-
-    /// Update the account data for the new epoch.
-    /// Returns the previous epoch, maker volume, and active stake.
-    public(package) fun update(self: &mut Account, ctx: &TxContext): (u64, u128, u64) {
-        if (self.epoch == ctx.epoch()) return (0, 0, 0);
-
-        let prev_epoch = self.epoch;
-        let prev_maker_volume = self.maker_volume;
-        let prev_active_stake = self.active_stake;
-
-        self.epoch = ctx.epoch();
-        self.maker_volume = 0;
-        self.taker_volume = 0;
-        // #feat:stake - DISABLED: stake activation commented out
-        // self.active_stake = self.active_stake + self.inactive_stake;
-        // self.inactive_stake = 0;
-        // self.created_proposal = false;
-        // self.voted_proposal = option::none();
-
-        (prev_epoch, prev_maker_volume, prev_active_stake)
     }
 
     /// Given a fill, update the account balances and volumes as the maker.
