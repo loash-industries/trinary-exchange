@@ -384,13 +384,6 @@ module triex::coin_vault {
     }
 
     // #feat:rebate
-    public(package) fun withdraw_cred_to_burn<BaseAsset, QuoteAsset>(
-        self: &mut Vault<BaseAsset, QuoteAsset>,
-        amount_to_burn: u64,
-    ): Balance<CRED> {
-        self.cred_balance.split(amount_to_burn)
-    }
-
     // #feat:flashloan - DISABLED
     // public(package) fun borrow_flashloan_base<BaseAsset, QuoteAsset>(
     //     self: &mut Vault<BaseAsset, QuoteAsset>,

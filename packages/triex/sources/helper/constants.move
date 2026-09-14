@@ -72,9 +72,6 @@ module triex::constants {
     const START_BID_ORDER_ID: u64 = ((1u128 << 64) - 1) as u64;
     const START_ASK_ORDER_ID: u64 = 1;
 
-    // History constants
-    const PHASE_OUT_EPOCHS: u64 = 28;
-
     // Length of the trailing window, in epochs, over which an account's paid fees
     // are summed to resolve its fee tier. Fixed rather than policy-settable so
     // the tracker can maintain its rolling sum as an O(1) invariant instead of
@@ -201,10 +198,6 @@ module triex::constants {
 
     public fun max_price(): u64 {
         MAX_PRICE
-    }
-
-    public fun phase_out_epochs(): u64 {
-        PHASE_OUT_EPOCHS
     }
 
     // #feat:stake

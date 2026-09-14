@@ -12,7 +12,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         let (settled, owed) = account.settle();
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(0, 0, 0));
@@ -31,7 +31,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_order(1);
         let fill = fill::new(
             1,
@@ -174,89 +174,6 @@ module triex::account_tests {
     // test.end();
     // }
 
-    #[test]
-    fun update_ok() {
-        let mut test = begin(OWNER);
-
-        test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 0, 0);
-        assert!(prev_maker_volume == 0, 0);
-        assert!(prev_active_stake == 0, 0);
-
-        account.add_order(1);
-        let fill = fill::new(
-            1,
-            1,
-            id_from_address(@0xB),
-            false,
-            false,
-            100,
-            100,
-            500,
-            false,
-            0,
-            0,
-            0,
-        );
-        account.process_maker_fill(&fill);
-
-        // update doesn't do anything until next epoch
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 0, 0);
-        assert!(prev_maker_volume == 0, 0);
-        assert!(prev_active_stake == 0, 0);
-
-        test.next_epoch(OWNER);
-        test.next_tx(ALICE);
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 0, 0);
-        assert!(prev_maker_volume == 100, 0);
-        assert!(prev_active_stake == 0, 0);
-
-        // #feat:stake - DISABLED
-        // let (before, after) = account.add_stake(100);
-        // assert!(before == 0, 0);
-        // assert!(after == 100, 0);
-        // assert!(account.active_stake() == 0, 0);
-        // assert!(account.inactive_stake() == 100, 0);
-
-        // already reset earlier, new stake not counted yet
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 0, 0);
-        assert!(prev_maker_volume == 0, 0);
-        assert!(prev_active_stake == 0, 0);
-
-        test.next_epoch(OWNER);
-        test.next_tx(ALICE);
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 1, 0);
-        assert!(prev_maker_volume == 0, 0);
-        assert!(prev_active_stake == 0, 0);
-        // prev active stake still zero, but current active stake updated
-        // #feat:stake - DISABLED
-        // assert!(account.active_stake() == 100, 0);
-        // assert!(account.inactive_stake() == 0, 0);
-
-        // let (before, after) = account.add_stake(100);
-        // assert!(before == 100, 0);
-        // assert!(after == 200, 0);
-
-        test.next_epoch(OWNER);
-        test.next_tx(ALICE);
-        let (prev_epoch, prev_maker_volume, prev_active_stake) = account.update(test.ctx());
-        assert!(prev_epoch == 2, 0);
-        assert!(prev_maker_volume == 0, 0);
-        // #feat:stake - DISABLED
-        // assert!(prev_active_stake == 100, 0);
-        // assert!(account.active_stake() == 200, 0);
-        // assert!(account.inactive_stake() == 0, 0);
-        assert!(prev_active_stake == 0, 0);
-
-        test.end();
-    }
-
     // #feat:rebate
     // #[test]
     // fun claim_rebates_ok() {
@@ -297,7 +214,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_pending_turnover(5, 100);
         account.add_pending_turnover(5, 50);
 
@@ -316,7 +233,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_pending_turnover(3, 10);
         account.add_pending_turnover(4, 20);
         account.add_pending_turnover(4, 5);
@@ -336,7 +253,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         // The fill path credits unconditionally, including expired fills that
         // charge nothing, so zero must not grow the ledger.
         account.add_pending_turnover(5, 0);
@@ -352,7 +269,7 @@ module triex::account_tests {
 
         test.next_tx(ALICE);
         let window = constants::turnover_window_epochs();
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_pending_turnover(0, 100);
         // A credit earned a full window later ages the epoch-0 entry out: the
         // fold would drop it anyway, and pruning here is what bounds the vector
@@ -372,7 +289,7 @@ module triex::account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_pending_turnover(1, 40);
         account.add_pending_turnover(2, 60);
 
@@ -393,7 +310,7 @@ module triex::account_tests {
 
         test.next_tx(ALICE);
         let window = constants::turnover_window_epochs();
-        let mut account = account::empty(test.ctx());
+        let mut account = account::empty();
         account.add_pending_turnover(0, 100);
         account.add_pending_turnover(5, 50);
 

@@ -156,7 +156,7 @@ module triex::state {
     // }
 
     public(package) fun empty(ctx: &mut TxContext): State {
-        State { history: history::empty(ctx.epoch(), ctx), accounts: table::new(ctx) }
+        State { history: history::empty(), accounts: table::new(ctx) }
     }
 
     /// Drain this account's pending maker-fee credits for folding into the ring
@@ -169,9 +169,8 @@ module triex::state {
     public(package) fun take_pending_turnover(
         self: &mut State,
         trading_account_id: ID,
-        ctx: &TxContext,
     ): vector<EpochAmount> {
-        self.update_account(trading_account_id, ctx);
+        self.update_account(trading_account_id);
 
         self.accounts[trading_account_id].take_pending_turnover()
     }
@@ -207,10 +206,8 @@ module triex::state {
         // ewma_state: &EWMAState, // #feat:ewma
         taker_fee: u64,
         maker_fee: u64,
-        pool_id: ID,
         ctx: &TxContext,
     ): (Balances, Balances, FeeFlows) {
-        self.history.update(pool_id, ctx);
         let fills = order_info.fills_ref();
         let mut fee_flows = self.process_fills(fills, ctx);
 
@@ -305,12 +302,9 @@ module triex::state {
         self: &mut State,
         order: &mut Order,
         trading_account_id: ID,
-        pool_id: ID,
         price_scaling: u64,
-        ctx: &TxContext,
     ): (Balances, Balances, FeeRelease) {
-        self.history.update(pool_id, ctx);
-        self.update_account(trading_account_id, ctx);
+        self.update_account(trading_account_id);
         order.set_canceled();
 
         let (refunded, retained) = order.released_fee_split(
@@ -338,12 +332,9 @@ module triex::state {
         trading_account_id: ID,
         cancel_quantity: u64,
         order: &Order,
-        pool_id: ID,
         price_scaling: u64,
-        ctx: &TxContext,
     ): (Balances, Balances, FeeRelease) {
-        self.history.update(pool_id, ctx);
-        self.update_account(trading_account_id, ctx);
+        self.update_account(trading_account_id);
 
         let (refunded, retained) = order.released_fee_split(
             order.maker_fee_rate(),
@@ -551,14 +542,6 @@ module triex::state {
         &self.accounts[trading_account_id]
     }
 
-    public(package) fun history_mut(self: &mut State): &mut History {
-        &mut self.history
-    }
-
-    public(package) fun history(self: &State): &History {
-        &self.history
-    }
-
     // === Private Functions ===
     /// Process fills for all makers. Update maker accounts and history.
     /// Maker fees are charged at the rate snapshotted on the maker's order:
@@ -578,7 +561,7 @@ module triex::state {
         while (i < num_fills) {
             let fill = &mut fills[i];
             let maker = fill.trading_account_id();
-            self.update_account(maker, ctx);
+            self.update_account(maker);
 
             let mut maker_fee_earned = 0;
             if (!fill.expired()) {
@@ -605,7 +588,6 @@ module triex::state {
                 // Maker fees count as collected at fill time, on both sides.
                 total_maker_fees = total_maker_fees + maker_fee;
                 // #feat:stake - DISABLED: pass 0 for account stake
-                self.history.add_volume(fill.base_quantity(), 0);
             } else if (!fill.taker_is_bid()) {
                 // An expired bid maker gets their principal back plus the
                 // refundable share of the escrow held against it; the retained
@@ -674,9 +656,9 @@ module triex::state {
     }
 
     /// If account doesn't exist, create it. Update account volumes and rebates.
-    fun update_account(self: &mut State, trading_account_id: ID, ctx: &TxContext) {
+    fun update_account(self: &mut State, trading_account_id: ID) {
         if (!self.accounts.contains(trading_account_id)) {
-            self.accounts.add(trading_account_id, account::empty(ctx));
+            self.accounts.add(trading_account_id, account::empty());
         };
         // #feat:rebate
         // let account = &mut self.accounts[trading_account_id];
@@ -709,10 +691,9 @@ module triex::state {
         order_info: &mut OrderInfo,
         taker_fee: u64,
         maker_fee: u64,
-        pool_id: ID,
         ctx: &TxContext,
     ): (Balances, Balances, FeeFlows) {
-        self.update_account(order_info.trading_account_id(), ctx);
-        self.process_create(order_info, taker_fee, maker_fee, pool_id, ctx)
+        self.update_account(order_info.trading_account_id());
+        self.process_create(order_info, taker_fee, maker_fee, ctx)
     }
 }

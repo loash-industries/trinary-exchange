@@ -458,14 +458,6 @@ module triex::multicoin_vault {
         };
     }
 
-    /// Withdraw CRED for burning (rebates feature).
-    public(package) fun withdraw_cred_to_burn<QuoteAsset>(
-        self: &mut MultiCoinVault<QuoteAsset>,
-        amount_to_burn: u64,
-    ): Balance<CRED> {
-        self.cred_balance.split(amount_to_burn)
-    }
-
     /// Deposit base MultiCoin directly into vault (used during pool creation or direct deposits).
     public(package) fun deposit_base<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,

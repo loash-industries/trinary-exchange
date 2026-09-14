@@ -145,24 +145,6 @@ module triex::math {
         result + is_round_down
     }
 
-    /// given a vector of u64, return the median
-    public fun median(v: vector<u128>): u128 {
-        let n = v.length();
-        if (n == 0) {
-            return 0
-        };
-
-        let sorted_v = quick_sort(v);
-        if (n % 2 == 0) {
-            mul_u128(
-                (sorted_v[n / 2 - 1] + sorted_v[n / 2]),
-                FLOAT_SCALING_U128 / 2,
-            )
-        } else {
-            sorted_v[n / 2]
-        }
-    }
-
     /// Computes the integer square root of a scaled u64 value, assuming the
     /// original value
     /// is scaled by precision. The result will be in the same floating-point
@@ -188,33 +170,6 @@ module triex::math {
 
             num == 1
         }
-    }
-
-    fun quick_sort(data: vector<u128>): vector<u128> {
-        if (data.length() <= 1) {
-            return data
-        };
-
-        let pivot = data[0];
-        let mut less = vector<u128>[];
-        let mut equal = vector<u128>[];
-        let mut greater = vector<u128>[];
-
-        data.do!(|value| {
-            if (value < pivot) {
-                less.push_back(value);
-            } else if (value == pivot) {
-                equal.push_back(value);
-            } else {
-                greater.push_back(value);
-            };
-        });
-
-        let mut sortedData = vector<u128>[];
-        sortedData.append(quick_sort(less));
-        sortedData.append(equal);
-        sortedData.append(quick_sort(greater));
-        sortedData
     }
 
     fun mul_internal(x: u64, y: u64): (u64, u64) {
@@ -294,38 +249,6 @@ module triex::math {
 
         // Nothing in, nothing out.
         assert!(quote_to_qty_capped(0, 1, FLOAT_SCALING, uncapped) == 0, 9);
-    }
-
-    #[test]
-    /// Test median function
-    fun test_median() {
-        let v = vector<u128>[
-            1 * FLOAT_SCALING_U128,
-            2 * FLOAT_SCALING_U128,
-            3 * FLOAT_SCALING_U128,
-            4 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 3 * FLOAT_SCALING_U128, 0);
-
-        let v = vector<u128>[
-            10 * FLOAT_SCALING_U128,
-            15 * FLOAT_SCALING_U128,
-            2 * FLOAT_SCALING_U128,
-            3 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 5 * FLOAT_SCALING_U128, 0);
-
-        let v = vector<u128>[
-            10 * FLOAT_SCALING_U128,
-            9 * FLOAT_SCALING_U128,
-            23 * FLOAT_SCALING_U128,
-            4 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-            28 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 9_500_000_000, 0);
     }
 
     #[test]

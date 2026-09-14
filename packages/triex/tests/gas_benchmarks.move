@@ -33,6 +33,26 @@ module triex::gas_benchmarks {
     #[test]
     fun bench_cancel_at_depth_80() { pool_test_utils::bench_cancel_at_depth_80() }
 
+    // Inside-market access. Real books concentrate their activity here, and the two
+    // storage designs have opposite strengths at this spot, so these are the
+    // benchmarks that decide the question the depth ladders cannot.
+    #[test]
+    fun bench_cancel_at_top_of_book_depth_80() {
+        pool_test_utils::bench_cancel_at_top_of_book_depth_80()
+    }
+
+    #[test]
+    fun bench_churn_at_depth_40() { pool_test_utils::bench_churn_at_depth_40() }
+
+    #[test]
+    fun bench_churn_at_depth_300() { pool_test_utils::bench_churn_at_depth_300() }
+
+    #[test]
+    fun bench_churn_at_depth_40_x40() { pool_test_utils::bench_churn_at_depth_40_x40() }
+
+    #[test]
+    fun bench_churn_at_depth_300_x40() { pool_test_utils::bench_churn_at_depth_300_x40() }
+
     #[test]
     fun bench_taker_sweeps_01() { pool_test_utils::bench_taker_sweeps_01() }
 

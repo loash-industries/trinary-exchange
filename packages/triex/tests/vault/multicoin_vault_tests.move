@@ -207,52 +207,6 @@ module triex::multicoin_vault_tests {
     }
 
     #[test]
-    fun test_withdraw_cred_to_burn() {
-        let mut test = begin(OWNER);
-
-        let (collection_id, collection_cap) = setup_collection(&mut test);
-        let trading_account_id = create_multicoin_acct_and_share_with_funds(
-            ALICE,
-            1000000 * constants::float_scaling(),
-            &collection_cap,
-            TEST_ASSET_ID,
-            1000000 * constants::float_scaling(),
-            &mut test,
-        );
-
-        test.next_tx(ALICE);
-        let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
-        let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
-
-        // Put CRED in vault
-        let owed = balances::new(0, 0, 10000);
-        let settled = balances::new(0, 0, 0);
-        vault.settle_trading_account(
-            settled,
-            owed,
-            &mut trading_account,
-            &trade_proof,
-            option::none(),
-            test.ctx(),
-        );
-
-        // Withdraw 3000 CRED for burning
-        let cred_to_burn = vault.withdraw_cred_to_burn(3000);
-        assert!(cred_to_burn.value() == 3000, 0);
-
-        // Vault should have 7000 CRED left
-        let (_base, _quote, cred) = vault.balances();
-        assert!(cred == 7000, 1);
-
-        destroy(cred_to_burn);
-        destroy(vault);
-        destroy(trading_account);
-        destroy(collection_cap);
-        test.end();
-    }
-
-    #[test]
     fun test_settle_vault_owes_base_to_user() {
         let mut test = begin(OWNER);
 
