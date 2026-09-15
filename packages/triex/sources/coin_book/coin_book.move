@@ -173,14 +173,19 @@ module triex::coin_book {
                         cur_price,
                         self.price_scaling,
                     );
-                    // The matcher declines a live fill worth no quote, so a quote must
-                    // not promise one either, or the two disagree.
-                    if (matched_base_quantity > 0 && matched_quote_quantity == 0) break;
-                    quantity_out = quantity_out + matched_base_quantity;
-                    quantity_in_left = quantity_in_left - matched_quote_quantity;
-                    if (!fee_waived) {
-                        quantity_in_left =
-                            quantity_in_left - math::mul(matched_quote_quantity, input_fee_rate);
+                    // The matcher steps over a maker that cannot settle for a non-zero
+                    // quote — retiring it when the maker itself is under the bound,
+                    // skipping it when the shortfall is the taker's own residue — and
+                    // reaches the orders behind it either way. The quote has to walk the
+                    // same way: stopping here would under-report every level behind the
+                    // first such maker while settlement filled straight through it.
+                    if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
+                        quantity_out = quantity_out + matched_base_quantity;
+                        quantity_in_left = quantity_in_left - matched_quote_quantity;
+                        if (!fee_waived) {
+                            quantity_in_left =
+                                quantity_in_left - math::mul(matched_quote_quantity, input_fee_rate);
+                        };
                     };
                 } else {
                     // Ask takers have the fee deducted from the quote proceeds,
@@ -194,18 +199,20 @@ module triex::coin_book {
                         cur_price,
                         self.price_scaling,
                     );
-                    // As above: a fill worth no quote is one the matcher refuses.
-                    if (matched_base_quantity > 0 && matched_quote_quantity == 0) break;
-                    let fee = if (fee_waived) {
-                        0
-                    } else {
-                        quote_fee::fee_from_scaled_rate(
-                            trade_specific_taker_fee,
-                            matched_quote_quantity,
-                        )
+                    // As above: a maker worth no quote is stepped over, not treated as
+                    // the end of the book.
+                    if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
+                        let fee = if (fee_waived) {
+                            0
+                        } else {
+                            quote_fee::fee_from_scaled_rate(
+                                trade_specific_taker_fee,
+                                matched_quote_quantity,
+                            )
+                        };
+                        quantity_out = quantity_out + matched_quote_quantity - fee;
+                        quantity_in_left = quantity_in_left - matched_base_quantity;
                     };
-                    quantity_out = quantity_out + matched_quote_quantity - fee;
-                    quantity_in_left = quantity_in_left - matched_base_quantity;
                 };
 
                 if (matched_base_quantity == 0) break;
@@ -230,7 +237,8 @@ module triex::coin_book {
     }
 
     /// Modifies an order given order_id and new_quantity.
-    /// New quantity must be less than the original quantity.
+    /// New quantity must be less than the original quantity, and must leave a
+    /// remainder at or above the order's zero-quote bound — see `coin_order::modify`.
     /// Order must not have already expired.
     /// #ref:order_modify
     public(package) fun modify_order(
@@ -239,10 +247,11 @@ module triex::coin_book {
         new_quantity: u64,
         timestamp: u64,
     ): (u64, &Order) {
+        let price_scaling = self.price_scaling;
         let order = self.book_side_mut(order_id).borrow_mut(order_id);
         assert!(new_quantity < order.quantity(), new_quantity_must_be_less_than_original());
         let cancel_quantity = order.quantity() - new_quantity;
-        order.modify(new_quantity, timestamp);
+        order.modify(new_quantity, timestamp, price_scaling);
 
         (cancel_quantity, order)
     }
@@ -426,7 +435,10 @@ module triex::coin_book {
                 book_side.borrow_slice_mut(ref),
                 offset,
             );
-            if (!order_info.match_maker(maker_order, timestamp)) break;
+            // Only a `Stopped` outcome ends the walk. A maker that cannot settle for
+            // a non-zero quote is skipped or retired, and the orders behind it stay
+            // reachable — treating that as terminal wedged the whole side.
+            if (!order_info.match_maker(maker_order, timestamp).continues()) break;
             (ref, offset) = if (is_bid) book_side.next_slice(ref, offset)
             else book_side.prev_slice(ref, offset);
             current_fills = current_fills + 1;

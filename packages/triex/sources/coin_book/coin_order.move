@@ -13,6 +13,10 @@ module triex::coin_order {
     // === Errors ===
     const EInvalidNewQuantity: u64 = 0;
     const EOrderExpired: u64 = 1;
+    /// A modify-down that would leave a remainder too small to ever settle for a
+    /// non-zero quote. Mirrors `coin_order_info::EOrderBelowMinimumSize`, which
+    /// applies the same bound at placement.
+    const EOrderBelowMinimumSize: u64 = 2;
 
     // === Structs ===
     /// Order struct represents the order in the order book. It is optimized for space.
@@ -192,14 +196,34 @@ module triex::coin_order {
         )
     }
 
-    /// Modify the order with a new quantity. The new quantity must be greater
-    /// than the filled quantity and less than the original quantity. The
-    /// timestamp must be less than the expire timestamp.
-    public(package) fun modify(self: &mut Order, new_quantity: u64, timestamp: u64) {
+    /// Modify the order with a new quantity. The new quantity must be greater than
+    /// the filled quantity and less than the original quantity, and the timestamp
+    /// must be less than the expire timestamp.
+    ///
+    /// The remainder it leaves (`new_quantity - filled_quantity`) must also clear
+    /// `math::min_qty_for_nonzero_quote` at the order's own price, the same bound
+    /// placement applies. Without it a modify-down could park an order below the
+    /// bound, where it can never settle for a non-zero quote again.
+    public(package) fun modify(
+        self: &mut Order,
+        new_quantity: u64,
+        timestamp: u64,
+        price_scaling: u64,
+    ) {
         assert!(
             new_quantity > self.filled_quantity &&
         new_quantity < self.quantity,
             EInvalidNewQuantity,
+        );
+        // Placement refuses an order too small to ever produce a non-zero-quote
+        // fill; a modify-down has to honour the same bound, or one modify turns a
+        // healthy order into dust the matcher can only ever step over. The
+        // subtraction cannot underflow — the assert above pins
+        // `new_quantity > filled_quantity`.
+        assert!(
+            new_quantity - self.filled_quantity >=
+                math::min_qty_for_nonzero_quote(self.price, price_scaling),
+            EOrderBelowMinimumSize,
         );
         assert!(timestamp <= self.expire_timestamp, EOrderExpired);
         self.quantity = new_quantity;
