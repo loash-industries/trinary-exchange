@@ -11,16 +11,16 @@ proof-of-ownership tokens.
 
 | Capability | Package / Module | Held by | Purpose |
 |---|---|---|---|
-| `TriexbookAdminCap` | `triexbook::registry` | Operator (package publisher) | Protocol administration |
+| `TriexAdminCap` | `triex::registry` | Operator (package publisher) | Protocol administration |
 | `TreasuryCap<CRED>` | `token::cred` (wrapped in `ProtectedTreasury`) | Nobody — locked in a shared object | CRED supply control (burn-only) |
-| `TradeCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Trade on behalf of a BalanceManager |
-| `DepositCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Deposit into a BalanceManager |
-| `WithdrawCap` | `triexbook::balance_manager` | Whoever a BalanceManager owner delegates to | Withdraw from a BalanceManager |
+| `TradeCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Trade on behalf of a TradingAccount |
+| `DepositCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Deposit into a TradingAccount |
+| `WithdrawCap` | `triex::trading_account` | Whoever a TradingAccount owner delegates to | Withdraw from a TradingAccount |
 | `UpgradeCap` (implicit) | Sui framework | Operator (package publisher) | Upgrade the published packages |
 
 ---
 
-## 1. `TriexbookAdminCap` — the operator's protocol cap
+## 1. `TriexAdminCap` — the operator's protocol cap
 
 Defined in [`registry.move`](packages/triex/sources/registry.move). Minted exactly
 once in the package `init` and transferred to the publisher (the operator). It
@@ -28,55 +28,156 @@ has `key, store`, so it can be transferred, moved to a multisig, or locked in a
 timelock wrapper later.
 
 Every admin entry point takes it as a read-only reference (`_cap:
-&TriexbookAdminCap`). The operator's powers fall into three modules:
+&TriexAdminCap`). The operator's powers fall into three modules:
 
-### Registry administration (`triexbook::registry`)
+### Registry administration (`triex::registry`)
 
 | Function | What the operator can do |
 |---|---|
 | `set_treasury_address` | Redirect where pool-creation fees are sent. Defaults to the publisher. |
-| `enable_version` / `disable_version` | Control which package versions may interact with the protocol. The current version cannot be disabled. These two functions are themselves exempt from version checks, so an admin can always recover from a bad version state. |
-| `add_stablecoin` / `remove_stablecoin` | Manage the stablecoin whitelist, which determines which pools qualify as "stable pools". |
+| `enable_version` / `disable_version` | Control which package versions may interact with the protocol, **including the version currently running**. These two functions are themselves exempt from version checks, and `disable_version` is reversible by `enable_version`, so an admin can always recover from a bad version state. |
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
-| `init_balance_manager_map` | One-time creation of the owner → balance-manager-IDs table on the registry. Idempotent. |
+| `init_trading_account_map` | One-time creation of the owner → trading-account-IDs table on the registry. Idempotent. |
 
-### Pool administration (`triexbook::pool` — the pair-based order book)
+### Pool administration (`triex::pool` — the pair-based order book)
 
 | Function | What the operator can do |
 |---|---|
 | `create_pool_admin` | Create a pool with **zero creation fee**, bypassing the fee charged on the permissionless `create_pool` path. |
-| `set_next_epoch_fee` | Directly set the trading fee for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. |
+| `set_next_epoch_fee` | Directly set the taker and maker trading fees and the cancel-retention rate for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. Each order snapshots these at placement, so a change never re-prices orders already resting. See the fee-bound note below for how high these can go. |
+| `set_next_epoch_fee_schedule` | Set the whole **fee-tier ladder** for the next epoch, plus the cancel-retention rate. Takes parallel columns (thresholds, taker rates, maker rates) because entry functions cannot accept Move structs. `fee_schedule::validate` rejects ladders that are empty, exceed 16 tiers, do not start at zero turnover, have non-ascending thresholds, or price more turnover *higher* on either side. Like `set_next_epoch_fee`, it takes effect at the next epoch boundary and never re-prices resting orders. Setting either one overwrites the other — a flat fee is stored as a one-rung ladder so both share a single resolution path. |
 | `unregister_pool_admin` | Unregister a pool from the registry so the trading pair can be redeployed. The pool object itself keeps operating for existing state, but is marked unregistered. |
 | `update_allowed_versions` | Sync a pool's allowed-versions set from the registry. Note: a permissionless equivalent, `update_pool_allowed_versions`, exists, so this is not an exclusive power. |
-| `withdraw_pool_fees` | **Withdraw accumulated quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Emits a `PoolFeesWithdrawn` event. |
+| `withdraw_pool_fees` | **Withdraw earned quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Capped at `withdrawable_pool_fees()` — the reserve minus `locked_maker_fees()`, the escrow backing open bid orders — so a sweep can never spend a maker's refundable fee (`EFeesLocked`). Emits a `PoolFeesWithdrawn` event. |
 
 Disabled (commented-out) admin features that may return in future versions:
 EWMA volatility controls (`enable_ewma_state`, `set_ewma_params`) and
 tick/min-size adjustment.
 
-### MultiCoinPool administration (`triexbook::multicoin_pool`)
+### MultiCoinPool administration (`triex::multicoin_pool`)
 
 Mirrors the pool module, per collection asset:
 
 - `create_pool_admin` — fee-free pool creation for a `(Collection, asset_id)` pair
 - `set_next_epoch_fee`
+- `set_next_epoch_fee_schedule` — the tier ladder, same bounds and activation
 - `unregister_pool_admin`
 - `update_allowed_versions` (permissionless equivalent also exists)
-- `withdraw_pool_fees` — sweep accrued quote fees to treasury
+- `withdraw_pool_fees` — sweep earned quote fees to treasury, capped at `withdrawable_pool_fees()`
+
+#### How high fees can be set
+
+Worth stating plainly, because it bounds everything in the section above.
+`MAX_TAKER_FEE` and `MAX_MAKER_FEE` are both **100%** (`governance.move`), and
+`MAX_CANCEL_RETENTION_BPS` is 100% as well — so a cancel can be configured to
+refund nothing. Taker rates keep a 1 bp floor; maker rates may be zero. The same
+bounds apply to every rung of a tier ladder.
+
+At the ceiling these stop behaving like fees: a 100% taker fee leaves an ask
+taker settling `cumulative_quote_quantity - total_taker_fee`, i.e. zero — they
+deliver base and receive nothing, and the proceeds land in the fee reserve the
+operator can sweep. Launch defaults are far below this (2.2% / 1.8% taker /
+maker; 1.1% / 0.9% for multicoin pools, 20% cancel retention), and the practical
+brakes are that a change only takes effect at the **next epoch boundary**, is
+visible on-chain beforehand through `pool_fee_schedule_next()` and
+`pool_trade_params_next()`, and never re-prices an order already resting. But
+the ceiling is what the cap permits, and users assessing operator trust should
+read it as such.
+
+#### How much of a fee can be diverted to a hub operator
+
+Multicoin pools can pay the storage unit they trade against a share of the fees
+recognized on them. `MAX_OPERATOR_SHARE_BPS` is **100%** (`constants.move`), and it
+bounds both what the admin can configure and what a recognition can credit — the
+vault re-checks it rather than trusting the policy to have done so.
+
+Read it as a bound on redistribution, not on cost: a share divides fees already
+collected, so it cannot change what a trader pays, and taker/maker rates, tier
+ladders and dry-run quotes are untouched by it. The rate ships at **20% for every
+hub** — genesis share class 0, which every collection the admin has not assigned
+a class of its own resolves through — and is live from the first fill on a
+freshly published `FeePolicy` rather than staged, since there is no earlier epoch
+for a launch rate to be announced in. Every *later* change to it, including a
+re-price of class 0 itself, takes effect no earlier than the **next epoch
+boundary** and is visible on-chain beforehand through `operator_share_bps_at()`.
+
+One consequence of a non-zero launch rate belongs here rather than in a release
+note: the share is credited whether or not the collection has a beneficiary
+registered yet, and `withdrawable_pool_fees()` subtracts `operator_owed` in full.
+Until the admin registers an adapter type and hub owners register through it,
+that 20% of multicoin revenue is neither claimable by an operator nor sweepable
+by the treasury. It is encumbered, not lost — a later registration pays out the
+whole accrued balance, and `claim_operator_share` aborts rather than banking it
+for the treasury in the meantime. The share is credited the moment revenue is recognized, at
+the rate live in that instant, so a rate change can only affect revenue that has
+not happened yet — there is no deferred settlement whose timing anyone could
+game, and `operator_owed()` carries no unsettled remainder beside it.
+
+That exactness is about **timing, not amount**. Each recognition credits
+`floor(recognized × bps / 10000)`, so the running figure sits at or below the
+operator's exact share, by under one raw quote unit per recognition event. The
+shortfall stays in the reserve as treasury revenue — it is never lost, and the
+share is never paid out of fees that were not collected — but it is not
+proportional: because the loss is bounded per *event* rather than per unit of
+revenue, any single recognition smaller than `10000 / bps` raw units credits
+zero. Low rates are the exposed case (at 1 bp, an event below 10000 raw units
+credits nothing), and so is finely fragmented flow. The contracts sum before
+flooring wherever a transaction recognizes more than once — per-account fill
+proceeds, and the whole of a cancel batch — which is what keeps a market maker
+pulling a book of quotes from being credited nothing at all. An operator
+reconciling payouts should expect the floored figure, not `bps × revenue`.
+
+Where the share is paid is configuration, not inference: `FeePolicy` holds an
+explicit `collection_id -> address`, written once through a witness minted by an
+admin-registered adapter package — the adapter checks the caller's
+`OwnerCap<StorageUnit>` against the collection, so the address registered is the
+storage unit owner's, not whichever sender happened to deploy a pool first (pool
+creation itself writes nothing) — and never re-pointed by the contracts, so a
+hub changing hands, a capability parked on another object, or a game-side change
+to a character's wallet cannot silently redirect money. Until the admin
+registers an adapter type, no registration path exists at all. There is no
+rotation surface either: any delegation or re-division of a hub's revenue is
+settled outside Triex, and the admin cap can only **destroy** a mapping (halting
+payouts, which stay encumbered until the owner re-registers), never point it
+somewhere new.
+Accrued-but-unclaimed balance pays whoever is configured at claim time, which is
+a settlement matter between a hub's buyer and seller — the `operator_owed()`
+view and the claim events are the record of it.
 
 ### What the AdminCap can NOT do
 
-The cap's financial reach is limited to **fee revenue and fee rates**. It cannot:
+The cap's financial reach is limited to **fee revenue and fee rates** — subject
+to the ceiling noted above, which is high enough that "fee rates" is a broader
+power than it sounds. It cannot:
 
-- Touch user funds held in any `BalanceManager` (deposit, withdraw, or freeze them)
+- Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
+- Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
+  `operator_owed` in full — a sweep pays the operator's share to the operator and
+  can never reach it. (What the cap *does* keep is the sub-unit flooring
+  remainder described above, which is revenue never credited to anyone else.)
+- Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
+  the address `FeePolicy` records — registered through the adapter witness,
+  destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
-- Change a live pool's tick size, lot size, or min size (that code is disabled)
+- Change a live pool's tick size, lot size, or min size (that code is disabled).
+  Coin pools do enforce a minimum order size, but it is *derived* — the
+  fixed-point reciprocal of the order's own price, the smallest quantity that
+  still settles for a non-zero quote — so it is a property of the arithmetic and
+  not an operator-tunable parameter
 
 The most systemic lever is `enable_version` / `disable_version`: disabling a
-version effectively freezes all protocol interaction through that package
-version, which functions as an emergency stop for old code but also as a
-soft kill switch. Users should weigh this when assessing operator trust.
+version freezes all protocol interaction through that package version. This is
+a real kill switch, not only a way to retire old code — the operator can disable
+the version that is currently running and halt live trading in one transaction.
+Resting orders are not cancelled and funds are not moved, but nothing can be
+placed, cancelled, or settled until a version is re-enabled.
+
+The halt is reversible: `enable_version` restores service, and both functions
+bypass the version gate themselves so the operator cannot lock itself out.
+Disabled version numbers are not recycled, so an archived decoder can never
+resolve a retired version to a new meaning. Users should weigh this when
+assessing operator trust.
 
 ---
 
@@ -109,7 +210,7 @@ the private `create_coin`. Consequences for the operator:
   CRED is a fixed-supply, deflationary (burn-only) token by construction.
 - The operator's CRED position is whatever remains of the initial mint it
   received at publish time — an ordinary token holding, not a capability.
-- `triexbook::pool::burn_cred` and `triexbook::multicoin_pool::burn_cred`
+- `triex::pool::burn_cred` and `triex::multicoin_pool::burn_cred`
   (tagged `#feat:rebate`) route pool-held CRED into this burn function,
   wiring the exchange's rebate/burn mechanics to the treasury.
 
@@ -118,25 +219,25 @@ the private `create_coin`. Consequences for the operator:
 
 ---
 
-## 3. BalanceManager delegation caps — user-level, not operator-level
+## 3. TradingAccount delegation caps — user-level, not operator-level
 
-Defined in [`balance_manager.move`](packages/triex/sources/balance_manager.move).
-A `BalanceManager` is a shared object holding a user's balances across all
+Defined in [`trading_account.move`](packages/triex/sources/trading_account.move).
+A `TradingAccount` is a shared object holding a user's balances across all
 pools. Its **owner** can mint up to 1,000 delegation caps (combined) tied to
-that specific manager (each cap records its `balance_manager_id`):
+that specific account (each cap records its `trading_account_id`):
 
 | Capability | Minted by | Grants the holder |
 |---|---|---|
-| `TradeCap` | `mint_trade_cap` | Generate a `TradeProof` (`generate_proof_as_trader`) to place/cancel orders and settle against the manager's balances. Cannot deposit or withdraw. |
-| `DepositCap` | `mint_deposit_cap` | `deposit_with_cap` / `deposit_multicoin_with_cap` — add funds to the manager. Cannot withdraw or trade. |
-| `WithdrawCap` | `mint_withdraw_cap` | `withdraw_with_cap` / `withdraw_multicoin_with_cap` — pull funds out of the manager. Cannot trade. |
+| `TradeCap` | `mint_trade_cap` | Generate a `TradeProof` (`generate_proof_as_trader`) to place/cancel orders and settle against the account's balances. Cannot deposit or withdraw. |
+| `DepositCap` | `mint_deposit_cap` | `deposit_with_cap` / `deposit_multicoin_with_cap` — add funds to the account. Cannot withdraw or trade. |
+| `WithdrawCap` | `mint_withdraw_cap` | `withdraw_with_cap` / `withdraw_multicoin_with_cap` — pull funds out of the account. Cannot trade. |
 
 The owner can revoke any of the three at any time with `revoke_trade_cap`
 (despite the name, it revokes all three kinds by removing the cap ID from the
-manager's allow-list — the revoked cap object becomes inert).
+account's allow-list — the revoked cap object becomes inert).
 
 **Operator relevance:** these caps give the *operator qua operator* no power.
-The `TriexbookAdminCap` cannot mint, use, or revoke them. Trinary Exchange
+The `TriexAdminCap` cannot mint, use, or revoke them. Trinary Exchange
 would only hold one if a user explicitly minted and transferred it (e.g., a
 custody or market-making arrangement), in which case the operator acts as that
 user's delegate with exactly the granted scope — and the user can revoke it
@@ -150,13 +251,13 @@ These are not defined in this repo but exist for every published Sui package,
 and they bound every guarantee above:
 
 - **`UpgradeCap`** — issued to the publisher for each of `token` and
-  `triexbook`. Whoever holds it can upgrade the package (within Sui's
+  `triex`. Whoever holds it can upgrade the package (within Sui's
   compatibility rules, which allow *adding* new public functions). An upgrade
   to `token` could, in principle, add a function that borrows the locked
   `TreasuryCap` and mints — so the "no mint" guarantee is really "no mint
   unless the operator upgrades the token package." Operators wanting to make
   fixed supply trustless should burn the `token` package's `UpgradeCap` or
-  transfer it to an immutable address. Similarly, the `triexbook`
+  transfer it to an immutable address. Similarly, the `triex`
   `UpgradeCap` plus the AdminCap's `enable_version` is the intended path for
   protocol upgrades (new version published → `enable_version` →
   `update_pool_allowed_versions` on each pool).
@@ -167,12 +268,13 @@ and they bound every guarantee above:
 
 ## Summary: the operator's actual power surface
 
-With the `TriexbookAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
+With the `TriexAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
 
 1. **Collect revenue** — sweep trading fees from every pool and redirect
    pool-creation fees.
-2. **Set prices of participation** — trading fee per epoch per pool, which
-   coins count as stablecoins, which quote currencies are allowed.
+2. **Set prices of participation** — taker, maker and cancel-retention rates
+   per epoch per pool, as a flat pair or a turnover-tiered ladder, up to a 100%
+   ceiling on each; and which quote currencies are allowed.
 3. **Control the pool set** — create fee-free pools, unregister pools for
    redeployment.
 4. **Gate protocol versions** — enable/disable package versions, the de facto
@@ -181,5 +283,5 @@ With the `TriexbookAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
    trust everything else rests on.
 
 It cannot custody or move user balances, interfere with user orders, delegate
-itself into a user's BalanceManager, or mint CRED (absent a token package
+itself into a user's TradingAccount, or mint CRED (absent a token package
 upgrade).
