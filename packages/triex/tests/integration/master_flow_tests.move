@@ -96,7 +96,6 @@ module triex::integration_master_flow_tests {
         // Fees are quote-denominated: the CRED legs these expectations used to
         // track have been zero since the unified model landed.
         let bid_escrow = utils::maker_escrow(price, quantity);
-        let cred_multiplier = constants::cred_multiplier();
         let mut alice_balance = utils::expected_balances_all(starting_balance);
         let mut bob_balance = utils::expected_balances_all(starting_balance);
 
