@@ -4,7 +4,6 @@ module triex::constants {
     const FLOAT_SCALING: u64 = 1_000_000_000;
     const FLOAT_SCALING_U128: u128 = 1_000_000_000;
     const MAX_U64: u64 = ((1u128 << 64) - 1) as u64;
-    const MAX_U128: u128 = ((1u256 << 128) - 1) as u128;
     const MIN_PRICE: u64 = 1;
     const MAX_PRICE: u64 = ((1u128 << 63) - 1) as u64;
     const DEFAULT_STAKE_REQUIRED: u64 = 100_000_000_000; // 100 CRED // #feat:stake
@@ -91,11 +90,7 @@ module triex::constants {
 
     // Constants for testing
     #[test_only]
-    const BASE_FEE: u64 = 100_000; // # 0.1%
-    #[test_only]
     const CRED_MULTIPLIER: u64 = 100 * FLOAT_SCALING;
-    #[test_only]
-    const TAKER_DISCOUNT: u64 = 500_000_000;
     #[test_only]
     const USDC_UNIT: u64 = 1_000_000;
     #[test_only]
@@ -112,9 +107,6 @@ module triex::constants {
     const EIncorrectPoolId: u64 = 3;
     #[test_only]
     const EFillMismatch: u64 = 4;
-
-    #[test_only]
-    const EBookOrderNotFound: u64 = 8;
 
     public fun current_version(): u64 {
         CURRENT_VERSION
@@ -134,10 +126,6 @@ module triex::constants {
 
     public fun max_u64(): u64 {
         MAX_U64
-    }
-
-    public fun max_u128(): u128 {
-        MAX_U128
     }
 
     public fun no_restriction(): u8 {
@@ -306,10 +294,6 @@ module triex::constants {
     //     TAKER_FEE
     // }
     #[test_only]
-    public fun bidder_fee(): u64 {
-        BASE_FEE
-    }
-    #[test_only]
     /// Legacy fee fixture, kept because ~60 test call sites are pinned to these
     /// exact numbers. Two things about it no longer describe the protocol:
     ///
@@ -337,11 +321,6 @@ module triex::constants {
     }
 
     #[test_only]
-    public fun taker_discount(): u64 {
-        TAKER_DISCOUNT
-    }
-
-    #[test_only]
     public fun e_order_info_mismatch(): u64 {
         EOrderInfoMismatch
     }
@@ -359,11 +338,6 @@ module triex::constants {
     #[test_only]
     public fun e_incorrect_mid_price(): u64 {
         EIncorrectMidPrice
-    }
-
-    #[test_only]
-    public fun e_book_order_not_found(): u64 {
-        EBookOrderNotFound
     }
 
     #[test_only]

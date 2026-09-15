@@ -74,6 +74,10 @@ module triex::book {
         self.price_scaling
     }
 
+    #[test_only]
+    /// Linear scan for an order's position in a plain `vector<Order>`. The book
+    /// itself keys orders through `BigVector`, so nothing in production needs this;
+    /// tests use it to assert ordering over a slice they have drained.
     public(package) fun find_order_index(
         orderbook: &vector<Order>,
         book_order_id: u64,

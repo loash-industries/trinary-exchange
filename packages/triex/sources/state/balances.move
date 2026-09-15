@@ -42,6 +42,9 @@ module triex::balances {
         balances.quote = balances.quote + quote;
     }
 
+    #[test_only]
+    /// CRED never moves through settlement balances in production — the pool's CRED
+    /// legs are handled by the vault. Tests use this to stage a balance directly.
     public(package) fun add_cred(balances: &mut Balances, cred: u64) {
         balances.cred = balances.cred + cred;
     }

@@ -376,7 +376,10 @@ module triex::registry {
         *self.pools.borrow<PoolKey, ID>(key)
     }
 
+    #[test_only]
     /// Get the MultiCoin pool ID for the given collection, asset, and quote type.
+    /// Production reaches multicoin pools through the shared object directly; only
+    /// tests resolve one by key.
     public(package) fun get_multicoin_pool_id<QuoteAsset>(
         self: &Registry,
         collection_id: ID,

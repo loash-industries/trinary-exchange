@@ -475,27 +475,12 @@ module triex::coin_book {
     /// Build a book with explicit `BigVector` geometry so a benchmark can vary slice
     /// size against a fixed workload. Production always takes the geometry from
     /// `constants`; nothing outside tests may choose it.
-    public fun empty_with_geometry(
-        max_slice_size: u64,
-        max_fan_out: u64,
-        ctx: &mut TxContext,
-    ): Book {
-        Book {
-            bids: big_vector::empty(max_slice_size, max_fan_out, ctx),
-            asks: big_vector::empty(max_slice_size, max_fan_out, ctx),
-            next_bid_order_id: constants::start_bid_order_id(),
-            next_ask_order_id: constants::start_ask_order_id(),
-            price_scaling: constants::float_scaling(),
-        }
-    }
-
-    #[test_only]
-    /// As `empty_with_geometry`, but with `price_scaling` overridable so a benchmark
-    /// can neutralise the arithmetic difference between this book and the multicoin
-    /// one. Coin pools always use `FLOAT_SCALING`, whose `qty_to_quote` is a u128
-    /// multiply *and* a divide; multicoin uses 1, a bare multiply. Comparing the two
-    /// engines without matching this measures the conversion math as well as the
-    /// storage.
+    ///
+    /// `price_scaling` is overridable too, so a benchmark can neutralise the
+    /// arithmetic difference between this book and the multicoin one. Coin pools
+    /// always use `FLOAT_SCALING`, whose `qty_to_quote` is a u128 multiply *and* a
+    /// divide; multicoin uses 1, a bare multiply. Comparing the two engines without
+    /// matching this measures the conversion math as well as the storage.
     public fun empty_with_geometry_scaled(
         max_slice_size: u64,
         max_fan_out: u64,
@@ -512,7 +497,7 @@ module triex::coin_book {
     }
 
     #[test_only]
-    /// Tear down a book built by `empty_with_geometry`. `Order` is droppable, so the
+    /// Tear down a book built by `empty_with_geometry_scaled`. `Order` is droppable, so the
     /// slices can be released without draining them order by order.
     public fun drop_for_testing(self: Book) {
         let Book {

@@ -5,7 +5,7 @@
 /// This is the MultiCoin equivalent of Pool<BaseAsset, QuoteAsset>.
 module triex::multicoin_pool {
     use multicoin::multicoin::{Self, Collection};
-    use std::type_name::{Self, TypeName};
+    use std::type_name;
     use sui::{
         clock::Clock,
         coin::{Self, Coin},
@@ -56,8 +56,6 @@ module triex::multicoin_pool {
         collection_id: ID,
         /// The specific asset_id within the collection
         asset_id: u64,
-        /// Quote currency type name (for registry/validation)
-        quote_type: TypeName,
         book: Book,
         state: State,
         vault: MultiCoinVault<QuoteAsset>,
@@ -137,7 +135,6 @@ module triex::multicoin_pool {
             pool_id: pool_id.to_inner(),
             collection_id,
             asset_id,
-            quote_type,
             book: book::empty_multicoin(ctx),
             state: state::empty(ctx),
             vault: multicoin_vault::empty(collection_id, asset_id, ctx),

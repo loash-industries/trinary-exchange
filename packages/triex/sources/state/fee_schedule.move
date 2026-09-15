@@ -108,17 +108,6 @@ module triex::fee_schedule {
         (index, tier.taker_fee, tier.maker_fee)
     }
 
-    /// Rates of the entry rung. These are what `TradeParams` carries, so views and
-    /// events that report "the pool's fee" keep reporting the rate a new trader
-    /// actually pays.
-    public(package) fun base_taker_fee(self: &FeeSchedule): u64 {
-        self.tiers[0].taker_fee
-    }
-
-    public(package) fun base_maker_fee(self: &FeeSchedule): u64 {
-        self.tiers[0].maker_fee
-    }
-
     /// Validate a schedule against the exchange's hard bounds.
     ///
     /// Bounds are passed in rather than read from `fee_policy` so this module

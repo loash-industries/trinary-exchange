@@ -2,7 +2,6 @@ module triex::math {
     /// scaling setting for float
     const FLOAT_SCALING: u64 = 1_000_000_000;
     const FLOAT_SCALING_U128: u128 = 1_000_000_000;
-    const FLOAT_SCALING_U256: u256 = 1_000_000_000;
     const MAX_U64: u128 = 0xFFFFFFFFFFFFFFFF;
 
     /// Error codes
@@ -109,12 +108,6 @@ module triex::math {
         result
     }
 
-    public fun mul_u128(x: u128, y: u128): u128 {
-        let (_, result) = mul_internal_u128(x, y);
-
-        result
-    }
-
     /// Multiply two floating numbers.
     /// This function will round up the result.
     public fun mul_round_up(x: u64, y: u64): u64 {
@@ -127,12 +120,6 @@ module triex::math {
     /// This function will round down the result.
     public fun div(x: u64, y: u64): u64 {
         let (_, result) = div_internal(x, y);
-
-        result
-    }
-
-    public fun div_u128(x: u128, y: u128): u128 {
-        let (_, result) = div_internal_u128(x, y);
 
         result
     }
@@ -182,14 +169,6 @@ module triex::math {
         (round, result as u64)
     }
 
-    fun mul_internal_u128(x: u128, y: u128): (u128, u128) {
-        let x = x as u256;
-        let y = y as u256;
-        let round = if ((x * y) % FLOAT_SCALING_U256 == 0) 0 else 1;
-
-        (round, (x * y / FLOAT_SCALING_U256) as u128)
-    }
-
     fun div_internal(x: u64, y: u64): (u64, u64) {
         let x = x as u128;
         let y = y as u128;
@@ -198,14 +177,6 @@ module triex::math {
         assert!(result <= MAX_U64, EOverflow);
 
         (round, result as u64)
-    }
-
-    fun div_internal_u128(x: u128, y: u128): (u128, u128) {
-        let x = x as u256;
-        let y = y as u256;
-        let round = if ((x * FLOAT_SCALING_U256 % y) == 0) 0 else 1;
-
-        (round, (x * FLOAT_SCALING_U256 / y) as u128)
     }
 
     #[test]

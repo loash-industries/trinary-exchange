@@ -458,31 +458,6 @@ module triex::multicoin_vault {
         };
     }
 
-    /// Deposit base MultiCoin directly into vault (used during pool creation or direct deposits).
-    public(package) fun deposit_base<QuoteAsset>(
-        self: &mut MultiCoinVault<QuoteAsset>,
-        to_deposit: MultiCoinBalance,
-        ctx: &TxContext,
-    ) {
-        assert!(to_deposit.collection_id() == self.collection_id, EInsufficientBaseBalance);
-        assert!(to_deposit.asset_id() == self.asset_id, EInsufficientBaseBalance);
-
-        let key = MultiCoinBaseKey {
-            collection_id: self.collection_id,
-            asset_id: self.asset_id,
-        };
-        let vault_base: &mut MultiCoinBalance = dof::borrow_mut(&mut self.id, key);
-        vault_base.join(to_deposit, ctx);
-    }
-
-    /// Deposit quote Coin directly into vault.
-    public(package) fun deposit_quote<QuoteAsset>(
-        self: &mut MultiCoinVault<QuoteAsset>,
-        to_deposit: Balance<QuoteAsset>,
-    ) {
-        self.quote_balance.join(to_deposit);
-    }
-
     /// Move already-held quote from the pool balance into the fee reserve.
     ///
     /// This is the shared *deposit* primitive, not a recognition point — it
@@ -546,14 +521,6 @@ module triex::multicoin_vault {
             trading_account_id,
             timestamp,
         );
-    }
-
-    /// Deposit CRED directly into vault.
-    public(package) fun deposit_cred<QuoteAsset>(
-        self: &mut MultiCoinVault<QuoteAsset>,
-        to_deposit: Balance<CRED>,
-    ) {
-        self.cred_balance.join(to_deposit);
     }
 
     public(package) fun withdraw_quote_fees<QuoteAsset>(

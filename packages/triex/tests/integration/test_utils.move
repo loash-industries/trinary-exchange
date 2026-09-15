@@ -17,7 +17,6 @@ module triex::integration_test_utils {
         usdc: u64,
         spam: u64,
         cred: u64,
-        usdt: u64,
     }
 
     public fun expected_balances(
@@ -25,13 +24,12 @@ module triex::integration_test_utils {
         usdc: u64,
         spam: u64,
         cred: u64,
-        usdt: u64,
     ): ExpectedBalances {
-        ExpectedBalances { sui, usdc, spam, cred, usdt }
+        ExpectedBalances { sui, usdc, spam, cred }
     }
 
     public fun expected_balances_all(amount: u64): ExpectedBalances {
-        expected_balances(amount, amount, amount, amount, amount)
+        expected_balances(amount, amount, amount, amount)
     }
 
     public fun add_sui(balances: &mut ExpectedBalances, amount: u64) {
@@ -68,14 +66,6 @@ module triex::integration_test_utils {
 
     public fun set_cred(balances: &mut ExpectedBalances, amount: u64) {
         balances.cred = amount;
-    }
-
-    public fun add_usdt(balances: &mut ExpectedBalances, amount: u64) {
-        balances.usdt = balances.usdt + amount;
-    }
-
-    public fun sub_usdt(balances: &mut ExpectedBalances, amount: u64) {
-        balances.usdt = balances.usdt - amount;
     }
 
     // === Fee model the pools actually run ===
