@@ -100,7 +100,21 @@ class, and — like every other rate here — takes effect no earlier than the
 `operator_share_bps_at()`. The share is credited the moment revenue is recognized, at
 the rate live in that instant, so a rate change can only affect revenue that has
 not happened yet — there is no deferred settlement whose timing anyone could
-game, and `operator_owed()` is exact at all times.
+game, and `operator_owed()` carries no unsettled remainder beside it.
+
+That exactness is about **timing, not amount**. Each recognition credits
+`floor(recognized × bps / 10000)`, so the running figure sits at or below the
+operator's exact share, by under one raw quote unit per recognition event. The
+shortfall stays in the reserve as treasury revenue — it is never lost, and the
+share is never paid out of fees that were not collected — but it is not
+proportional: because the loss is bounded per *event* rather than per unit of
+revenue, any single recognition smaller than `10000 / bps` raw units credits
+zero. Low rates are the exposed case (at 1 bp, an event below 10000 raw units
+credits nothing), and so is finely fragmented flow. The contracts sum before
+flooring wherever a transaction recognizes more than once — per-account fill
+proceeds, and the whole of a cancel batch — which is what keeps a market maker
+pulling a book of quotes from being credited nothing at all. An operator
+reconciling payouts should expect the floored figure, not `bps × revenue`.
 
 Where the share is paid is configuration, not inference: `FeePolicy` holds an
 explicit `collection_id -> address`, written once through a witness minted by an
@@ -127,8 +141,9 @@ power than it sounds. It cannot:
 
 - Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
 - Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
-  `operator_owed`, which is exact at all times — a sweep pays the operator's share to
-  the operator and can never reach it
+  `operator_owed` in full — a sweep pays the operator's share to the operator and
+  can never reach it. (What the cap *does* keep is the sub-unit flooring
+  remainder described above, which is revenue never credited to anyone else.)
 - Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
   the address `FeePolicy` records — registered through the adapter witness,
   destructible but never re-pointable by the cap — and never the caller

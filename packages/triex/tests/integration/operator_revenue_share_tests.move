@@ -22,6 +22,7 @@ module triex::integration_hub_revenue_share_tests {
         fee_policy::FeePolicy,
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
+        pool_test_utils,
         quote_fee,
         registry::{Self, Registry},
         trading_account::TradingAccount,
@@ -224,6 +225,68 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(clock);
         return_shared(policy);
         return_shared(pool);
+    }
+
+    /// Alice pulls every quote she has resting, in one transaction.
+    fun cancel_all_the_orders(pool_id: ID, ta_id: ID, test: &mut Scenario) {
+        test.next_tx(ALICE);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
+        pool.cancel_all_orders(&policy, &mut ta, &proof, &clock, test.ctx());
+        return_shared(ta);
+        return_shared(clock);
+        return_shared(policy);
+        return_shared(pool);
+    }
+
+    /// The same, by explicit id list — the other batch entry point.
+    fun cancel_these_orders(
+        pool_id: ID,
+        ta_id: ID,
+        order_ids: vector<u64>,
+        test: &mut Scenario,
+    ) {
+        test.next_tx(ALICE);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
+        let proof = ta.generate_proof_as_owner(test.ctx());
+        pool.cancel_orders(&policy, &mut ta, &proof, order_ids, &clock, test.ctx());
+        return_shared(ta);
+        return_shared(clock);
+        return_shared(policy);
+        return_shared(pool);
+    }
+
+    /// A rate and an order size chosen so that one order's retained escrow is
+    /// *below the flooring threshold*: `retained x 1 / 10000 < 1`. Recognized
+    /// one order at a time, the hub is credited nothing at all, however many
+    /// orders are pulled. Recognized once over the batch, it is credited the
+    /// floor of the sum. The gap is the whole point of the batching, so the
+    /// numbers are derived here and asserted by the callers rather than pinned
+    /// as literals.
+    ///
+    /// Returns `(bps, price, num_orders)`.
+    fun sub_threshold_quote_params(): (u64, u64, u64) {
+        (1, 1_388_611, 8)
+    }
+
+    /// Escrow one `sub_threshold_quote_params` order retains when cancelled
+    /// unfilled: the whole maker fee, narrowed by `cancel_retention_bps`.
+    fun retained_per_order(maker_fee: u64): u64 {
+        let (_, retained) = quote_fee::split_released_fee(
+            maker_fee,
+            pool_test_utils::default_cancel_retention_bps(),
+        );
+        retained
+    }
+
+    fun share_of(amount: u128, bps: u64): u64 {
+        (amount * (bps as u128) / (quote_fee::fee_precision() as u128)) as u64
     }
 
     /// Solvency: the reserve covers both claims against it, always — asserted
@@ -672,6 +735,113 @@ module triex::integration_hub_revenue_share_tests {
             assert!(pool.operator_owed() == expected);
             return_shared(pool);
         };
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun a_cancel_batch_floors_once_not_once_per_order() {
+        // The hub's share is computed where revenue is recognized, and it
+        // floors. A cancel's retained escrow is the smallest figure the system
+        // produces — one order's maker fee, already narrowed by
+        // `cancel_retention_bps` — so recognizing each cancel separately floors
+        // repeatedly on a number that is frequently below the rate's threshold.
+        // A market maker pulling a book of quotes is exactly that case, and it
+        // is not a rounding nuisance: the hub is credited *zero*, permanently,
+        // on revenue the treasury banks in full.
+        let mut test = begin(OWNER);
+        let (pool_id, collection_id, _, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
+
+        let (bps, price, num_orders) = sub_threshold_quote_params();
+        configure_hub(collection_id, bps, &mut test);
+        test.next_epoch(OWNER);
+
+        let mut maker_fee_each = 0;
+        let mut i = 0;
+        while (i < num_orders) {
+            let (_, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1, &mut test);
+            maker_fee_each = maker_fee;
+            i = i + 1;
+        };
+
+        let retained_each = retained_per_order(maker_fee_each);
+        let batch_total = (retained_each as u128) * (num_orders as u128);
+
+        // The regime this test exists for: one order alone credits nothing, so
+        // per-order recognition would credit nothing N times over.
+        assert!(share_of(retained_each as u128, bps) == 0);
+        // Batched, the same revenue clears the threshold.
+        let expected = share_of(batch_total, bps);
+        assert!(expected > 0);
+
+        cancel_all_the_orders(pool_id, alice_ta, &mut test);
+
+        assert!(operator_owed(pool_id, &mut test) == expected);
+        assert_solvent(pool_id, &mut test);
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun the_explicit_id_cancel_batch_floors_once_too() {
+        // `cancel_orders` is the other batch entry point and must not be the
+        // one that regresses: same rate, same orders, same credit.
+        let mut test = begin(OWNER);
+        let (pool_id, collection_id, _, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
+
+        let (bps, price, num_orders) = sub_threshold_quote_params();
+        configure_hub(collection_id, bps, &mut test);
+        test.next_epoch(OWNER);
+
+        let mut order_ids = vector[];
+        let mut maker_fee_each = 0;
+        let mut i = 0;
+        while (i < num_orders) {
+            let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1, &mut test);
+            order_ids.push_back(order_id);
+            maker_fee_each = maker_fee;
+            i = i + 1;
+        };
+
+        let retained_each = retained_per_order(maker_fee_each);
+        let expected = share_of((retained_each as u128) * (num_orders as u128), bps);
+        assert!(share_of(retained_each as u128, bps) == 0);
+        assert!(expected > 0);
+
+        cancel_these_orders(pool_id, alice_ta, order_ids, &mut test);
+
+        assert!(operator_owed(pool_id, &mut test) == expected);
+        assert_solvent(pool_id, &mut test);
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    #[test]
+    fun batching_recognition_does_not_change_a_single_cancel() {
+        // The deferral is a property of the batch entry points only. One cancel
+        // recognizes on its own, at the same instant it always did, and credits
+        // the same floor — so the batching cannot have moved the single-cancel
+        // path's rounding in either direction.
+        let mut test = begin(OWNER);
+        let (pool_id, collection_id, _, alice_ta, _bob_ta, collection_cap) = setup(&mut test);
+
+        let (bps, price, _) = sub_threshold_quote_params();
+        configure_hub(collection_id, bps, &mut test);
+        test.next_epoch(OWNER);
+
+        let (order_id, _, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1, &mut test);
+        let retained = retained_per_order(maker_fee);
+        assert!(retained > 0);
+
+        cancel_the_order(pool_id, alice_ta, order_id, &mut test);
+
+        // Below the threshold on its own: the dust stays in the reserve as
+        // treasury revenue rather than being credited or lost.
+        assert!(operator_owed(pool_id, &mut test) == share_of(retained as u128, bps));
+        assert_solvent(pool_id, &mut test);
 
         unit_test::destroy(collection_cap);
         end(test);

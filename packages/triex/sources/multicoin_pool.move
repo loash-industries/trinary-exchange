@@ -685,23 +685,40 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        self.cancel_order_int(policy, option::none(), trading_account, trade_proof, order_id, clock, ctx);
+        let _ = self.cancel_order_int(policy, false, trading_account, trade_proof, order_id, clock, ctx);
     }
 
-    /// The cancel body. `batch_operator_bps` carries a rate the batch entry
-    /// points resolved once for their whole transaction; `none` resolves
-    /// lazily, and only when the cancel actually retained escrow — an ask
-    /// cancel never walks the policy at all.
+    /// The cancel body. Returns the escrow this cancel retained.
+    ///
+    /// `defer_recognition` is what the batch entry points set. Recognition is
+    /// where the hub's share is computed, and it *floors* — so recognizing each
+    /// order separately floors once per order, on the smallest figure in the
+    /// system: one order's escrow, already narrowed by `cancel_retention_bps`.
+    /// At any rate below the ceiling that rounds to zero for most orders, and a
+    /// market maker pulling a hundred quotes would floor a hundred times and be
+    /// credited nothing. Summing the batch first and recognizing once floors
+    /// once, on a figure a hundred times larger.
+    ///
+    /// Deferring is safe because recognition only ever *lowers* encumbrance:
+    /// holding the escrow in `locked_maker_fees` for the rest of the loop keeps
+    /// `encumbered()` at the value it already had before the first cancel, which
+    /// the reserve already covered. The refunds inside the loop are unaffected —
+    /// they decrement both the reserve and `locked_maker_fees` themselves — and a
+    /// transaction that aborts mid-batch rolls the whole thing back regardless.
+    ///
+    /// When false, the cancel recognizes on its own and resolves the rate
+    /// lazily — only when it actually retained escrow, so an ask cancel never
+    /// walks the policy at all.
     fun cancel_order_int<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
-        batch_operator_bps: Option<u64>,
+        defer_recognition: bool,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
         order_id: u64,
         clock: &Clock,
         ctx: &mut TxContext,
-    ) {
+    ): u64 {
         let pool_inner = self.load_inner_mut();
         let mut order = pool_inner.book.cancel_order(order_id);
         assert!(order.trading_account_id() == trading_account.id(), EInvalidOrderTradingAccount);
@@ -736,16 +753,17 @@ module triex::multicoin_pool {
                 ctx,
             );
         // The retained share stops being a user claim and becomes revenue —
-        // split between hub and treasury at this instant's rate.
+        // split between hub and treasury at this instant's rate. In a batch the
+        // caller does this once over the sum; see `defer_recognition`.
         let retained = fee_release.release_retained();
-        let operator_bps = if (retained == 0) {
-            0
-        } else if (batch_operator_bps.is_some()) {
-            *batch_operator_bps.borrow()
-        } else {
-            policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch())
+        if (!defer_recognition) {
+            let operator_bps = if (retained == 0) {
+                0
+            } else {
+                policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch())
+            };
+            pool_inner.vault.recognize_locked_maker_fees(retained, operator_bps);
         };
-        pool_inner.vault.recognize_locked_maker_fees(retained, operator_bps);
 
         order.emit_order_canceled(
             pool_inner.pool_id,
@@ -754,6 +772,10 @@ module triex::multicoin_pool {
             fee_release.release_retained(),
             clock.timestamp_ms(),
         );
+
+        // Per-order either way: what the batch defers is recognition, not the
+        // attribution the event reports.
+        retained
     }
 
     /// Cancel all orders for a trading_account.
@@ -775,24 +797,32 @@ module triex::multicoin_pool {
 
         let num_orders = open_orders.length();
         if (num_orders == 0) return;
-        // Resolved once and threaded to every cancel — the same rule the fill
-        // path documents: a batch of N cancels must not do N dynamic-field
-        // walks.
-        let operator_bps = option::some(policy.operator_share_bps_at(collection_id, ctx.epoch()));
+        let mut retained = 0;
         let mut i = 0;
         while (i < num_orders) {
             let order_id = open_orders[i];
-            self.cancel_order_int(
-                policy,
-                operator_bps,
-                trading_account,
-                trade_proof,
-                order_id,
-                clock,
-                ctx,
-            );
+            retained =
+                retained +
+                self.cancel_order_int(
+                    policy,
+                    true,
+                    trading_account,
+                    trade_proof,
+                    order_id,
+                    clock,
+                    ctx,
+                );
             i = i + 1;
-        }
+        };
+
+        // One recognition for the whole batch. That is one dynamic-field walk
+        // instead of N — the rule the fill path documents — and, more to the
+        // point, one flooring instead of N; see `cancel_order_int`. The sum
+        // cannot overflow: every term was escrow inside `locked_maker_fees`,
+        // itself bounded by the reserve.
+        if (retained == 0) return;
+        let operator_bps = policy.operator_share_bps_at(collection_id, ctx.epoch());
+        self.load_inner_mut().vault.recognize_locked_maker_fees(retained, operator_bps);
     }
 
     /// Cancel multiple orders within a vector. The orders must be owned by the trading_account.
@@ -809,23 +839,30 @@ module triex::multicoin_pool {
     ) {
         let num_orders = order_ids.length();
         if (num_orders == 0) return;
-        // See `cancel_all_orders`: one rate resolution for the whole batch.
+        // See `cancel_all_orders`: one rate resolution, and one flooring, for
+        // the whole batch.
         let collection_id = self.load_inner().collection_id;
-        let operator_bps = option::some(policy.operator_share_bps_at(collection_id, ctx.epoch()));
+        let mut retained = 0;
         let mut i = 0;
         while (i < num_orders) {
             let order_id = order_ids[i];
-            self.cancel_order_int(
-                policy,
-                operator_bps,
-                trading_account,
-                trade_proof,
-                order_id,
-                clock,
-                ctx,
-            );
+            retained =
+                retained +
+                self.cancel_order_int(
+                    policy,
+                    true,
+                    trading_account,
+                    trade_proof,
+                    order_id,
+                    clock,
+                    ctx,
+                );
             i = i + 1;
-        }
+        };
+
+        if (retained == 0) return;
+        let operator_bps = policy.operator_share_bps_at(collection_id, ctx.epoch());
+        self.load_inner_mut().vault.recognize_locked_maker_fees(retained, operator_bps);
     }
 
     /// Withdraw settled amounts to the trading_account.
