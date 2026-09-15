@@ -11,11 +11,7 @@
 module triex::integration_hub_revenue_share_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
-    use sui::{
-        clock::Clock,
-        coin::Coin,
-        test_scenario::{Scenario, begin, end, return_shared}
-    };
+    use sui::{clock::Clock, coin::Coin, test_scenario::{Scenario, begin, end, return_shared}};
     use token::cred::CRED;
     use triex::{
         constants,
@@ -152,7 +148,13 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// Alice rests a bid. Returns (order_id, taker_fee_paid, maker_fee_escrowed).
-    fun rest_a_bid(pool_id: ID, ta_id: ID, price: u64, qty: u64, test: &mut Scenario): (u64, u64, u64) {
+    fun rest_a_bid(
+        pool_id: ID,
+        ta_id: ID,
+        price: u64,
+        qty: u64,
+        test: &mut Scenario,
+    ): (u64, u64, u64) {
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -243,12 +245,7 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// The same, by explicit id list — the other batch entry point.
-    fun cancel_these_orders(
-        pool_id: ID,
-        ta_id: ID,
-        order_ids: vector<u64>,
-        test: &mut Scenario,
-    ) {
+    fun cancel_these_orders(pool_id: ID, ta_id: ID, order_ids: vector<u64>, test: &mut Scenario) {
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -390,7 +387,13 @@ module triex::integration_hub_revenue_share_tests {
         // 1. A resting bid: the taker fee is zero (nothing filled) and the maker
         //    fee is refundable escrow. A credit that counted the deposit whole
         //    would already be wrong here.
-        let (order_id, taker_fee, maker_fee) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
+        let (order_id, taker_fee, maker_fee) = rest_a_bid(
+            pool_id,
+            alice_ta,
+            price,
+            1000,
+            &mut test,
+        );
         assert!(taker_fee == 0);
         assert!(maker_fee > 0);
         assert!(operator_owed(pool_id, &mut test) == 0);
@@ -731,7 +734,9 @@ module triex::integration_hub_revenue_share_tests {
             let (_, retained) = quote_fee::split_released_fee(maker_fee, 2000);
             assert!(retained > 0);
             let expected =
-                (((retained as u128) * (bps as u128)) / (quote_fee::fee_precision() as u128)) as u64;
+                (
+                    ((retained as u128) * (bps as u128)) / (quote_fee::fee_precision() as u128),
+                ) as u64;
             assert!(pool.operator_owed() == expected);
             return_shared(pool);
         };

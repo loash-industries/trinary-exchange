@@ -4,12 +4,7 @@
 /// - CRED: Traditional Sui Balance<CRED> for fee payments
 module triex::multicoin_vault {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
-    use sui::{
-        balance::{Self, Balance},
-        coin::{Self, Coin},
-        dynamic_object_field as dof,
-        event
-    };
+    use sui::{balance::{Self, Balance}, coin::{Self, Coin}, dynamic_object_field as dof, event};
     use token::cred::CRED;
     use triex::{
         balances::Balances,

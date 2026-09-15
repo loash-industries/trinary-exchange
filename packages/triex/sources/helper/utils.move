@@ -5,7 +5,6 @@
 /// `u128`. Multicoin pools (`triex::book`) use opaque `u64` serials and never
 /// touch these functions. `pop_until` / `pop_n` back `triex::big_vector`.
 module triex::utils {
-
     /// Pop elements from the back of `v` until its length equals `n`,
     /// returning the elements that were popped in the order they
     /// appeared in `v`.
@@ -137,7 +136,11 @@ module triex::utils {
     /// Every ask key sorts above every bid key, which is why one codec can key
     /// two independent trees without collision.
     fun test_side_bit_partitions_keyspace() {
-        let highest_bid = encode_order_id(true, triex::constants::max_price(), 18446744073709551615);
+        let highest_bid = encode_order_id(
+            true,
+            triex::constants::max_price(),
+            18446744073709551615,
+        );
         let lowest_ask = encode_order_id(false, 0, 0);
         assert!(highest_bid < lowest_ask, 0);
     }

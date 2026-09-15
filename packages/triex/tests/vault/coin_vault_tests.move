@@ -4,10 +4,10 @@ module triex::coin_vault_tests {
     use sui::{balance, object::id_from_address, test_scenario::{next_tx, begin, end}};
     use triex::{
         balances,
+        coin_vault,
         constants,
         trading_account::{Self, TradingAccount},
-        trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds},
-        coin_vault
+        trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds}
     };
 
     const OWNER: address = @0xF;

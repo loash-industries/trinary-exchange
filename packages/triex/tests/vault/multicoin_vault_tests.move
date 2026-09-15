@@ -903,9 +903,10 @@ module triex::multicoin_vault_tests {
                     TEST_ASSET_ID,
                     test.ctx(),
                 );
-                vault.deposit_quote_fees(
-                    mint_for_testing<USDC>(*amount, test.ctx()).into_balance(),
-                );
+                vault.deposit_quote_fees(mint_for_testing<USDC>(
+                    *amount,
+                    test.ctx(),
+                ).into_balance());
                 vault.credit_operator_share(*amount, *bps);
 
                 assert!(vault.operator_owed() <= *amount);
@@ -961,9 +962,10 @@ module triex::multicoin_vault_tests {
                     TEST_ASSET_ID,
                     test.ctx(),
                 );
-                vault.deposit_quote_fees(
-                    mint_for_testing<USDC>(*amount, test.ctx()).into_balance(),
-                );
+                vault.deposit_quote_fees(mint_for_testing<USDC>(
+                    *amount,
+                    test.ctx(),
+                ).into_balance());
                 vault.credit_operator_share(*amount, *bps);
 
                 assert!(

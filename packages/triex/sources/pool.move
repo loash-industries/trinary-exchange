@@ -13,15 +13,15 @@ module triex::pool {
         big_vector::BigVector,
         coin_account::Account,
         coin_book::{Self, Book},
+        coin_order::Order,
+        coin_order_info::{Self, OrderInfo},
+        coin_state::{Self, State},
+        coin_vault::{Self, Vault},
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
-        coin_order::Order,
-        coin_order_info::{Self, OrderInfo},
         registry::{TriexAdminCap, Registry},
-        coin_state::{Self, State},
-        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
-        coin_vault::{Self, Vault}
+        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap}
     };
 
     // use fun df::add as UID.add;

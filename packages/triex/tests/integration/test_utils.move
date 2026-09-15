@@ -19,12 +19,7 @@ module triex::integration_test_utils {
         cred: u64,
     }
 
-    public fun expected_balances(
-        sui: u64,
-        usdc: u64,
-        spam: u64,
-        cred: u64,
-    ): ExpectedBalances {
+    public fun expected_balances(sui: u64, usdc: u64, spam: u64, cred: u64): ExpectedBalances {
         ExpectedBalances { sui, usdc, spam, cred }
     }
 

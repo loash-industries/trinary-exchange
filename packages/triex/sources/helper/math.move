@@ -56,12 +56,7 @@ module triex::math {
     /// the intermediate, and the clamp guarantees the result fits. Rounding is
     /// identical to `quote_to_qty` — both floor — so this returns the same value
     /// wherever that one does not abort.
-    public fun quote_to_qty_capped(
-        quote_qty: u64,
-        price: u64,
-        price_scaling: u64,
-        cap: u64,
-    ): u64 {
+    public fun quote_to_qty_capped(quote_qty: u64, price: u64, price_scaling: u64, cap: u64): u64 {
         let qty = if (price_scaling == FLOAT_SCALING) {
             (quote_qty as u128) * FLOAT_SCALING_U128 / (price as u128)
         } else {
@@ -194,8 +189,11 @@ module triex::math {
             quote_to_qty(1_000_000_000, 2_000_000_000, FLOAT_SCALING),
             0,
         );
-        assert!(quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, uncapped) ==
-            500_000_000, 1);
+        assert!(
+            quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, uncapped) ==
+            500_000_000,
+            1,
+        );
 
         // The cap binds when it is the smaller of the two.
         assert!(quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, 100) == 100, 2);
@@ -213,10 +211,7 @@ module triex::math {
         // Multicoin scaling is a plain division, capped the same way.
         assert!(quote_to_qty_capped(1_000, 7, 1, 999) == 142, 6);
         assert!(quote_to_qty_capped(1_000, 7, 1, 100) == 100, 7);
-        assert!(
-            quote_to_qty_capped(1_000, 7, 1, uncapped) == quote_to_qty(1_000, 7, 1),
-            8,
-        );
+        assert!(quote_to_qty_capped(1_000, 7, 1, uncapped) == quote_to_qty(1_000, 7, 1), 8);
 
         // Nothing in, nothing out.
         assert!(quote_to_qty_capped(0, 1, FLOAT_SCALING, uncapped) == 0, 9);

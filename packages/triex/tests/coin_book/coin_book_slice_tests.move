@@ -388,5 +388,4 @@ module triex::coin_book_slice_tests {
         return_shared(pool);
         end(test);
     }
-
 }

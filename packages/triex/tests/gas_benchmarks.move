@@ -29,7 +29,6 @@ module triex::gas_benchmarks {
     #[test]
     fun bench_depth_300() { pool_test_utils::bench_depth_300() }
 
-
     #[test]
     fun bench_cancel_at_depth_80() { pool_test_utils::bench_cancel_at_depth_80() }
 

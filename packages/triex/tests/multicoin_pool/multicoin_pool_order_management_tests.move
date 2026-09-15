@@ -241,7 +241,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -2077,7 +2079,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -2124,7 +2128,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -2648,7 +2654,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3166,7 +3174,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3220,7 +3230,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3255,7 +3267,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3302,7 +3316,9 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,

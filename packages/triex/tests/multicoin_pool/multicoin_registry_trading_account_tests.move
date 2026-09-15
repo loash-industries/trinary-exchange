@@ -2,11 +2,7 @@
 module triex::integration_multicoin_registry_trading_account_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
-    use sui::{
-        clock::{Self, Clock},
-        coin,
-        test_scenario::{Scenario, begin, end, return_shared}
-    };
+    use sui::{clock::{Self, Clock}, coin, test_scenario::{Scenario, begin, end, return_shared}};
     use token::cred::CRED;
     use triex::{
         constants,
@@ -43,7 +39,9 @@ module triex::integration_multicoin_registry_trading_account_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
 
         // Create trading account
         test.next_tx(ALICE);

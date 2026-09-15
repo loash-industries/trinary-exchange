@@ -63,7 +63,8 @@ module triex::state_tests {
             &mut order_info1,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let maker_fee = order_info1.maker_fees();
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(0, 1 * constants::usdc_unit() + maker_fee, 0));
@@ -91,7 +92,8 @@ module triex::state_tests {
             &mut order_info2,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let maker_fee = order_info2.maker_fees();
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(0, 1_002_002 + maker_fee, 0));
@@ -119,7 +121,8 @@ module triex::state_tests {
             &mut order_info3,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(1_999_000_000, 0, 0));
 
@@ -135,7 +138,8 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         assert_eq!(settled, balances::new(0, 2_002_002 - 44_044, 0));
         assert_eq!(owed, balances::new(10 * constants::sui_unit(), 0, 0));
         // Reported as a single deposit attributed to Bob, the account charged.
@@ -220,7 +224,8 @@ module triex::state_tests {
             &mut order_info1,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let maker_fee = order_info1.maker_fees();
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(0, 10 * constants::usdc_unit() + maker_fee, 0));
@@ -237,7 +242,8 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         // Bob's ask-taker fee (2.2% of 5 USDC = 0.11) comes out of proceeds
         assert_eq!(settled, balances::new(0, 5 * constants::usdc_unit() - 110_000, 0));
         assert_eq!(owed, balances::new(5 * constants::sui_unit(), 0, 0));
@@ -261,7 +267,8 @@ module triex::state_tests {
             &mut taker_order2,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         assert_eq!(settled, balances::new(0, 0, 0));
         assert_eq!(owed, balances::new(5 * constants::sui_unit(), 0, 0));
 
@@ -335,7 +342,8 @@ module triex::state_tests {
             &mut order_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let maker_fee = order_info.maker_fees();
         assert_eq!(settled, balances::new(0, 0, 0));
         // Maker fee for BID: 13 SUI * fee rate
@@ -353,7 +361,8 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         // Bob's ask-taker fee (2.2% of 130 USDC = 2.86) comes out of proceeds
         assert_eq!(settled, balances::new(0, 130 * constants::usdc_unit() - 2_860_000, 0));
@@ -889,7 +898,8 @@ module triex::state_tests {
             &mut order_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         let maker_fee = order_info.maker_fees();
         assert_eq!(settled, balances::new(0, 0, 0));
@@ -901,7 +911,7 @@ module triex::state_tests {
             &mut order_info.to_order(),
             id_from_address(ALICE),
             constants::float_scaling(),
-            );
+        );
         assert_eq!(settled, balances::new(0, 100 * constants::usdc_unit(), 0));
         assert_eq!(owed, balances::new(0, 0, 0));
 
@@ -937,7 +947,8 @@ module triex::state_tests {
             &mut order_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         test.next_tx(ALICE);
         let price = 1 * constants::usdc_unit();
@@ -962,14 +973,15 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         test.next_tx(ALICE);
         let (settled, owed, _released_fee) = state.process_cancel(
             &mut order,
             id_from_address(ALICE),
             constants::float_scaling(),
-            );
+        );
         // paid 100 USDC to buy 10 SUI. 1 SUI filled.
         // returns 90 USDC and 1 SUI; quote-denominated maker fees remain in the fee reserve and are not refunded
         assert_eq!(
@@ -1425,7 +1437,8 @@ module triex::state_tests {
             &mut order_info,
             TAKER_FEE,
             MAKER_FEE,
-            ctx);
+            ctx,
+        );
 
         order_info.to_order()
     }
@@ -1443,7 +1456,7 @@ module triex::state_tests {
             &mut order,
             id_from_address(ALICE),
             constants::float_scaling(),
-            );
+        );
 
         // Alice gets her principal plus 80% of the escrow back.
         let escrow = 36 * constants::float_scaling() / 10;
@@ -1474,7 +1487,7 @@ module triex::state_tests {
             &mut order,
             id_from_address(ALICE),
             constants::float_scaling(),
-            );
+        );
 
         let escrow = 36 * constants::float_scaling() / 10;
         assert_eq!(settled, balances::new(0, 200 * constants::float_scaling() + escrow, 0));
@@ -1503,7 +1516,8 @@ module triex::state_tests {
             &mut order_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let mut order = order_info.to_order();
         let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1511,7 +1525,7 @@ module triex::state_tests {
             &mut order,
             id_from_address(ALICE),
             constants::float_scaling(),
-            );
+        );
 
         // Asks lock nothing, so there is no escrow to split and nothing to book.
         assert_eq!(settled, balances::new(100 * constants::float_scaling(), 0, 0));
@@ -1550,7 +1564,7 @@ module triex::state_tests {
             cancel_quantity,
             &order,
             constants::float_scaling(),
-            );
+        );
 
         let refund = 1728 * constants::float_scaling() / 1000;
         let retained = 216 * constants::float_scaling() / 100 - refund;
@@ -1590,7 +1604,8 @@ module triex::state_tests {
             &mut maker_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         let escrow = maker_info.maker_fees();
         let fees_at_placement = state.total_fees_collected_for_testing();
 
@@ -1608,7 +1623,8 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         let (refund, retained) = quote_fee::split_released_fee(escrow, 2000);
         // One refund entry, attributed to the expired maker and their order —
@@ -1659,7 +1675,8 @@ module triex::state_tests {
             &mut maker_info,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
         // Nothing pends at placement: escrow the maker can still cancel out of
         // must not buy tier progress.
         assert_eq!(state.pending_turnover_total(id_from_address(ALICE), test.ctx()), 0);
@@ -1677,7 +1694,8 @@ module triex::state_tests {
             &mut taker_order,
             TAKER_FEE,
             MAKER_FEE,
-            test.ctx());
+            test.ctx(),
+        );
 
         // The fill earned Alice's escrow out at her snapshotted 1.8% on the
         // 10 USDC notional; the credit is visible to views immediately...

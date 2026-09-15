@@ -675,7 +675,15 @@ module triex::multicoin_pool {
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        let _ = self.cancel_order_int(policy, false, trading_account, trade_proof, order_id, clock, ctx);
+        let _ = self.cancel_order_int(
+            policy,
+            false,
+            trading_account,
+            trade_proof,
+            order_id,
+            clock,
+            ctx,
+        );
     }
 
     /// The cancel body. Returns the escrow this cancel retained.
@@ -1578,9 +1586,7 @@ module triex::multicoin_pool {
             // Escrow these fills earned out, plus the share retained from any
             // expiries, is revenue now and sweepable — the hub's share of the
             // actual decrement is credited inside.
-            pool_inner
-                .vault
-                .recognize_locked_maker_fees(fee_flows.recognized(), operator_bps);
+            pool_inner.vault.recognize_locked_maker_fees(fee_flows.recognized(), operator_bps);
             // The taker fee is revenue the moment it is charged, so it counts
             // toward this trader's tier — credited into the exchange-wide ring on
             // their own trading_account, after pricing, so the order never discounts

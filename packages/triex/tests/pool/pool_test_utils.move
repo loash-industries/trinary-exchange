@@ -12,12 +12,13 @@ module triex::pool_test_utils {
     use triex::{
         big_vector::{BigVector, borrow as borrow},
         coin_book,
-        constants,
-        fee_policy::{Self, FeePolicy},
         coin_fill::Fill,
-        math,
         coin_order::{Self, Order},
         coin_order_info::{Self, OrderInfo},
+        coin_vault,
+        constants,
+        fee_policy::{Self, FeePolicy},
+        math,
         pool::{Self, Pool},
         quote_fee,
         registry::{Self, Registry, TriexAdminCap},
@@ -30,15 +31,13 @@ module triex::pool_test_utils {
             create_acct_and_share_with_funds,
             create_acct_and_share_with_funds_typed,
             create_caps
-        },
-        coin_vault
+        }
     };
 
     const OWNER: address = @0x1;
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
     const CAROL: address = @0xCCCC;
-
 
     // Entry-tier rates the shared `FeePolicy` is seeded with in tests — tier 0 of
     // the genesis ladder `fee_policy::bootstrap_quote` writes at launch. Multicoin
@@ -6837,7 +6836,11 @@ module triex::pool_test_utils {
 
             let expiries = event::events_by_type<coin_order_info::OrderExpired>();
             assert!(expiries.length() == 1, 5);
-            let (expired_order_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(
+            let (
+                expired_order_id,
+                fee_refunded,
+                fee_retained,
+            ) = coin_order_info::expired_event_parts(
                 &expiries[0],
             );
             assert!(expired_order_id == refund_order_id, 6);
@@ -7332,7 +7335,9 @@ module triex::pool_test_utils {
             // event — an indexer would book a refund that never happened.
             let expiries = event::events_by_type<coin_order_info::OrderExpired>();
             assert!(expiries.length() == 1, 9);
-            let (_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(&expiries[0]);
+            let (_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(
+                &expiries[0],
+            );
             assert!(fee_refunded == 0, 10);
             assert!(fee_retained == 0, 11);
 
@@ -9170,7 +9175,8 @@ module triex::pool_test_utils {
         let mut resting_trader = ALICE;
         while (placed < depth) {
             if (placed % per_account == 0) {
-                resting_trader = sui::address::from_u256(0x20000 + ((placed / per_account) as u256));
+                resting_trader =
+                    sui::address::from_u256(0x20000 + ((placed / per_account) as u256));
                 resting_account =
                     create_acct_and_share_with_funds(
                         resting_trader,

@@ -1892,7 +1892,9 @@ module triex::integration_multicoin_pool_advanced_tests {
     fun test_multicoin_permissionless_pool_invalid_fee_e() {
         let mut test = begin(OWNER);
 
-        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
 
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
@@ -2258,7 +2260,14 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_1.order_id(), &clock, test.ctx());
+        pool.cancel_order(
+            &policy,
+            &mut ta,
+            &trade_proof,
+            order_info_1.order_id(),
+            &clock,
+            test.ctx(),
+        );
 
         return_shared(pool);
         return_shared(policy);
@@ -2293,7 +2302,14 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_2.order_id(), &clock, test.ctx());
+        pool.cancel_order(
+            &policy,
+            &mut ta,
+            &trade_proof,
+            order_info_2.order_id(),
+            &clock,
+            test.ctx(),
+        );
 
         return_shared(pool);
         return_shared(policy);
@@ -2328,7 +2344,14 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_3.order_id(), &clock, test.ctx());
+        pool.cancel_order(
+            &policy,
+            &mut ta,
+            &trade_proof,
+            order_info_3.order_id(),
+            &clock,
+            test.ctx(),
+        );
 
         return_shared(pool);
         return_shared(policy);
@@ -2363,7 +2386,14 @@ module triex::integration_multicoin_pool_advanced_tests {
             test.ctx(),
         );
 
-        pool.cancel_order(&policy, &mut ta, &trade_proof, order_info_4.order_id(), &clock, test.ctx());
+        pool.cancel_order(
+            &policy,
+            &mut ta,
+            &trade_proof,
+            order_info_4.order_id(),
+            &clock,
+            test.ctx(),
+        );
 
         return_shared(pool);
         return_shared(policy);
@@ -2379,7 +2409,9 @@ module triex::integration_multicoin_pool_advanced_tests {
     fun test_multicoin_permissionless_pools() {
         let mut test = begin(OWNER);
 
-        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(
+            &mut test,
+        );
 
         // Create permissionless pool for ASSET_GOLD with USDC quote
         test.next_tx(OWNER);
