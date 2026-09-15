@@ -105,7 +105,7 @@ module triex::integration_multicoin_test_utils {
     public fun setup_multicoin_pool(
         sender: address,
         registry_id: ID,
-        collection_id: ID,
+        _collection_id: ID,
         asset_id: u64,
         test: &mut Scenario,
     ): ID {

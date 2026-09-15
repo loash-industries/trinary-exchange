@@ -4,7 +4,7 @@ module triex::integration_multicoin_registry_trading_account_tests {
     use std::unit_test;
     use sui::{
         clock::{Self, Clock},
-        coin::{Self, mint_for_testing},
+        coin,
         test_scenario::{Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
@@ -23,8 +23,6 @@ module triex::integration_multicoin_registry_trading_account_tests {
     // Test addresses
     const OWNER: address = @0x1;
     const ALICE: address = @0xAAAA;
-    const BOB: address = @0xBBBB;
-    const CHARLIE: address = @0xCCCC;
 
     // Test asset IDs
     const ASSET_GOLD: u64 = 1;
@@ -34,83 +32,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
     // === Shared Helpers (delegated to integration_multicoin_test_utils) ===
 
     #[test_only]
-    fun get_time(test: &mut Scenario): u64 { mc_utils::get_time(test) }
-
-    #[test_only]
-    fun set_time(current_time: u64, test: &mut Scenario) { mc_utils::set_time(current_time, test) }
-
-    #[test_only]
-    fun share_clock(test: &mut Scenario) { mc_utils::share_clock(test) }
-
-    #[test_only]
-    fun share_registry_for_testing(test: &mut Scenario): ID {
-        mc_utils::share_registry_for_testing(test)
-    }
-
-    #[test_only]
-    fun add_approved_quote_currencies(owner: address, registry_id: ID, test: &mut Scenario) {
-        mc_utils::add_approved_quote_currencies(owner, registry_id, test)
-    }
-
-    #[test_only]
     fun setup_registry_with_multicoin(test: &mut Scenario): (ID, ID, CollectionCap) {
         mc_utils::setup_registry_with_multicoin(test)
-    }
-
-    #[test_only]
-    fun create_trading_account_with_funds(
-        sender: address,
-        usdc_amount: u64,
-        cred_amount: u64,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::create_trading_account_with_funds(sender, usdc_amount, cred_amount, test)
-    }
-
-    #[test_only]
-    fun setup_multicoin_pool(
-        sender: address,
-        registry_id: ID,
-        collection_id: ID,
-        asset_id: u64,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::setup_multicoin_pool(
-            sender,
-            registry_id,
-            collection_id,
-            asset_id,
-            test,
-        )
-    }
-
-    #[test_only]
-    fun setup_cred_usdc_reference_pool(
-        sender: address,
-        registry_id: ID,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
-    }
-
-    #[test_only]
-    fun setup_multicoin_pool_with_cred_pricing(
-        sender: address,
-        registry_id: ID,
-        collection_id: ID,
-        asset_id: u64,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): (ID, ID) {
-        mc_utils::setup_multicoin_pool_with_cred_pricing(
-            sender,
-            registry_id,
-            collection_id,
-            asset_id,
-            trading_account_id,
-            test,
-        )
     }
 
     // === TradingAccount MultiCoin Tests ===
@@ -120,7 +43,7 @@ module triex::integration_multicoin_registry_trading_account_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (_registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
         // Create trading account
         test.next_tx(ALICE);

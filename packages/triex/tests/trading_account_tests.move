@@ -1286,7 +1286,7 @@ module triex::trading_account_tests {
     #[expected_failure(abort_code = trading_account::EMultiCoinBalanceTooLow)]
     fun test_withdraw_multicoin_nonexistent_asset_e() {
         let mut test = begin(ALICE);
-        let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
+        let (collection_id, _collection_cap) = setup_multicoin_collection(&mut test);
         test.next_tx(ALICE);
         {
             let mut trading_account = trading_account::new(test.ctx());

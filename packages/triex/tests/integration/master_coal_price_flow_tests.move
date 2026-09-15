@@ -18,7 +18,7 @@ module triex::integration_master_cred_price_flow_tests {
         test_master_cred_price(NoError)
     }
 
-    fun test_master_cred_price(error_code: u64) {
+    fun test_master_cred_price(_error_code: u64) {
         let mut test = begin(utils::owner());
         let registry_id = pool_tests::setup_test(utils::owner(), &mut test);
 

@@ -54,7 +54,7 @@ module triex::coin_order_query_tests {
             trading_account_id_alice,
             &mut test,
         );
-        let mut iter = 1;
+        let mut iter = 1u64;
         let order_type = constants::no_restriction();
         let price = 2 * constants::float_scaling();
         let quantity = 1 * constants::float_scaling();
@@ -196,7 +196,7 @@ module triex::coin_order_query_tests {
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
 
-        let mut i = 1;
+        let mut i = 1u64;
         while (i <= 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,
@@ -288,7 +288,7 @@ module triex::coin_order_query_tests {
         let quantity = 1 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
 
-        let mut i = 1;
+        let mut i = 1u64;
         while (i <= 3) {
             place_limit_order<SUI, USDC>(
                 ALICE,
@@ -343,7 +343,7 @@ module triex::coin_order_query_tests {
         let quantity = 1 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
 
-        let mut i = 1;
+        let mut i = 1u64;
         while (i <= 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,
@@ -419,7 +419,7 @@ module triex::coin_order_query_tests {
         let high_expire_timestamp = constants::max_u64();
         let min_expire_timestamp = constants::max_u64() - 500;
 
-        let mut i = 1;
+        let mut i = 1u64;
         while (i <= 10) {
             let expire_timestamp = if (i <= 5) low_expire_timestamp else high_expire_timestamp;
             place_limit_order<SUI, USDC>(
@@ -493,7 +493,7 @@ module triex::coin_order_query_tests {
         let quantity = 1 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
 
-        let mut i = 1;
+        let mut i = 1u64;
         while (i <= 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,

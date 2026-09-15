@@ -151,7 +151,7 @@ module triex::registry {
         let _: &mut RegistryInner = self.load_inner_mut();
         let quote_type = type_name::with_defining_ids<QuoteCoin>();
         if (
-            !dynamic_field::exists_(
+            !dynamic_field::exists(
                 &self.id,
                 ApprovedQuoteKey {},
             )
@@ -177,7 +177,7 @@ module triex::registry {
         let _: &mut RegistryInner = self.load_inner_mut();
         let quote_type = type_name::with_defining_ids<QuoteCoin>();
         assert!(
-            dynamic_field::exists_(
+            dynamic_field::exists(
                 &self.id,
                 ApprovedQuoteKey {},
             ),
@@ -199,7 +199,7 @@ module triex::registry {
     ) {
         let _: &mut RegistryInner = self.load_inner_mut();
         if (
-            !dynamic_field::exists_(
+            !dynamic_field::exists(
                 &self.id,
                 TradingAccountKey {},
             )
@@ -229,7 +229,7 @@ module triex::registry {
     public fun is_quote_approved(self: &Registry, quote_type: TypeName): bool {
         let _: &RegistryInner = self.load_inner();
         if (
-            !dynamic_field::exists_(
+            !dynamic_field::exists(
                 &self.id,
                 ApprovedQuoteKey {},
             )
@@ -293,7 +293,7 @@ module triex::registry {
         };
 
         // Initialize multicoin pools bag if not exists
-        if (!dynamic_field::exists_(&self.id, MultiCoinPoolsKey {})) {
+        if (!dynamic_field::exists(&self.id, MultiCoinPoolsKey {})) {
             dynamic_field::add(&mut self.id, MultiCoinPoolsKey {}, bag::new(ctx));
         };
 
@@ -315,7 +315,7 @@ module triex::registry {
             quote: type_name::with_defining_ids<QuoteAsset>(),
         };
 
-        assert!(dynamic_field::exists_(&self.id, MultiCoinPoolsKey {}), EMulticoinPoolDoesNotExist);
+        assert!(dynamic_field::exists(&self.id, MultiCoinPoolsKey {}), EMulticoinPoolDoesNotExist);
         let pools: &mut Bag = dynamic_field::borrow_mut(&mut self.id, MultiCoinPoolsKey {});
         assert!(pools.contains(key), EMulticoinPoolDoesNotExist);
         pools.remove<MultiCoinPoolKey, ID>(key);
@@ -392,7 +392,7 @@ module triex::registry {
             quote: type_name::with_defining_ids<QuoteAsset>(),
         };
 
-        assert!(dynamic_field::exists_(&self.id, MultiCoinPoolsKey {}), EMulticoinPoolDoesNotExist);
+        assert!(dynamic_field::exists(&self.id, MultiCoinPoolsKey {}), EMulticoinPoolDoesNotExist);
         let pools: &Bag = dynamic_field::borrow(&self.id, MultiCoinPoolsKey {});
         assert!(pools.contains(key), EMulticoinPoolDoesNotExist);
 
@@ -406,7 +406,7 @@ module triex::registry {
         asset_id: u64,
     ): bool {
         let _inner = self.load_inner();
-        if (!dynamic_field::exists_(&self.id, MultiCoinPoolsKey {})) {
+        if (!dynamic_field::exists(&self.id, MultiCoinPoolsKey {})) {
             return false
         };
 
