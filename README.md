@@ -85,6 +85,25 @@ trinary-exchange/
 > Note: `build/` output and `.env*` files are git-ignored and regenerated locally —
 > see [`.gitignore`](.gitignore).
 
+## Error codes
+
+Abort constants are keyed by `(module, code)` — an abort always carries its module,
+so `EInvalidFee = 1` in `pool` and in `multicoin_pool` do not collide, and the codes
+stay small and readable. Codes must be unique *within* a module.
+
+Client-facing labels are not maintained here: [`@trinaryex/sdk`][sdk] generates its
+abort catalog from these sources. After adding, removing or renumbering an error
+constant, regenerate it there:
+
+```bash
+npm run generate:error-codes -- --contracts <path to this repo>
+```
+
+Renaming or deleting a constant that the SDK has curated text for is a compile error
+in the SDK, so it will not silently stop matching.
+
+[sdk]: https://github.com/loash-industries/sdk
+
 ## Security
 
 All deployments are on Sui **testnet** only and the code is **unaudited** — use at

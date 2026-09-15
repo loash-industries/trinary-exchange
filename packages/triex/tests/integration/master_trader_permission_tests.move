@@ -114,7 +114,10 @@ module triex::integration_master_trader_permission_tests {
         let quantity = 10 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
-        let maker_fee = constants::maybe_apply_fee(is_bid);
+        // Every pool charges quote-denominated fees now, so the old
+        // pay-with-CRED / pay-with-input fork in these expectations is gone: the
+        // bill is the same whichever `error_code` variant runs.
+        let bid_escrow = utils::maker_escrow(price, quantity);
         let mut alice_balance: ExpectedBalances = utils::expected_balances_all(starting_balance);
 
         // Bob places an order with quantity 10 in SUI/USDC pool at a price of 2 using Alice's trading account.
@@ -130,24 +133,9 @@ module triex::integration_master_trader_permission_tests {
             expire_timestamp,
             &mut test,
         );
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity));
-        if (error_code == NoErrorPayWithInput) {
-            utils::sub_usdc(
-                &mut alice_balance,
-                math::mul(
-                    math::mul(
-                        constants::maybe_apply_fee(is_bid),
-                        constants::fee_penalty_multiplier(),
-                    ),
-                    math::mul(price, quantity),
-                ),
-            );
-        } else {
-            utils::sub_cred(
-                &mut alice_balance,
-                math::mul(math::mul(maker_fee, constants::cred_multiplier()), quantity),
-            );
-        };
+        // Principal plus the maker fee escrowed over the whole resting quantity.
+        utils::sub_usdc(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::sub_usdc(&mut alice_balance, bid_escrow);
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         let quantity = 5 * constants::float_scaling();
@@ -181,27 +169,13 @@ module triex::integration_master_trader_permission_tests {
             new_quantity,
             &mut test,
         );
-        utils::add_usdc(&mut alice_balance, math::mul(price, cancelled_quantity));
-        if (error_code == NoErrorPayWithInput) {
-            utils::add_usdc(
-                &mut alice_balance,
-                math::mul(
-                    math::mul(
-                        constants::maybe_apply_fee(is_bid),
-                        constants::fee_penalty_multiplier(),
-                    ),
-                    math::mul(price, cancelled_quantity),
-                ),
-            );
-        } else {
-            utils::add_cred(
-                &mut alice_balance,
-                math::mul(
-                    math::mul(maker_fee, constants::cred_multiplier()),
-                    cancelled_quantity,
-                ),
-            );
-        };
+        // A modify-down releases escrow on the same terms as a cancel, so the
+        // retained share is kept here too rather than refunded.
+        utils::add_usdc(&mut alice_balance, utils::maker_principal(price, cancelled_quantity));
+        utils::add_usdc(
+            &mut alice_balance,
+            utils::refunded_on_cancel(utils::maker_escrow(price, cancelled_quantity)),
+        );
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         // Alice cancels the order herself, should get correct refund of remaining quantity.
@@ -212,27 +186,11 @@ module triex::integration_master_trader_permission_tests {
             order_info.order_id(),
             &mut test,
         );
-        utils::add_usdc(&mut alice_balance, math::mul(price, remaining_quantity));
-        if (error_code == NoErrorPayWithInput) {
-            utils::add_usdc(
-                &mut alice_balance,
-                math::mul(
-                    math::mul(
-                        constants::maybe_apply_fee(is_bid),
-                        constants::fee_penalty_multiplier(),
-                    ),
-                    math::mul(price, remaining_quantity),
-                ),
-            );
-        } else {
-            utils::add_cred(
-                &mut alice_balance,
-                math::mul(
-                    math::mul(maker_fee, constants::cred_multiplier()),
-                    remaining_quantity,
-                ),
-            );
-        };
+        utils::add_usdc(&mut alice_balance, utils::maker_principal(price, remaining_quantity));
+        utils::add_usdc(
+            &mut alice_balance,
+            utils::refunded_on_cancel(utils::maker_escrow(price, remaining_quantity)),
+        );
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         // Alice revokes Bob's trading permission.

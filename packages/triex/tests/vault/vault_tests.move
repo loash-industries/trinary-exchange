@@ -396,6 +396,22 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     }
 
     #[test]
+    fun test_withdrawable_saturates_when_escrow_exceeds_the_reserve() {
+        let mut vault = vault::empty<SPAM, USDC>();
+        vault.deposit_quote_fees(balance::create_for_testing<USDC>(1_000));
+        // Unreachable through any real path — `reserve >= locked_maker_fees` is
+        // maintained at every writer — but this is a public view and the cap on
+        // the admin sweep, so it reports nothing withdrawable rather than
+        // aborting and taking the getter down with it. Mirrors the multicoin
+        // vault, which has saturated here all along.
+        vault.lock_maker_fees_for_testing(1_500);
+
+        assert!(vault.withdrawable_quote_fees() == 0);
+
+        destroy(vault);
+    }
+
+    #[test]
     fun test_recognizing_escrow_moves_it_to_withdrawable() {
         let mut vault = vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(10_000));

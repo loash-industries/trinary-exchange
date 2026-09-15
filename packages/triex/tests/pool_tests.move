@@ -11,6 +11,17 @@ module triex::pool_tests {
     use sui::{object::ID, test_scenario::Scenario};
     use triex::{order_info::OrderInfo, pool_test_utils};
 
+    /// The rates a coin pool resolves at the entry rung, and the cancel-retention
+    /// share, re-exported so the integration suites can build expectations
+    /// against the schedule the pool actually runs rather than a stale constant.
+    public fun default_taker_fee(): u64 { pool_test_utils::default_taker_fee() }
+
+    public fun default_maker_fee(): u64 { pool_test_utils::default_maker_fee() }
+
+    public fun default_cancel_retention_bps(): u64 {
+        pool_test_utils::default_cancel_retention_bps()
+    }
+
     public fun setup_everything<BaseAsset, QuoteAsset, ReferenceBaseAsset, ReferenceQuoteAsset>(
         test: &mut Scenario,
     ): ID {

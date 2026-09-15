@@ -165,6 +165,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
         // Modify to decrease quantity to 50
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             order_id,
@@ -262,6 +263,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
         // Modify to decrease quantity to 50
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             order_id,
@@ -331,6 +333,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
         // Try to increase quantity - should fail
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             order_id,
@@ -452,7 +455,7 @@ module triex::integration_multicoin_pool_order_management_tests {
             mint_for_testing<USDC>(10_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
-        pool.cancel_all_orders(&mut alice_bm, &alice_proof, &clock, test.ctx());
+        pool.cancel_all_orders(&policy, &mut alice_bm, &alice_proof, &clock, test.ctx());
 
         // Verify no open orders
         let open_orders_after = pool.account_open_orders(&alice_bm);
@@ -2561,20 +2564,30 @@ module triex::integration_multicoin_pool_order_management_tests {
         {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let reserve_before = pool.quote_fee_reserve_balance();
             assert!(reserve_before > 0, 2);
+
+            // With the split applied at recognition, the whole reserve is exact:
+            // no share class is assigned, so nothing accrued to an operator and
+            // the sweep takes everything with no settle in front of it.
+            assert!(pool.operator_owed() == 0, 3);
+            assert!(pool.withdrawable_pool_fees() == reserve_before, 4);
+
             let fee_coin = pool.withdraw_pool_fees(
+                &policy,
                 &admin_cap,
                 reserve_before,
                 &clock,
                 test.ctx(),
             );
-            assert!(fee_coin.value() == reserve_before, 3);
-            assert!(pool.quote_fee_reserve_balance() == 0, 4);
+            assert!(fee_coin.value() == reserve_before, 6);
+            assert!(pool.quote_fee_reserve_balance() == 0, 7);
 
             unit_test::destroy(fee_coin);
             return_shared(clock);
+            return_shared(policy);
             return_shared(pool);
             unit_test::destroy(admin_cap);
         };
@@ -2822,6 +2835,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         // Verify Alice's order is partially filled (200 - 50 = 150 remaining)
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
@@ -2832,6 +2846,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
         // Modify to reduce to 100 (still above filled 50)
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             alice_order_id,
@@ -2846,6 +2861,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         assert!(order_after.filled_quantity() == 50, 2);
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(alice_bm);
         test.return_to_sender(alice_trade_cap);
@@ -2971,12 +2987,14 @@ module triex::integration_multicoin_pool_order_management_tests {
         // Try to modify to 50 (below filled 100) - should fail
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             alice_order_id,
@@ -3239,10 +3257,10 @@ module triex::integration_multicoin_pool_order_management_tests {
         let order_id = order_info.order_id();
 
         // Cancel once - should succeed
-        pool.cancel_order(&mut alice_bm, &alice_proof, order_id, &clock, test.ctx());
+        pool.cancel_order(&policy, &mut alice_bm, &alice_proof, order_id, &clock, test.ctx());
 
         // Cancel again - should fail
-        pool.cancel_order(&mut alice_bm, &alice_proof, order_id, &clock, test.ctx());
+        pool.cancel_order(&policy, &mut alice_bm, &alice_proof, order_id, &clock, test.ctx());
 
         abort 0
     }
@@ -3271,12 +3289,13 @@ module triex::integration_multicoin_pool_order_management_tests {
         // Try to cancel non-existent order
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
-        pool.cancel_order(&mut alice_bm, &alice_proof, 999999, &clock, test.ctx());
+        pool.cancel_order(&policy, &mut alice_bm, &alice_proof, 999999, &clock, test.ctx());
 
         abort 0
     }
@@ -3352,12 +3371,14 @@ module triex::integration_multicoin_pool_order_management_tests {
         // Try to modify non-existent order
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
         pool.modify_order(
+            &policy,
             &mut alice_bm,
             &alice_proof,
             999999,
@@ -3486,6 +3507,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         // Cancel orders using batch cancel
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
@@ -3497,9 +3519,10 @@ module triex::integration_multicoin_pool_order_management_tests {
             test.ctx(),
         );
 
-        pool.cancel_orders(&mut alice_bm, &alice_proof, order_ids, &clock, test.ctx());
+        pool.cancel_orders(&policy, &mut alice_bm, &alice_proof, order_ids, &clock, test.ctx());
 
         return_shared(pool);
+        return_shared(policy);
         return_shared(clock);
         return_shared(alice_bm);
         test.return_to_sender(alice_trade_cap);

@@ -5,10 +5,13 @@
 /// class with one pool in it.
 ///
 /// INVARIANT: `FeePolicy` must stay read-mostly. Writes are admin-only and
-/// epoch-cadence by design; nothing on any user-reachable path may ever take it
+/// epoch-cadence by design; nothing on any *trading* path may ever take it
 /// `&mut`. Immutable reads of a shared object commute, so arbitrarily many
 /// trades read this object in parallel — exactly as the whole network reads
 /// `Clock` — but a write path on user flow would serialize the entire exchange.
+/// The one user-reachable write is operator beneficiary registration through
+/// the admin-registered adapter witness — rare by nature (once per storage
+/// unit), and never on the flow of an order. Pool creation reads immutably.
 ///
 /// Schedule changes are staged: `update_class` writes `next` with
 /// `effective_epoch = now + 1`, and reads pick `next` once its epoch arrives.
@@ -16,8 +19,8 @@
 /// mid-epoch, with no per-pool promotion machinery.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
-    use sui::{event, table::{Self, Table}};
-    use triex::{fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
+    use sui::{dynamic_field as df, event, table::{Self, Table}};
+    use triex::{constants, fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
 
     // === Errors ===
     const EClassAlreadyExists: u64 = 0;
@@ -27,6 +30,10 @@ module triex::fee_policy {
     const EClassQuoteMismatch: u64 = 4;
     const EDuplicateGenesisClass: u64 = 5;
     const EInvalidQuoteUnit: u64 = 6;
+    const EOperatorShareAboveCeiling: u64 = 7;
+    const EOperatorShareClassDoesNotExist: u64 = 8;
+    const ENoAuthorizedAdapter: u64 = 9;
+    const EUnauthorizedAdapter: u64 = 10;
 
     // === Constants ===
     const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
@@ -173,17 +180,41 @@ module triex::fee_policy {
     }
 
     // === Init ===
-    /// The policy object ships empty. Classes are created by the admin after
-    /// publish — pool creation requires a default class for the pool's quote, so
-    /// the bootstrap order is: approve quote, create class, create pools.
+    /// The fee tables ship empty — classes are created by the admin after
+    /// publish, and pool creation requires a default class for the pool's quote,
+    /// so the bootstrap order is: approve quote, create class, create pools. The
+    /// hub-share side ships configured instead: see `new_policy`.
     fun init(ctx: &mut TxContext) {
-        let policy = FeePolicy {
+        transfer::share_object(new_policy(ctx));
+    }
+
+    /// The one constructor. Seeds the genesis hub-share state
+    /// `operator_share_class` resolves through: class 0, starting at zero bps,
+    /// registered as the default class. Neither field has a removal path, so on
+    /// an object built here resolution always lands on a real class — and class
+    /// 0 has one defined meaning, "the class unassigned collections pay",
+    /// rather than being a free id that happens to double as a fallback.
+    ///
+    /// This runs from `init`, so it seeds a *fresh publish* only. An upgrade
+    /// keeps the already-shared `FeePolicy`, which never passed through here;
+    /// `seed_operator_share_genesis` is the admin call that brings such an
+    /// object up to this state, and the resolvers stay total in the meantime.
+    fun new_policy(ctx: &mut TxContext): FeePolicy {
+        let mut policy = FeePolicy {
             id: object::new(ctx),
             classes: table::new(ctx),
             default_classes: table::new(ctx),
             multicoin_default_classes: table::new(ctx),
         };
-        transfer::share_object(policy);
+
+        df::add(
+            &mut policy.id,
+            OperatorShareClassKey { class_id: 0 },
+            OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+        );
+        df::add(&mut policy.id, DefaultOperatorShareKey {}, 0u16);
+
+        policy
     }
 
     // === Public-Mutative Functions * ADMIN * ===
@@ -448,16 +479,422 @@ module triex::fee_policy {
     // === Test Functions ===
     #[test_only]
     public fun create_for_testing(ctx: &mut TxContext): FeePolicy {
-        FeePolicy {
-            id: object::new(ctx),
-            classes: table::new(ctx),
-            default_classes: table::new(ctx),
-            multicoin_default_classes: table::new(ctx),
-        }
+        new_policy(ctx)
     }
 
     #[test_only]
     public fun share_for_testing(self: FeePolicy) {
         transfer::share_object(self)
+    }
+
+    // === Operator revenue share ===
+    //
+    // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
+    // fields on an upgrade — dynamic fields on its `id` can. Everything below is
+    // additive. The rates are admin-written at epoch cadence, which is what the
+    // module invariant allows. The payout address is written exactly once, on
+    // presentation of the registered adapter's witness — the adapter package is
+    // what binds the write to the storage unit's `OwnerCap`, so the address
+    // pinned is the storage unit owner's, not whichever sender deployed a pool
+    // first — and destroyed only by the admin cap. There is no rotation path,
+    // witness-gated or otherwise: re-pointing revenue at another party is
+    // deliberately not a thing these contracts do; any such delegation is
+    // settled outside Triex.
+    //
+    // The rate is applied eagerly, at the moment revenue is recognized — see
+    // `docs/trade-hub-revenue-share.md`, "Revision: split at recognition".
+    // Recognition and pricing being the same instant is what lets a class hold a
+    // plain staged pair instead of an append-only history: there is never a
+    // deferred basis that could ask "what was the rate in epoch N?" after N.
+
+    /// class_id -> the staged rate pair for that class.
+    public struct OperatorShareClassKey has copy, drop, store { class_id: u16 }
+
+    /// collection_id -> the class that collection's hubs are priced in.
+    public struct OperatorShareAssignmentKey has copy, drop, store { collection_id: ID }
+
+    /// Class a collection nobody has configured falls into. Written at genesis
+    /// to class 0 and never removed, only re-pointed.
+    public struct DefaultOperatorShareKey has copy, drop, store {}
+
+    /// collection_id -> the address that collection's share is paid to.
+    /// Written exactly once, through the registered adapter's witness;
+    /// destroyed only via the admin cap. Absent means a claim aborts rather
+    /// than guessing.
+    public struct OperatorBeneficiaryKey has copy, drop, store { collection_id: ID }
+
+    /// The one witness type allowed to register a beneficiary. Absent until the
+    /// admin registers an adapter, which is the shipping state: no registration
+    /// path exists at all until the adapter package has been audited and named.
+    public struct AuthorizedAdapterKey has copy, drop, store {}
+
+    /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
+    /// at `effective_epoch`, and reads compare against the running epoch so
+    /// promotion needs no write.
+    ///
+    /// The `effective_epoch` gate is written here deliberately rather than
+    /// inherited by analogy — `cancel_retention_bps` on the fee classes is *not*
+    /// staged, so "`FeePolicy` stages every rate change" is not a uniform
+    /// precedent. A hub rate must be pre-announced: it is what an operator
+    /// underwrites a hosting decision with.
+    public struct OperatorShareClass has copy, drop, store {
+        current_bps: u64,
+        next_bps: u64,
+        effective_epoch: u64,
+    }
+
+    public struct OperatorShareClassUpdated has copy, drop {
+        class_id: u16,
+        bps: u64,
+        from_epoch: u64,
+    }
+
+    public struct OperatorShareClassAssigned has copy, drop {
+        collection_id: ID,
+        class_id: u16,
+    }
+
+    public struct OperatorBeneficiaryRegistered has copy, drop {
+        collection_id: ID,
+        beneficiary: address,
+    }
+
+    public struct OperatorBeneficiaryDestroyed has copy, drop {
+        collection_id: ID,
+    }
+
+    public struct OperatorAdapterAuthorized has copy, drop {
+        adapter: Option<TypeName>,
+    }
+
+    /// Re-price a hub-share class, effective next epoch.
+    ///
+    /// Next epoch, never this one: a rate an operator has not had the chance to
+    /// read cannot apply to revenue they host after it lands. With the split
+    /// applied at recognition, that staging is the whole timing story — there is
+    /// no settlement step whose caller could gain by moving it.
+    ///
+    /// Class 0 exists from genesis as the default class, so staging class 0 is
+    /// the explicit "re-price every unassigned collection" operation — never a
+    /// fresh negotiated class that quietly doubles as a fallback.
+    public fun stage_operator_share_class(
+        self: &mut FeePolicy,
+        class_id: u16,
+        bps: u64,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
+        assert!(bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
+
+        let from_epoch = ctx.epoch() + 1;
+        let key = OperatorShareClassKey { class_id };
+
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, key)) {
+            // A new class starts at zero and the staged rate arrives next epoch:
+            // no hub can be paid at a rate that was never announced.
+            df::add(
+                &mut self.id,
+                key,
+                OperatorShareClass { current_bps: 0, next_bps: bps, effective_epoch: from_epoch },
+            );
+        } else {
+            let class: &mut OperatorShareClass = df::borrow_mut(&mut self.id, key);
+            // A pending `next` that has already come due is the running rate;
+            // promote it before overwriting, so the stage below replaces the
+            // future, never the present.
+            if (ctx.epoch() >= class.effective_epoch) {
+                class.current_bps = class.next_bps;
+            };
+            class.next_bps = bps;
+            class.effective_epoch = from_epoch;
+        };
+
+        event::emit(OperatorShareClassUpdated { class_id, bps, from_epoch });
+    }
+
+    /// Point a collection's hubs at a share class, effective immediately.
+    ///
+    /// Immediate is safe here in a way it was not under deferred settlement:
+    /// with the split applied at recognition, an assignment can only affect
+    /// revenue that has not happened yet. There is no unsettled basis for it to
+    /// re-price retroactively. One write re-prices every pool of every asset in
+    /// the collection, from now on.
+    public fun assign_operator_share_class(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        class_id: u16,
+        _cap: &TriexAdminCap,
+    ) {
+        // An unconfigured class resolves to zero, so a mistyped id would leave the
+        // hub silently earning nothing — the one failure this configuration can have
+        // that nobody notices until an operator asks where their payment is.
+        assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
+
+        upsert(&mut self.id, OperatorShareAssignmentKey { collection_id }, class_id);
+
+        event::emit(OperatorShareClassAssigned { collection_id, class_id });
+    }
+
+    /// Class for collections nobody has configured. Ships pointing at genesis
+    /// class 0, which pays zero — deploying the feature changes nothing until a
+    /// hub is assigned, class 0 is re-priced, or the default is re-pointed.
+    public fun set_default_operator_share_class(
+        self: &mut FeePolicy,
+        class_id: u16,
+        _cap: &TriexAdminCap,
+    ) {
+        assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
+
+        upsert(&mut self.id, DefaultOperatorShareKey {}, class_id);
+    }
+
+    /// Bring a `FeePolicy` that predates the hub share up to the state
+    /// `new_policy` seeds at genesis: class 0 at zero bps, pointed at by the
+    /// default key.
+    ///
+    /// `init` runs on a first publish, never on an upgrade, so an upgraded
+    /// deployment inherits a policy object with neither field. The resolvers
+    /// tolerate that — the feature is simply inert — but the admin still needs a
+    /// way to switch it on, and `assign_operator_share_class` cannot be the
+    /// first call because it requires a class that exists. This is that call.
+    ///
+    /// Idempotent and non-destructive: it only ever adds what is missing, so
+    /// running it against an already-seeded policy — or twice — cannot reset a
+    /// live rate or re-point a configured default.
+    public fun seed_operator_share_genesis(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let class_key = OperatorShareClassKey { class_id: 0 };
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
+            df::add(
+                &mut self.id,
+                class_key,
+                OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+            );
+        };
+
+        let default_key = DefaultOperatorShareKey {};
+        if (!df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            df::add(&mut self.id, default_key, 0u16);
+        };
+    }
+
+    /// The share rate applying to revenue this collection's pools recognize in
+    /// `epoch`, in bps.
+    ///
+    /// **Total by design — this must never abort.** It is resolved on the
+    /// cancel and modify paths, where an abort would freeze user funds. Every
+    /// lookup below is guarded rather than assumed: an unconfigured collection
+    /// resolves through the genesis default, a policy object that predates the
+    /// feature resolves through `operator_share_class`'s own final fallback to
+    /// class 0, and a class id with no class on it resolves to zero here. The
+    /// result is clamped to the ceiling as a belt over the write-time assert.
+    ///
+    /// The guards are not decorative. `init` seeds the genesis state on a first
+    /// publish only, so an upgrade inherits a `FeePolicy` with none of these
+    /// fields — and the paths that call this are the ones that release user
+    /// escrow.
+    public fun operator_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
+        let class_id = self.operator_share_class(collection_id);
+        let key = OperatorShareClassKey { class_id };
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, key)) {
+            return 0
+        };
+
+        let class: &OperatorShareClass = df::borrow(&self.id, key);
+        let bps = if (epoch >= class.effective_epoch) class.next_bps else class.current_bps;
+
+        bps.min(constants::max_operator_share_bps())
+    }
+
+    public fun operator_share_class_exists(self: &FeePolicy, class_id: u16): bool {
+        df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(
+            &self.id,
+            OperatorShareClassKey { class_id },
+        )
+    }
+
+    /// Share class a collection is priced in, falling back to the default
+    /// class, and then to class 0.
+    ///
+    /// **Total, including on a policy object that predates this feature.**
+    /// `new_policy` seeds the default key at genesis, but `init` runs only on a
+    /// first publish — an upgrade over an already-shared `FeePolicy` inherits an
+    /// object with neither the default key nor class 0 on it, and an unguarded
+    /// borrow there would abort. That abort would land on `place_order`,
+    /// `cancel_all_orders` and any bid `cancel_order`/`modify_order` that
+    /// retains escrow, i.e. it would freeze open maker escrow on every multicoin
+    /// pool until an admin transaction seeded the field. The final fallback is
+    /// what makes the feature inert on such an object rather than fatal:
+    /// `operator_share_bps_at` resolves a missing class to zero, so an
+    /// unseeded policy pays no hub anything, which is the intended deploy state.
+    public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
+        let assignment = OperatorShareAssignmentKey { collection_id };
+        if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, assignment)) {
+            return *df::borrow<OperatorShareAssignmentKey, u16>(&self.id, assignment)
+        };
+
+        let default_key = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            return *df::borrow<DefaultOperatorShareKey, u16>(&self.id, default_key)
+        };
+
+        0
+    }
+
+    /// Register the one witness type allowed to register beneficiaries,
+    /// replacing any previous registration.
+    ///
+    /// The type is what makes the gate real. A bare `<W: drop>` bound authorizes
+    /// nothing — any package can declare a struct with `drop` and mint one — so a
+    /// witness only proves anything if the callee pins which type it will accept.
+    /// Pinning it by `TypeName` rather than by importing the adapter keeps Triex
+    /// free of any dependency on the game world: it compares a name, it does not
+    /// link a module.
+    public fun set_operator_adapter<W: drop>(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let adapter = type_name::with_defining_ids<W>();
+        upsert(&mut self.id, AuthorizedAdapterKey {}, adapter);
+
+        event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
+    }
+
+    /// Set `key` to `value`, present or not — the dynamic-field upsert every
+    /// single-valued setter above shares.
+    fun upsert<K: copy + drop + store, V: drop + store>(id: &mut UID, key: K, value: V) {
+        if (df::exists_with_type<K, V>(id, key)) {
+            *df::borrow_mut<K, V>(id, key) = value;
+        } else {
+            df::add(id, key, value);
+        };
+    }
+
+    /// Withdraw the adapter, closing the registration path entirely until a new
+    /// one is registered. Mappings already written are untouched.
+    public fun clear_operator_adapter(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let key = AuthorizedAdapterKey {};
+        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
+            df::remove<AuthorizedAdapterKey, TypeName>(&mut self.id, key);
+            event::emit(OperatorAdapterAuthorized { adapter: option::none() });
+        };
+    }
+
+    /// The registered adapter type, if registration is enabled.
+    public fun operator_adapter(self: &FeePolicy): Option<TypeName> {
+        let key = AuthorizedAdapterKey {};
+        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
+            option::some(*df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, key))
+        } else {
+            option::none()
+        }
+    }
+
+    /// Record where a collection's operator share is paid, on presentation of
+    /// the registered adapter's witness. First write wins, and after it the
+    /// contracts offer no way to re-point — a hub changing hands, or an operator
+    /// wanting revenue elsewhere, is a settlement matter external to Triex. The
+    /// admin cap can destroy a mapping, never redirect one; after a destroy,
+    /// re-registration runs through this same gate, so the address can only ever
+    /// be re-pinned by the storage unit's current owner.
+    ///
+    /// **What this trusts, stated plainly.** The witness proves the call came
+    /// *through* the registered adapter. It does not prove anything about
+    /// `collection_id` or `beneficiary`, because a witness cannot carry a payload
+    /// Triex could verify — a struct is constructible only in its defining
+    /// module, so any field Triex could read is a field the adapter alone can
+    /// set, and reading it would be trusting the adapter anyway. The binding is
+    /// the adapter's job: it takes the caller's `OwnerCap<StorageUnit>` and the
+    /// `VaultConfig`, checks the cap against the config's storage unit and the
+    /// config's collection against the one being registered, and only then mints
+    /// the witness. That logic is what the admin audits before registering it,
+    /// which is why registration is admin-only, single-valued, and revocable.
+    public fun register_operator_beneficiary_with_witness<W: drop>(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+        _witness: W,
+    ) {
+        let adapter_key = AuthorizedAdapterKey {};
+        assert!(
+            df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key),
+            ENoAuthorizedAdapter,
+        );
+        assert!(
+            df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key) ==
+            type_name::with_defining_ids<W>(),
+            EUnauthorizedAdapter,
+        );
+
+        self.register_operator_beneficiary(collection_id, beneficiary);
+    }
+
+    /// The set-if-absent write both the witness path above and tests land on.
+    /// Set-if-absent is what makes a *second* registration attempt safe: it
+    /// cannot capture a beneficiary an earlier registration established.
+    /// Private, so no other module in the package can write a beneficiary
+    /// without presenting the adapter witness.
+    fun register_operator_beneficiary(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+    ) {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            return
+        };
+
+        df::add(&mut self.id, key, beneficiary);
+        event::emit(OperatorBeneficiaryRegistered { collection_id, beneficiary });
+    }
+
+    /// Destroy a collection's payout mapping. Accrual continues — the rate is a
+    /// property of the share class, not of the mapping — but claims abort until
+    /// the storage unit's owner registers again through the adapter, so the
+    /// share stays encumbered rather than paying an address the admin has
+    /// disowned.
+    public fun destroy_operator_beneficiary(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        _cap: &TriexAdminCap,
+    ) {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            df::remove<OperatorBeneficiaryKey, address>(&mut self.id, key);
+            event::emit(OperatorBeneficiaryDestroyed { collection_id });
+        };
+    }
+
+    public fun operator_beneficiary(self: &FeePolicy, collection_id: ID): Option<address> {
+        let key = OperatorBeneficiaryKey { collection_id };
+        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
+            option::some(*df::borrow<OperatorBeneficiaryKey, address>(&self.id, key))
+        } else {
+            option::none()
+        }
+    }
+
+    #[test_only]
+    /// Strip the genesis hub-share state, standing up the object an upgrade
+    /// inherits: a `FeePolicy` shared before this feature existed, which
+    /// therefore never ran `new_policy`. The only way to reach that state from
+    /// a test, since every constructor seeds it.
+    public fun strip_operator_share_genesis_for_testing(self: &mut FeePolicy) {
+        let class_key = OperatorShareClassKey { class_id: 0 };
+        if (df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
+            df::remove<OperatorShareClassKey, OperatorShareClass>(&mut self.id, class_key);
+        };
+
+        let default_key = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            df::remove<DefaultOperatorShareKey, u16>(&mut self.id, default_key);
+        };
+    }
+
+    #[test_only]
+    /// Register a beneficiary without the adapter witness, for tests exercising
+    /// the mapping itself rather than the registration gate.
+    public fun register_operator_beneficiary_for_testing(
+        self: &mut FeePolicy,
+        collection_id: ID,
+        beneficiary: address,
+    ) {
+        self.register_operator_beneficiary(collection_id, beneficiary);
     }
 }

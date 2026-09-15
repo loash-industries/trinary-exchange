@@ -2102,6 +2102,131 @@ module triex::pool_test_utils {
         end(test);
     }
 
+    /// Regression: a level resting at MIN_PRICE used to make every
+    /// quote-denominated dry run above ~1.8e10 raw quote units abort with
+    /// `math::EOverflow`, because the base conversion scaled the taker's whole
+    /// remaining input by FLOAT_SCALING before the level's size could bound it.
+    /// One 1-unit ask at price 1 — placeable for one raw unit of base, since
+    /// nothing constrains order size — took down `get_base_quantity_out`,
+    /// `get_quantity_out_for_account` and the whole bid-side swap router for the
+    /// pool, while leaving the real matching path working.
+    ///
+    /// The quote must now survive it, and be exactly the dust level's own size
+    /// larger than the same book without it.
+    public(package) fun test_dust_priced_level_does_not_break_the_quote() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let trading_account_id_alice = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            trading_account_id_alice,
+            &mut test,
+        );
+
+        // A normal ask to quote against.
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            trading_account_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            2 * constants::float_scaling(),
+            100_000 * constants::float_scaling(),
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+
+        // Comfortably past the old trigger of 18_700_386_805 raw quote units.
+        let quote_in = 18_701_000_000;
+        let (baseline, _) = get_quantity_out<SUI, USDC>(pool_id, 0, quote_in, &mut test);
+        assert!(baseline > 0, 0);
+
+        // One raw unit of base, resting at MIN_PRICE.
+        let dust = place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            trading_account_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            constants::min_price(),
+            1,
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+        assert!(dust.order_inserted(), 1);
+
+        let (with_dust, _) = get_quantity_out<SUI, USDC>(pool_id, 0, quote_in, &mut test);
+        assert!(with_dust == baseline + 1, with_dust);
+
+        end(test);
+    }
+
+    /// The same level must not take down the account-less swap router, which
+    /// sizes its order from that dry run.
+    public(package) fun test_dust_priced_level_does_not_break_the_swap_router() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let trading_account_id_alice = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            trading_account_id_alice,
+            &mut test,
+        );
+
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            trading_account_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            2 * constants::float_scaling(),
+            100_000 * constants::float_scaling(),
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+        place_limit_order<SUI, USDC>(
+            ALICE,
+            pool_id,
+            trading_account_id_alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            constants::min_price(),
+            1,
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+
+        let (base_out, quote_out, cred_out) = place_swap_exact_quote_for_base<SUI, USDC>(
+            pool_id,
+            BOB,
+            18_701_000_000,
+            0,
+            0,
+            &mut test,
+        );
+        assert!(base_out.value() > 0, 0);
+
+        destroy(base_out);
+        destroy(quote_out);
+        destroy(cred_out);
+
+        end(test);
+    }
+
     public(package) fun test_get_orders() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
@@ -2436,12 +2561,6 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            // Top up quote balance to cover quote-denominated fees in the unified model
-            let extra_quote = mint_for_testing<QuoteAsset>(
-                1_000_000_000 * constants::float_scaling(),
-                test.ctx(),
-            );
-            trading_account.deposit(extra_quote, test.ctx());
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
             // Place order in pool
@@ -2483,12 +2602,6 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            // Top up quote balance to cover quote-denominated maker fees during cancel
-            let extra_quote = mint_for_testing<QuoteAsset>(
-                1_000_000_000 * constants::float_scaling(),
-                test.ctx(),
-            );
-            trading_account.deposit(extra_quote, test.ctx());
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
             pool.cancel_order<BaseAsset, QuoteAsset>(
@@ -2970,18 +3083,15 @@ module triex::pool_test_utils {
                 &mut test,
             );
             assert_eq!(base, constants::cred_multiplier());
-            // Quote-only fees reduce returned quote slightly:
-            // 2000 in, 200 spent on base, fee = 200 × 1.1% × 1.25 = 2.75
+            // Bid-side dry run reserves the 1.1% taker fee out of the input, at
+            // the rate settlement charges: 2000 in, 200 spent on base, 2.2 held
+            // back for the fee. Same helper and same basis as the ask side above.
             let notional = 200 * constants::float_scaling();
-            let penalized_taker = math::mul(
-                default_taker_fee(),
-                constants::fee_penalty_multiplier(),
-            );
             assert_eq!(
                 quote,
                 2000 * constants::float_scaling() -
             notional -
-            quote_fee::fee_from_scaled_rate(penalized_taker, notional),
+            quote_fee::fee_from_scaled_rate(default_taker_fee(), notional),
             );
         };
 
@@ -3033,17 +3143,13 @@ module triex::pool_test_utils {
                 &mut test,
             );
             assert_eq!(base, 10 * constants::float_scaling());
-            // 2000 in, 20 spent on base, fee = 20 × 1.1% × 1.25 = 0.275
+            // 2000 in, 20 spent on base, 0.22 held back for the 1.1% taker fee.
             let notional = 20 * constants::float_scaling();
-            let penalized_taker = math::mul(
-                default_taker_fee(),
-                constants::fee_penalty_multiplier(),
-            );
             assert_eq!(
                 quote,
                 2000 * constants::float_scaling() -
             notional -
-            quote_fee::fee_from_scaled_rate(penalized_taker, notional),
+            quote_fee::fee_from_scaled_rate(default_taker_fee(), notional),
             );
         };
 
@@ -4509,10 +4615,10 @@ module triex::pool_test_utils {
         };
         let expire_timestamp = constants::max_u64();
         let expire_timestamp_e = get_time(&mut test) + 100;
-        let input_fee_rate = math::mul(
-            constants::fee_penalty_multiplier(),
-            constants::maybe_apply_fee(!is_bid),
-        );
+        // Headroom on the swap input so the dry run has room for the fee it
+        // reserves. Any rate at or above the pool's own works; this one is
+        // arbitrary and is not an assertion about pricing.
+        let input_fee_rate = constants::maybe_apply_fee(!is_bid);
 
         place_limit_order<SUI, USDC>(
             ALICE,
@@ -4672,7 +4778,7 @@ module triex::pool_test_utils {
     //         &mut test,
     //     );
     //     // With new fee structure: bidders pay unified fee rate (currently 2%), askers pay 0%
-    //     // Input fee rate = fee_penalty_multiplier * trade_specific_taker_fee
+    //     // Input fee rate = trade_specific_taker_fee
     //     //
     //     // For BID test (is_bid = true):
     //     //   Alice places BID order (buying base with quote at price 2)
@@ -5992,12 +6098,6 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            // Ensure quote is available for fee refunds before batch cancel
-            let extra_quote = mint_for_testing<QuoteAsset>(
-                1_000_000_000 * constants::float_scaling(),
-                test.ctx(),
-            );
-            trading_account.deposit(extra_quote, test.ctx());
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
             pool.cancel_orders<BaseAsset, QuoteAsset>(
@@ -6028,12 +6128,6 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            // Ensure quote is available for fee refunds before cancel-all
-            let extra_quote = mint_for_testing<QuoteAsset>(
-                10_000_000 * constants::float_scaling(),
-                test.ctx(),
-            );
-            trading_account.deposit(extra_quote, test.ctx());
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
 
             pool.cancel_all_orders<BaseAsset, QuoteAsset>(
@@ -7721,6 +7815,112 @@ module triex::pool_test_utils {
         // Alice paid 2 of 9 rather than the nominal 1.8 — dust rounds against the
         // maker, which is the only safe direction for a solvency counter.
         assert!(balance_before - balance_after == expected_retained, 8);
+
+        end(test);
+    }
+
+    /// The modify-down analog of `test_refund_rounding_dust_favors_the_retention`:
+    /// at discrete quote amounts both the released escrow and its refund floor,
+    /// the dust lands in the retained half, and the two halves reported on the
+    /// `OrderModified` event sum to exactly the escrow released — so the vault
+    /// counters and the maker's refund are exact to the base quote unit.
+    public(package) fun test_modify_refund_rounding_dust_favors_the_retention() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let trading_account_id_alice = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            trading_account_id_alice,
+            &mut test,
+        );
+
+        // 2000 base at price 1.0 => 2000 quote notional.
+        let price = 1 * constants::float_scaling();
+        let quantity = 2000;
+        let escrow = 18; // floor(2000 * 0.9%)
+        // Cutting to 700 releases the escrow on 1300 quote: floor(11.7) = 11,
+        // of which floor(11 * 80%) = 8 refunds — not 8.8.
+        let new_quantity = 700;
+        let cancelled_principal = 1300;
+        let released = 11;
+        let expected_refund = 8;
+        let expected_retained = 3; // the dust lands here
+
+        let order_id;
+        {
+            let order_info = place_limit_order<SUI, USDC>(
+                ALICE,
+                pool_id,
+                trading_account_id_alice,
+                constants::no_restriction(),
+                constants::self_matching_allowed(),
+                price,
+                quantity,
+                true,
+                constants::max_u64(),
+                &mut test,
+            );
+            order_id = order_info.order_id();
+        };
+
+        test.next_tx(ALICE);
+        {
+            let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            assert!(pool.locked_maker_fees() == escrow, 0);
+            return_shared(pool);
+        };
+
+        let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
+
+        test.next_tx(ALICE);
+        {
+            let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            let clock = test.take_shared<Clock>();
+            let mut trading_account = test.take_shared_by_id<TradingAccount>(
+                trading_account_id_alice,
+            );
+            let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+            pool.modify_order(
+                &mut trading_account,
+                &trade_proof,
+                order_id,
+                new_quantity,
+                &clock,
+                test.ctx(),
+            );
+
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            assert!(refunds.length() == 1, 1);
+            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+            assert!(amount == expected_refund, 2);
+
+            let modifies = event::events_by_type<order::OrderModified>();
+            assert!(modifies.length() == 1, 3);
+            let (_mid, fee_refunded, fee_retained) = order::modified_event_parts(&modifies[0]);
+            assert!(fee_refunded == expected_refund, 4);
+            assert!(fee_retained == expected_retained, 5);
+            // The halves still sum exactly to the escrow released, so the escrow
+            // counter decrements without drift.
+            assert!(fee_refunded + fee_retained == released, 6);
+            assert!(pool.locked_maker_fees() == escrow - released, 7);
+            assert!(pool.quote_fee_reserve_balance() == escrow - expected_refund, 8);
+            assert!(pool.withdrawable_pool_fees() == expected_retained, 9);
+
+            return_shared(trading_account);
+            return_shared(clock);
+            return_shared(pool);
+        };
+
+        let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
+        // The maker gets back the cancelled principal plus exactly 8 of the
+        // nominal 8.8 fee refund — dust rounds against the maker, which is the
+        // only safe direction for a solvency counter.
+        assert!(balance_after - balance_before == cancelled_principal + expected_refund, 10);
 
         end(test);
     }

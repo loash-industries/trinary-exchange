@@ -67,8 +67,6 @@ module triex::integration_master_cred_price_flow_tests {
         let quantity = 2 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
-        let maker_fee = constants::maybe_apply_fee(is_bid);
-        let taker_fee = constants::maybe_apply_fee(is_bid);
         let mut alice_balance = utils::expected_balances_all(starting_balance);
         let mut bob_balance = utils::expected_balances_all(starting_balance);
 
@@ -195,15 +193,12 @@ module triex::integration_master_cred_price_flow_tests {
             expire_timestamp,
             &mut test,
         );
-        let cred_multiplier = 125_000_000_000;
-        utils::sub_sui(&mut alice_balance, math::mul(price, quantity));
-        utils::sub_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(maker_fee, math::mul(price, quantity)),
-                cred_multiplier,
-            ),
-        );
+        // SUI is the quote asset in pool2, so the escrow this bid locks is
+        // SUI-denominated. Fees are quote-denominated now; the CRED legs these
+        // expectations tracked have been zero since the unified model landed.
+        let bid_escrow = utils::maker_escrow(price, quantity);
+        utils::sub_sui(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::sub_sui(&mut alice_balance, bid_escrow);
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         pool_tests::cancel_order<SPAM, SUI>(
@@ -213,14 +208,8 @@ module triex::integration_master_cred_price_flow_tests {
             order_info.order_id(),
             &mut test,
         );
-        utils::add_sui(&mut alice_balance, math::mul(price, quantity));
-        utils::add_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(maker_fee, math::mul(price, quantity)),
-                cred_multiplier,
-            ),
-        );
+        utils::add_sui(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::add_sui(&mut alice_balance, utils::refunded_on_cancel(bid_escrow));
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         let price = 10 * constants::float_scaling();
@@ -241,21 +230,18 @@ module triex::integration_master_cred_price_flow_tests {
         let taker_quantity_traded = quantity;
         let quantity_traded = maker_quantity_traded + taker_quantity_traded;
 
-        let alice_maker_fee = math::mul(
-            math::mul(maker_fee, math::mul(price, quantity)),
-            cred_multiplier,
-        );
-        let alice_taker_fee = math::mul(
-            math::mul(taker_fee, math::mul(price, quantity)),
-            cred_multiplier,
-        );
+        // One cross each way, so each side is maker on half the base traded and
+        // taker on the other half — mirror-image bills, both in SUI.
+        let half_quote = math::mul(price, quantity_traded / 2);
+        let both_legs = utils::maker_fee_on(half_quote) + utils::taker_fee_on(half_quote);
 
         utils::add_spam(&mut alice_balance, quantity_traded);
         utils::sub_sui(&mut alice_balance, math::mul(price, quantity_traded));
-        utils::sub_cred(&mut alice_balance, alice_maker_fee + alice_taker_fee);
+        utils::sub_sui(&mut alice_balance, both_legs);
 
         utils::sub_spam(&mut bob_balance, quantity_traded);
         utils::add_sui(&mut bob_balance, math::mul(price, quantity_traded));
+        utils::sub_sui(&mut bob_balance, both_legs);
 
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);

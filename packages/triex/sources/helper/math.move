@@ -41,6 +41,37 @@ module triex::math {
         }
     }
 
+    /// `quote_to_qty`, clamped to `cap`, and total over the whole `u64` domain.
+    ///
+    /// Use this wherever the result is about to be bounded by something anyway —
+    /// a book level's remaining size, say. `quote_to_qty` scales the dividend by
+    /// FLOAT_SCALING and asserts the quotient fits in `u64`, which means a caller
+    /// writing `quote_to_qty(..).min(cap)` never gets to apply its cap: the
+    /// intermediate has to exist as a `u64` first, and against a price near
+    /// MIN_PRICE it does not. A level resting at price 1 would abort every quote
+    /// above ~1.8e10 raw quote units on a conversion whose answer was only ever
+    /// going to be `cap`.
+    ///
+    /// Taking the cap as an argument puts the clamp ahead of the downcast. The
+    /// dividend is at most (2^64-1) * 1e9 < 2^128, so no `u64` input can overflow
+    /// the intermediate, and the clamp guarantees the result fits. Rounding is
+    /// identical to `quote_to_qty` — both floor — so this returns the same value
+    /// wherever that one does not abort.
+    public fun quote_to_qty_capped(
+        quote_qty: u64,
+        price: u64,
+        price_scaling: u64,
+        cap: u64,
+    ): u64 {
+        let qty = if (price_scaling == FLOAT_SCALING) {
+            (quote_qty as u128) * FLOAT_SCALING_U128 / (price as u128)
+        } else {
+            (quote_qty as u128) / (price as u128)
+        };
+
+        qty.min(cap as u128) as u64
+    }
+
     /// Multiply two floating numbers.
     /// This function will round down the result.
     public fun mul(x: u64, y: u64): u64 {
@@ -191,6 +222,49 @@ module triex::math {
         let round = if ((x * FLOAT_SCALING_U256 % y) == 0) 0 else 1;
 
         (round, (x * FLOAT_SCALING_U256 / y) as u128)
+    }
+
+    #[test]
+    /// `quote_to_qty_capped` agrees with `quote_to_qty` wherever the latter is
+    /// defined, clamps where it is asked to, and stays total where the latter
+    /// aborts.
+    fun test_quote_to_qty_capped() {
+        let max_u64 = 0xFFFFFFFFFFFFFFFF;
+        let max_price = ((1u128 << 63) - 1) as u64;
+        let uncapped = max_u64;
+
+        // Parity with the uncapped form in the ordinary range.
+        assert!(
+            quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, uncapped) ==
+            quote_to_qty(1_000_000_000, 2_000_000_000, FLOAT_SCALING),
+            0,
+        );
+        assert!(quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, uncapped) ==
+            500_000_000, 1);
+
+        // The cap binds when it is the smaller of the two.
+        assert!(quote_to_qty_capped(1_000_000_000, 2_000_000_000, FLOAT_SCALING, 100) == 100, 2);
+
+        // A level at MIN_PRICE: the uncapped form overflows here, this clamps.
+        assert!(quote_to_qty_capped(max_u64, 1, FLOAT_SCALING, 7) == 7, 3);
+        assert!(quote_to_qty_capped(max_u64, 1, FLOAT_SCALING, 0) == 0, 4);
+
+        // A level at MAX_PRICE: the exact quotient, no clamp needed.
+        assert!(
+            quote_to_qty_capped(max_u64, max_price, FLOAT_SCALING, uncapped) == 2_000_000_000,
+            5,
+        );
+
+        // Multicoin scaling is a plain division, capped the same way.
+        assert!(quote_to_qty_capped(1_000, 7, 1, 999) == 142, 6);
+        assert!(quote_to_qty_capped(1_000, 7, 1, 100) == 100, 7);
+        assert!(
+            quote_to_qty_capped(1_000, 7, 1, uncapped) == quote_to_qty(1_000, 7, 1),
+            8,
+        );
+
+        // Nothing in, nothing out.
+        assert!(quote_to_qty_capped(0, 1, FLOAT_SCALING, uncapped) == 0, 9);
     }
 
     #[test]

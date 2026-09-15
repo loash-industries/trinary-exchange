@@ -10,7 +10,6 @@ module triex::constants {
     const DEFAULT_STAKE_REQUIRED: u64 = 100_000_000_000; // 100 CRED // #feat:stake
     const HALF: u64 = 500_000_000;
     const CRED_UNIT: u64 = 1_000_000;
-    const FEE_PENALTY_MULTIPLIER: u64 = 1_250_000_000; // 25% more than normal
     const EWMA_DF_KEY: vector<u8> = b"ewma";
     // #feat:refer
     // const REFERRAL_DF_KEY: vector<u8> = b"referral";
@@ -73,6 +72,12 @@ module triex::constants {
     // re-summing the window on every rate resolution; a shorter effective window is
     // reachable by raising the schedule's thresholds.
     const TURNOVER_WINDOW_EPOCHS: u64 = 30;
+
+    // Ceiling on any hub's share of the fees recognized on its pools, in basis
+    // points. A trust commitment as much as a bound, checked when a rate is
+    // staged, clamped when it is read, and asserted again where the credit is
+    // written. Stated in CAPABILITIES.md alongside MAX_TAKER_FEE.
+    const MAX_OPERATOR_SHARE_BPS: u64 = 10000; // 100%
 
     // Upper bound on tiers in a fee schedule. Resolution is a linear scan, so this
     // is what keeps it bounded on the hot fill path.
@@ -222,16 +227,16 @@ module triex::constants {
         MAX_FEE_TIERS
     }
 
+    public fun max_operator_share_bps(): u64 {
+        MAX_OPERATOR_SHARE_BPS
+    }
+
     public fun max_slice_size(): u64 {
         MAX_SLICE_SIZE
     }
 
     public fun max_fan_out(): u64 {
         MAX_FAN_OUT
-    }
-
-    public fun fee_penalty_multiplier(): u64 {
-        FEE_PENALTY_MULTIPLIER
     }
 
     public fun default_ewma_alpha(): u64 {

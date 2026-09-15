@@ -250,11 +250,13 @@ module triex::integration_multicoin_pool_price_scaling_tests {
         test.next_tx(ALICE);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+            let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
             let alice_proof = alice_bm.generate_proof_as_owner(test.ctx());
 
             pool.modify_order(
+                &policy,
                 &mut alice_bm,
                 &alice_proof,
                 order_id,
@@ -268,6 +270,7 @@ module triex::integration_multicoin_pool_price_scaling_tests {
             assert!(remaining.quantity() == modified_qty, 1);
 
             return_shared(pool);
+            return_shared(policy);
             return_shared(clock);
             return_shared(alice_bm);
         };

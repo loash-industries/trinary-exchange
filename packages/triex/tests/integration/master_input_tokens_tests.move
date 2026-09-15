@@ -98,7 +98,11 @@ module triex::integration_master_input_tokens_tests {
         let big_quantity = 1_000_000 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
-        let maker_fee = constants::maybe_apply_fee(is_bid);
+        // The escrow a resting bid of this size locks, and the share the protocol
+        // keeps each time one is cancelled. Both are priced off the schedule the
+        // pool resolves, not off a flat test constant.
+        let bid_escrow = utils::maker_escrow(price, quantity);
+        let cancel_retained = utils::retained_on_cancel(bid_escrow);
         let mut alice_balance = utils::expected_balances_all(starting_balance);
         let mut bob_balance = utils::expected_balances_all(starting_balance);
 
@@ -166,12 +170,14 @@ module triex::integration_master_input_tokens_tests {
         );
 
         std::debug::print(&b"Order placed successfully");
-        let usdc_asset = math::mul(price, quantity);
-        let usdc_base_fee = math::mul(maker_fee, usdc_asset);
-        let usdc_penalty_fee = math::mul(constants::fee_penalty_multiplier(), usdc_base_fee);
+        // Two placements and one cancel: the live order holds principal plus
+        // escrow, and the cancelled one gave up the retained share of its escrow
+        // for good.
+        let usdc_asset = utils::maker_principal(price, quantity);
         std::debug::print(&b"Calculated Epoch 0 fees");
         utils::sub_usdc(&mut alice_balance, usdc_asset);
-        utils::sub_usdc(&mut alice_balance, usdc_penalty_fee);
+        utils::sub_usdc(&mut alice_balance, bid_escrow);
+        utils::sub_usdc(&mut alice_balance, cancel_retained);
 
         std::debug::print(&b"Alice placing ask order in pool2...");
         let order_info_2 = pool_tests::place_limit_order<SPAM, USDC>(
@@ -237,8 +243,11 @@ module triex::integration_master_input_tokens_tests {
             &mut test,
         );
         std::debug::print(&b"Order canceled, calculating refund...");
-        let canceled_quote_amount = math::mul(price, quantity);
+        // Principal comes back whole; the escrow comes back net of the retained
+        // share, which is what makes cancelling cost something at all.
+        let canceled_quote_amount = utils::maker_principal(price, quantity);
         utils::add_usdc(&mut alice_balance, canceled_quote_amount);
+        utils::add_usdc(&mut alice_balance, utils::refunded_on_cancel(bid_escrow));
 
         std::debug::print(&b"Checking Alice balance after cancel refund...");
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
@@ -257,15 +266,10 @@ module triex::integration_master_input_tokens_tests {
             &mut test,
         );
         std::debug::print(&b"Order placed in Epoch 2");
-        let usdc_asset_new = math::mul(price, quantity);
+        let usdc_asset_new = utils::maker_principal(price, quantity);
         utils::sub_usdc(&mut alice_balance, usdc_asset_new);
-        let usdc_base_fee_new = math::mul(maker_fee, usdc_asset_new);
-        let usdc_penalty_fee_new = math::mul(
-            constants::fee_penalty_multiplier(),
-            usdc_base_fee_new,
-        );
         std::debug::print(&b"Calculated Epoch 2 fees (same as Epoch 0)");
-        utils::sub_usdc(&mut alice_balance, usdc_penalty_fee_new);
+        utils::sub_usdc(&mut alice_balance, bid_escrow);
 
         std::debug::print(&b"Checking Alice balance after Epoch 2 order...");
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
@@ -283,8 +287,11 @@ module triex::integration_master_input_tokens_tests {
             !is_bid,
             &mut test,
         );
+        // Bob lifts Alice's resting bid as an ask taker, so his fee comes out of
+        // the quote proceeds rather than being paid in alongside them.
+        let bob_proceeds = math::mul(price, executed_quantity);
         utils::sub_sui(&mut bob_balance, executed_quantity);
-        utils::add_usdc(&mut bob_balance, math::mul(price, executed_quantity));
+        utils::add_usdc(&mut bob_balance, bob_proceeds - utils::taker_fee_on(bob_proceeds));
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
         utils::withdraw_settled_amounts<SUI, USDC>(
@@ -317,12 +324,6 @@ module triex::integration_master_input_tokens_tests {
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
         std::debug::print(&b"Bob balance check passed after rebate");
 
-        let alice_order_quantity = 3 * constants::float_scaling();
-        let usdc_amount = math::mul(price, alice_order_quantity);
-        let _expected_vault_fee = math::mul(
-            constants::fee_penalty_multiplier(),
-            math::mul(maker_fee, usdc_amount),
-        );
         utils::check_vault_balances<SUI, USDC>(
             pool1_id,
             &balances::new(0, 0, 0),
@@ -350,14 +351,23 @@ module triex::integration_master_input_tokens_tests {
         };
         std::debug::print(&b"23-epoch loop completed");
 
+        // `execute_cross_trading` crosses each side twice per call: Alice rests a
+        // bid that Bob lifts (Alice maker, Bob taker), then Alice lifts what is
+        // left of Bob's ask (Alice taker, Bob maker). So each of them is maker on
+        // exactly half the base traded and taker on the other half, and their fee
+        // bills are mirror images.
         let quantity_sui_traded = 46 * constants::float_scaling();
+        let traded_quote = math::mul(price, quantity_sui_traded);
+        let half_quote = math::mul(price, quantity_sui_traded / 2);
+        let as_maker = utils::maker_fee_on(half_quote);
+        let as_taker = utils::taker_fee_on(half_quote);
+
         utils::add_sui(&mut alice_balance, quantity_sui_traded);
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity_sui_traded));
-        let alice_base_fee = math::mul(math::mul(quantity_sui_traded, maker_fee), price);
-        let alice_usdc_fee = math::mul(constants::fee_penalty_multiplier(), alice_base_fee);
-        utils::sub_usdc(&mut alice_balance, alice_usdc_fee);
+        utils::sub_usdc(&mut alice_balance, traded_quote);
+        utils::sub_usdc(&mut alice_balance, as_maker + as_taker);
         utils::sub_sui(&mut bob_balance, quantity_sui_traded);
-        utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
+        utils::add_usdc(&mut bob_balance, traded_quote);
+        utils::sub_usdc(&mut bob_balance, as_maker + as_taker);
 
         std::debug::print(&b"Checking Alice balance after 23-epoch loop...");
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
@@ -392,14 +402,19 @@ module triex::integration_master_input_tokens_tests {
         );
         std::debug::print(&b"Epoch 28 trading executed");
 
+        // Same shape as the loop above: one cross each way.
         let quantity_sui_traded = 2 * quantity;
+        let traded_quote_28 = math::mul(price, quantity_sui_traded);
+        let half_quote_28 = math::mul(price, quantity_sui_traded / 2);
+        let as_maker_28 = utils::maker_fee_on(half_quote_28);
+        let as_taker_28 = utils::taker_fee_on(half_quote_28);
+
         utils::add_sui(&mut alice_balance, quantity_sui_traded);
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity_sui_traded));
-        let alice_base_fee_28 = math::mul(math::mul(quantity_sui_traded, maker_fee), price);
-        let alice_usdc_fee = math::mul(constants::fee_penalty_multiplier(), alice_base_fee_28);
-        utils::sub_usdc(&mut alice_balance, alice_usdc_fee);
+        utils::sub_usdc(&mut alice_balance, traded_quote_28);
+        utils::sub_usdc(&mut alice_balance, as_maker_28 + as_taker_28);
         utils::sub_sui(&mut bob_balance, quantity_sui_traded);
-        utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
+        utils::add_usdc(&mut bob_balance, traded_quote_28);
+        utils::sub_usdc(&mut bob_balance, as_maker_28 + as_taker_28);
 
         std::debug::print(&b"Checking Alice balance after Epoch 28 trading...");
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);

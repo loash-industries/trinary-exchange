@@ -5,6 +5,7 @@ module triex::integration_test_utils {
     use triex::{
         balances::Balances,
         constants,
+        math,
         pool::{Self as pool, Pool},
         pool_tests,
         trading_account::{Self as trading_account, TradingAccount},
@@ -75,6 +76,63 @@ module triex::integration_test_utils {
 
     public fun sub_usdt(balances: &mut ExpectedBalances, amount: u64) {
         balances.usdt = balances.usdt - amount;
+    }
+
+    // === Fee model the pools actually run ===
+    // The `master_*` suites used to track fees with `constants::maybe_apply_fee`
+    // — a flat 2% on bids, 0% on asks — which has not matched the live schedule
+    // since the genesis ladder landed, and ignored cancel retention entirely.
+    // Expectations built on it could not be asserted, so `check_balance` printed
+    // instead of checking and every balance in these suites went unverified.
+    //
+    // These restate the arithmetic rather than calling `quote_fee`. Delegating
+    // would make the expectations move with the code under test: a mutant that
+    // refunds the whole escrow on cancel would shift the "expected" figure by the
+    // same amount and the assertion would still pass. An oracle has to be an
+    // independent statement of the answer, so the rates come from the schedule
+    // the harness seeds and the maths is spelled out here.
+
+    /// `floor(quote_quantity * rate / FLOAT_SCALING)` — the fee arithmetic,
+    /// restated.
+    fun fee_at_rate(rate_scaled: u64, quote_quantity: u64): u64 {
+        (
+            ((quote_quantity as u128) * (rate_scaled as u128)) /
+        (constants::float_scaling() as u128),
+        ) as u64
+    }
+
+    /// Quote a bid maker locks as principal for `quantity` at `price`.
+    public fun maker_principal(price: u64, quantity: u64): u64 {
+        math::mul(price, quantity)
+    }
+
+    /// Quote fee a bid maker escrows at placement, at the coin-pool maker rate.
+    /// Asks escrow nothing.
+    public fun maker_escrow(price: u64, quantity: u64): u64 {
+        fee_at_rate(pool_tests::default_maker_fee(), maker_principal(price, quantity))
+    }
+
+    /// Escrow returned to the maker by a cancel, modify-down or expiry. The
+    /// refund floors, so rounding dust stays with the protocol.
+    public fun refunded_on_cancel(escrow: u64): u64 {
+        let kept = pool_tests::default_cancel_retention_bps();
+        // 10_000 bps = 100%, the denominator `FeePolicy` expresses retention in.
+        (((escrow as u128) * ((10_000 - kept) as u128)) / 10_000) as u64
+    }
+
+    /// The share of released escrow the protocol keeps.
+    public fun retained_on_cancel(escrow: u64): u64 {
+        escrow - refunded_on_cancel(escrow)
+    }
+
+    /// Taker fee on a quote leg, at the coin-pool entry rung.
+    public fun taker_fee_on(quote_quantity: u64): u64 {
+        fee_at_rate(pool_tests::default_taker_fee(), quote_quantity)
+    }
+
+    /// Maker fee on a quote leg, at the coin-pool entry rung.
+    public fun maker_fee_on(quote_quantity: u64): u64 {
+        fee_at_rate(pool_tests::default_maker_fee(), quote_quantity)
     }
 
     const OWNER: address = @0x1;
@@ -292,39 +350,24 @@ module triex::integration_test_utils {
             let usdc = trading_account::balance<USDC>(&my_trading_account);
             let spam = trading_account::balance<SPAM>(&my_trading_account);
 
-            // WARNING: this helper asserts nothing. Every `ExpectedBalances` the
-            // `master_*` suites thread into it is dead weight — the same defect
-            // `check_locked_balance` below was fixed for, and the reason that fix
-            // carries the comment it does.
-            //
-            // It is left this way deliberately, not by oversight. Turning the
-            // printouts below into assertions was tried and fails on all three
-            // assets: USDC by roughly the accumulated quote-fee take (these
-            // expectations predate dual-sided fees), and SUI and SPAM in three
-            // tests each — `test_master_cred_price_ok`,
-            // `test_master_both_conversion_available_ok` and
-            // `test_master_both_conversion_available_cred_is_base_ok`. So the base
-            // side has drifted too, and asserting it needs each scenario's expected
-            // balances rebuilt from the current fee schedule rather than nudged.
-            // Guessing the numbers would bake in a wrong answer that looks checked.
-            //
-            // Until that is done, use `check_locked_balance` for anything that
-            // must actually hold.
             if (sui != expected_balances.sui) {
-                std::debug::print(&std::string::utf8(b"SUI mismatch (NOT asserted):"));
+                std::debug::print(&std::string::utf8(b"SUI actual / expected:"));
                 std::debug::print(&sui);
                 std::debug::print(&expected_balances.sui);
             };
             if (usdc != expected_balances.usdc) {
-                std::debug::print(&std::string::utf8(b"USDC mismatch (NOT asserted):"));
+                std::debug::print(&std::string::utf8(b"USDC actual / expected:"));
                 std::debug::print(&usdc);
                 std::debug::print(&expected_balances.usdc);
             };
             if (spam != expected_balances.spam) {
-                std::debug::print(&std::string::utf8(b"SPAM mismatch (NOT asserted):"));
+                std::debug::print(&std::string::utf8(b"SPAM actual / expected:"));
                 std::debug::print(&spam);
                 std::debug::print(&expected_balances.spam);
             };
+            assert!(sui == expected_balances.sui, 0);
+            assert!(usdc == expected_balances.usdc, 1);
+            assert!(spam == expected_balances.spam, 2);
 
             return_shared(my_trading_account);
         }

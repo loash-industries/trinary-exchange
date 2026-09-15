@@ -205,10 +205,24 @@ module triex::vault {
     }
 
     /// Earned revenue in the reserve: what an admin sweep may take.
+    ///
+    /// Saturates at zero rather than aborting if the escrow ever exceeds the
+    /// reserve, matching `multicoin_vault::withdrawable_quote_fees`.
+    /// `reserve >= locked_maker_fees` is maintained at every writer, so this is a
+    /// belt on a branch that should be unreachable — but the figure is a public
+    /// view as well as the cap on the sweep, and the two failure modes are not
+    /// comparable: saturating can only make the treasury take *less*, while
+    /// aborting would take the view and `withdraw_pool_fees` down permanently for
+    /// the pool. A genuine shortfall still surfaces where it must, at the
+    /// `EInsufficientFeeReserve` assert in `unlock_quote_fees`, which is the path
+    /// that would otherwise pay a maker out of coins the reserve does not hold.
     public(package) fun withdrawable_quote_fees<BaseAsset, QuoteAsset>(
         self: &Vault<BaseAsset, QuoteAsset>,
     ): u64 {
-        self.quote_fee_reserve.value() - self.locked_maker_fees
+        let reserve = self.quote_fee_reserve.value();
+        if (self.locked_maker_fees >= reserve) return 0;
+
+        reserve - self.locked_maker_fees
     }
 
     #[test_only]

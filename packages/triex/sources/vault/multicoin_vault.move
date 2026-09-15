@@ -4,9 +4,20 @@
 /// - CRED: Traditional Sui Balance<CRED> for fee payments
 module triex::multicoin_vault {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
-    use sui::{balance::{Self, Balance}, coin::{Self, Coin}, dynamic_object_field as dof};
+    use sui::{
+        balance::{Self, Balance},
+        coin::{Self, Coin},
+        dynamic_object_field as dof,
+        event
+    };
     use token::cred::CRED;
-    use triex::{balances::Balances, trading_account::{TradeProof, TradingAccount}, vault};
+    use triex::{
+        balances::Balances,
+        constants,
+        quote_fee,
+        trading_account::{TradeProof, TradingAccount},
+        vault
+    };
 
     // === Errors ===
     const EInsufficientBaseBalance: u64 = 1;
@@ -16,6 +27,17 @@ module triex::multicoin_vault {
     const EFeesLocked: u64 = 6;
     const ENoBalanceToSettle: u64 = 7;
     const EHasOwedBalances: u64 = 8;
+    const EOperatorShareAboveCeiling: u64 = 9;
+
+    // === Events ===
+    /// `operator_owed` paid out to the beneficiary configured for the collection.
+    public struct OperatorShareClaimed has copy, drop {
+        pool_id: ID,
+        collection_id: ID,
+        beneficiary: address,
+        amount: u64,
+        timestamp: u64,
+    }
 
     // === Structs ===
 
@@ -58,6 +80,19 @@ module triex::multicoin_vault {
         /// and it is deliberately left uncorrected — clearing it would need
         /// per-order residue tracking the vault does not keep.
         locked_maker_fees: u64,
+        /// The portion of `quote_fee_reserve` a hub operator may claim. Written
+        /// eagerly, at the moment revenue is recognized: each recognition credits
+        /// `floor(recognized × bps / 10000)` at the rate the policy resolves for
+        /// the current epoch.
+        ///
+        /// Settled at all times — there is no provisional or unsettled state
+        /// between a trade and a claim. That is a statement about *timing*, not
+        /// about amount: the credit floors per recognition event, of which a
+        /// single transaction can produce one per fill, so the figure sits below
+        /// `bps` of the recognized total by up to one raw unit per event. The
+        /// remainder stays in the reserve as treasury revenue — the share is
+        /// never paid out of fees that were not collected.
+        operator_owed: u64,
     }
 
     // === Public-Package Functions ===
@@ -76,6 +111,7 @@ module triex::multicoin_vault {
             cred_balance: balance::zero(),
             quote_fee_reserve: balance::zero(),
             locked_maker_fees: 0,
+            operator_owed: 0,
         };
 
         // Initialize with a zero MultiCoin balance
@@ -107,11 +143,47 @@ module triex::multicoin_vault {
         self.locked_maker_fees
     }
 
+    /// The hub operator's accrued, claimable share.
+    public(package) fun operator_owed<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u64 {
+        self.operator_owed
+    }
+
+    /// Everything in the reserve that is claimed by someone other than the
+    /// treasury: a maker's refundable escrow and the operator's accrued share.
+    ///
+    /// Every read of `quote_fee_reserve` that gates a payout goes through this.
+    /// The invariant `reserve >= encumbered()` is what makes both claims
+    /// payable, and it is maintained by construction: a fee deposit raises the
+    /// reserve by at least the hub credit it produces (`floor(amount × bps)` with
+    /// `bps ≤ 10000`), recognition moves value from `locked` into a fraction of
+    /// itself, an escrow refund lowers reserve and `locked` by the same amount,
+    /// and every withdrawal is capped by the difference.
+    public(package) fun encumbered<QuoteAsset>(self: &MultiCoinVault<QuoteAsset>): u128 {
+        (self.locked_maker_fees as u128) + (self.operator_owed as u128)
+    }
+
     /// Earned revenue in the reserve: what an admin sweep may take.
+    ///
+    /// Saturates at zero rather than aborting if the encumbrance ever exceeds the
+    /// reserve. That should be unreachable — every claim is matched by coins that
+    /// entered the reserve — but this figure is also a public view and the cap on
+    /// the admin sweep, and the two failure modes are not comparable: saturating
+    /// can only make the treasury take *less*, while aborting would take the view
+    /// and `withdraw_pool_fees` down permanently for the pool and leave indexers
+    /// reading a reverting getter.
+    ///
+    /// A genuine shortfall still surfaces, in the one place where it must: the
+    /// assert in `claim_operator_share`, where an operator would otherwise be paid coins
+    /// the reserve does not hold. Failing loudly on the claim and quietly on the
+    /// sweep puts the alarm on the side that would lose money.
     public(package) fun withdrawable_quote_fees<QuoteAsset>(
         self: &MultiCoinVault<QuoteAsset>,
     ): u64 {
-        self.quote_fee_reserve.value() - self.locked_maker_fees
+        let reserve = self.quote_fee_reserve.value() as u128;
+        let encumbered = self.encumbered();
+        if (encumbered >= reserve) return 0;
+
+        (reserve - encumbered) as u64
     }
 
     #[test_only]
@@ -125,12 +197,105 @@ module triex::multicoin_vault {
     }
 
     /// Recognize bid-maker escrow as earned revenue once the order fills. The
-    /// funds are already in the reserve; only their classification changes.
+    /// funds are already in the reserve; only their classification changes, and
+    /// the hub is credited its share of what was actually recognized.
+    ///
+    /// The credit is computed off the *actual* decrement, not `amount`. The two
+    /// differ: recognition floors per fill while the lock floors once over the
+    /// whole order, so a request can exceed what is still locked. Crediting the
+    /// request would turn the residue drift documented on `locked_maker_fees`
+    /// into a hub claim on revenue that was never recognized.
     public(package) fun recognize_locked_maker_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         amount: u64,
+        operator_bps: u64,
     ) {
-        self.locked_maker_fees = self.locked_maker_fees - amount.min(self.locked_maker_fees);
+        let recognized = amount.min(self.locked_maker_fees);
+        self.locked_maker_fees = self.locked_maker_fees - recognized;
+        self.credit_operator_share(recognized, operator_bps);
+    }
+
+    // === Operator share ===
+
+    /// Credit the hub its share of revenue recognized this instant, at the rate
+    /// the caller resolved from `&FeePolicy` for the current epoch.
+    ///
+    /// This is the only writer of `operator_owed` besides `claim_operator_share`, and it
+    /// must be called with **recognized revenue only** — never a deposit that
+    /// still contains refundable escrow. The three callers are the bid-taker fee
+    /// after settlement, each proceeds fee, and the actual decrement inside
+    /// `recognize_locked_maker_fees`.
+    ///
+    /// Deliberately emits nothing. A per-recognition event would land on the
+    /// hottest path in the exchange — a fill with `N` maker matches recognizes
+    /// `N + 1` times — for a feature that is off for every hub by default.
+    /// `operator_owed()` is a published view and `OperatorShareClaimed` records every
+    /// payout; deposit-level telemetry already exists in `PoolFeesDeposited`.
+    ///
+    /// **`owed <= amount` is what `reserve >= encumbered()` rests on**, and the
+    /// clamp below is what makes it structural rather than inherited. Every
+    /// caller credits against money that entered the reserve in the same call,
+    /// so the invariant survives a credit exactly when the credit cannot exceed
+    /// the deposit that funded it — which holds only while the rate is at most
+    /// 100%. Nothing else in the codebase enforces that: it is the arithmetic
+    /// relationship `MAX_OPERATOR_SHARE_BPS <= FEE_PRECISION` between two
+    /// constants declared in two modules, and raising the ceiling past 100%
+    /// reads like a configuration change while silently minting claims on coins
+    /// that were never collected. That failure is unrecoverable and invisible:
+    /// `withdrawable_quote_fees` saturates to zero, every claim and every sweep
+    /// for the pool aborts, and trading carries on producing more of it.
+    ///
+    /// Clamped rather than asserted because an abort here lands on the fill
+    /// path, and `fee_from_scaled_rate` and `operator_share_bps_at` both already
+    /// clamp rather than abort on an out-of-range rate. The ceiling assert
+    /// stays: it is the *policy* check, and the two are not the same bound —
+    /// `max_operator_share_bps()` is a trust commitment that may be set anywhere
+    /// at or below 100%, while `fee_precision()` is the solvency limit. A build
+    /// that lets them cross is caught in `multicoin_vault_tests`, so the clamp
+    /// is never reached in a correct build.
+    public(package) fun credit_operator_share<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        amount: u64,
+        operator_bps: u64,
+    ) {
+        if (amount == 0 || operator_bps == 0) return;
+        // Belt over the policy's write-time assert and read-time clamp: a rate
+        // above the ceiling must not mint a claim above it. Checked only when a
+        // claim would actually be minted, so the default feature-off path
+        // (bps = 0) pays nothing for it.
+        assert!(operator_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
+
+        let precision = quote_fee::fee_precision();
+        let bps = operator_bps.min(precision);
+        let owed = (((amount as u128) * (bps as u128)) / (precision as u128)) as u64;
+        self.operator_owed = self.operator_owed + owed;
+    }
+
+    /// Pay the settled share out of the reserve. Zeroes `operator_owed` first so the
+    /// split is measured against an already-decremented encumbrance.
+    public(package) fun claim_operator_share<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        pool_id: ID,
+        beneficiary: address,
+        timestamp: u64,
+        ctx: &mut TxContext,
+    ): Coin<QuoteAsset> {
+        let amount = self.operator_owed;
+        self.operator_owed = 0;
+        // Guaranteed by `reserve >= encumbered()`, which counts `operator_owed` in
+        // full. Asserted rather than assumed: it is the invariant's payout edge.
+        assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
+        let share = self.quote_fee_reserve.split(amount);
+
+        event::emit(OperatorShareClaimed {
+            pool_id,
+            collection_id: self.collection_id,
+            beneficiary,
+            amount,
+            timestamp,
+        });
+
+        coin::from_balance(share, ctx)
     }
 
     /// Returns the collection_id this vault is associated with.
@@ -223,7 +388,10 @@ module triex::multicoin_vault {
                 timestamp,
             );
             // Only the maker portion is escrow; the taker fee is earned on
-            // execution and immediately sweepable.
+            // execution and immediately sweepable. The hub's share of the taker
+            // half is credited by the pool right after this returns — the split
+            // between the two halves is drawn here, the rate is the pool's to
+            // resolve.
             self.locked_maker_fees = self.locked_maker_fees + maker_fee_amount;
         } else {
             option::destroy_none(quote_fee_deposit);
@@ -324,8 +492,14 @@ module triex::multicoin_vault {
     }
 
     /// Move already-held quote from the pool balance into the fee reserve.
-    /// Used for fees charged out of quote proceeds (ask-taker and ask-maker
-    /// fees), which never pass through a user withdrawal.
+    ///
+    /// This is the shared *deposit* primitive, not a recognition point — it
+    /// credits no operator share. Two callers reach it with different money: the
+    /// ask-proceeds loop moves fees already earned (and credits the hub itself,
+    /// via `credit_operator_share`), while `settle_trading_account` moves a bid's
+    /// `taker + maker` deposit, of which only the taker half is revenue. From in
+    /// here the two are indistinguishable, which is exactly why the credit
+    /// happens at the callers that know what the money is.
     public(package) fun move_quote_to_fee_reserve<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         pool_id: ID,
@@ -344,6 +518,11 @@ module triex::multicoin_vault {
         );
     }
 
+    #[test_only]
+    /// Join quote straight into the fee reserve, bypassing both the escrow lock
+    /// and the hub credit. No production caller — kept for the suites that need
+    /// to stand up reserve balances without a trade, and `#[test_only]` so wiring
+    /// it into a real path cannot silently under-credit an operator.
     public(package) fun deposit_quote_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         fee_balance: Balance<QuoteAsset>,

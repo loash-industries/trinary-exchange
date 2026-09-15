@@ -93,7 +93,9 @@ module triex::integration_master_flow_tests {
         let big_quantity = 1_000_000 * constants::float_scaling();
         let expire_timestamp = constants::max_u64();
         let is_bid = true;
-        let maker_fee = constants::maybe_apply_fee(is_bid);
+        // Fees are quote-denominated: the CRED legs these expectations used to
+        // track have been zero since the unified model landed.
+        let bid_escrow = utils::maker_escrow(price, quantity);
         let cred_multiplier = constants::cred_multiplier();
         let mut alice_balance = utils::expected_balances_all(starting_balance);
         let mut bob_balance = utils::expected_balances_all(starting_balance);
@@ -134,14 +136,8 @@ module triex::integration_master_flow_tests {
             expire_timestamp,
             &mut test,
         );
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity));
-        utils::sub_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(quantity, maker_fee),
-                cred_multiplier,
-            ),
-        );
+        utils::sub_usdc(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::sub_usdc(&mut alice_balance, bid_escrow);
 
         pool_tests::place_limit_order<SPAM, USDC>(
             utils::alice(),
@@ -165,7 +161,6 @@ module triex::integration_master_flow_tests {
 
         test.next_epoch(utils::owner());
         assert!(test.ctx().epoch() == 2, 0);
-        let old_maker_fee = maker_fee;
 
         pool_tests::cancel_order<SUI, USDC>(
             utils::alice(),
@@ -174,14 +169,9 @@ module triex::integration_master_flow_tests {
             order_info_1.order_id(),
             &mut test,
         );
-        utils::add_usdc(&mut alice_balance, math::mul(price, quantity));
-        utils::add_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(quantity, old_maker_fee),
-                cred_multiplier,
-            ),
-        );
+        // Principal back whole, escrow back net of the retained share.
+        utils::add_usdc(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::add_usdc(&mut alice_balance, utils::refunded_on_cancel(bid_escrow));
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         pool_tests::place_limit_order<SUI, USDC>(
@@ -196,14 +186,8 @@ module triex::integration_master_flow_tests {
             expire_timestamp,
             &mut test,
         );
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity));
-        utils::sub_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(quantity, maker_fee),
-                cred_multiplier,
-            ),
-        );
+        utils::sub_usdc(&mut alice_balance, utils::maker_principal(price, quantity));
+        utils::sub_usdc(&mut alice_balance, bid_escrow);
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
 
         let executed_quantity = 3 * constants::float_scaling();
@@ -218,8 +202,11 @@ module triex::integration_master_flow_tests {
             !is_bid,
             &mut test,
         );
+        // Bob lifts Alice's bid as an ask taker: his fee is netted out of the
+        // quote proceeds.
+        let bob_proceeds = math::mul(price, executed_quantity);
         utils::sub_sui(&mut bob_balance, executed_quantity);
-        utils::add_usdc(&mut bob_balance, math::mul(price, executed_quantity));
+        utils::add_usdc(&mut bob_balance, bob_proceeds - utils::taker_fee_on(bob_proceeds));
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
 
         utils::withdraw_settled_amounts<SUI, USDC>(
@@ -273,17 +260,17 @@ module triex::integration_master_flow_tests {
         };
 
         let quantity_sui_traded = 46 * constants::float_scaling();
+        // One cross each way per call, so each side is maker on half the base
+        // traded and taker on the other half — mirror-image fee bills.
+        let traded_quote = math::mul(price, quantity_sui_traded);
+        let half_quote = math::mul(price, quantity_sui_traded / 2);
+        let both_legs = utils::maker_fee_on(half_quote) + utils::taker_fee_on(half_quote);
         utils::add_sui(&mut alice_balance, quantity_sui_traded);
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity_sui_traded));
-        utils::sub_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(quantity_sui_traded, maker_fee),
-                cred_multiplier,
-            ),
-        );
+        utils::sub_usdc(&mut alice_balance, traded_quote);
+        utils::sub_usdc(&mut alice_balance, both_legs);
         utils::sub_sui(&mut bob_balance, quantity_sui_traded);
-        utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
+        utils::add_usdc(&mut bob_balance, traded_quote);
+        utils::sub_usdc(&mut bob_balance, both_legs);
 
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);
@@ -313,17 +300,17 @@ module triex::integration_master_flow_tests {
         let taker_sui_traded = quantity;
         let maker_sui_traded = quantity;
         let quantity_sui_traded = taker_sui_traded + maker_sui_traded;
+        // One cross each way per call, so each side is maker on half the base
+        // traded and taker on the other half — mirror-image fee bills.
+        let traded_quote = math::mul(price, quantity_sui_traded);
+        let half_quote = math::mul(price, quantity_sui_traded / 2);
+        let both_legs = utils::maker_fee_on(half_quote) + utils::taker_fee_on(half_quote);
         utils::add_sui(&mut alice_balance, quantity_sui_traded);
-        utils::sub_usdc(&mut alice_balance, math::mul(price, quantity_sui_traded));
-        utils::sub_cred(
-            &mut alice_balance,
-            math::mul(
-                math::mul(quantity_sui_traded, maker_fee),
-                cred_multiplier,
-            ),
-        );
+        utils::sub_usdc(&mut alice_balance, traded_quote);
+        utils::sub_usdc(&mut alice_balance, both_legs);
         utils::sub_sui(&mut bob_balance, quantity_sui_traded);
-        utils::add_usdc(&mut bob_balance, math::mul(price, quantity_sui_traded));
+        utils::add_usdc(&mut bob_balance, traded_quote);
+        utils::sub_usdc(&mut bob_balance, both_legs);
 
         utils::check_balance(alice_trading_account_id, &alice_balance, &mut test);
         utils::check_balance(bob_trading_account_id, &bob_balance, &mut test);

@@ -17,6 +17,21 @@ module triex::quote_fee {
     /// fill settlement and dry-run quotes all price through it, so a quote can
     /// never disagree with what settles. Rates are honored at the full precision
     /// the policy accepts (FEE_MULTIPLE allows 0.01 bp), and clamped at 100%.
+    ///
+    /// **Rounds down, and must.** Two separate invariants rest on it, and both
+    /// break under any rule that gives a leg more than its exact share:
+    ///
+    /// - The fee never exceeds the rate the trader was quoted. `floor(q * r)` is
+    ///   at most `q * r`; a minimum-charge rule is not, and the shortfall it
+    ///   would cover is largest exactly where the quote leg is smallest — a
+    ///   one-unit leg would pay 100% against a published 1.10%. Under-collecting
+    ///   sub-unit dust is the correct failure here; the right place to keep fills
+    ///   out of that range is a minimum order size, not the rounding rule.
+    /// - A bid maker's escrow is locked once over the whole order and released
+    ///   over pieces of it, by fills, modify-downs, cancels and expiries. What
+    ///   keeps the releases from outrunning the lock is that flooring is
+    ///   subadditive: `sum floor(q_i * r) <= floor(sum q_i * r)`. Round a piece up
+    ///   and a refund can be paid out of reserve the order never funded.
     public(package) fun fee_from_scaled_rate(rate_scaled: u64, quote_quantity: u64): u64 {
         let scaling = constants::float_scaling_u128();
         let rate = if ((rate_scaled as u128) > scaling) scaling else rate_scaled as u128;
@@ -41,7 +56,7 @@ module triex::quote_fee {
         (refund, basis - refund)
     }
 
-    #[test_only]
+    /// 100.00% in basis points — the denominator for every bps split.
     public fun fee_precision(): u64 {
         FEE_PRECISION
     }
