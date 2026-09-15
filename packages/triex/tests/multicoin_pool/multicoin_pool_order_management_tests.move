@@ -30,29 +30,8 @@ module triex::integration_multicoin_pool_order_management_tests {
 
     // Test asset IDs
     const ASSET_GOLD: u64 = 1;
-    const ASSET_SILVER: u64 = 2;
-    const ASSET_IRON: u64 = 3;
 
     // === Shared Helpers (delegated to integration_multicoin_test_utils) ===
-
-    #[test_only]
-    fun get_time(test: &mut Scenario): u64 { mc_utils::get_time(test) }
-
-    #[test_only]
-    fun set_time(current_time: u64, test: &mut Scenario) { mc_utils::set_time(current_time, test) }
-
-    #[test_only]
-    fun share_clock(test: &mut Scenario) { mc_utils::share_clock(test) }
-
-    #[test_only]
-    fun share_registry_for_testing(test: &mut Scenario): ID {
-        mc_utils::share_registry_for_testing(test)
-    }
-
-    #[test_only]
-    fun add_approved_quote_currencies(owner: address, registry_id: ID, test: &mut Scenario) {
-        mc_utils::add_approved_quote_currencies(owner, registry_id, test)
-    }
 
     #[test_only]
     fun setup_registry_with_multicoin(test: &mut Scenario): (ID, ID, CollectionCap) {
@@ -82,35 +61,6 @@ module triex::integration_multicoin_pool_order_management_tests {
             registry_id,
             collection_id,
             asset_id,
-            test,
-        )
-    }
-
-    #[test_only]
-    fun setup_cred_usdc_reference_pool(
-        sender: address,
-        registry_id: ID,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
-    }
-
-    #[test_only]
-    fun setup_multicoin_pool_with_cred_pricing(
-        sender: address,
-        registry_id: ID,
-        collection_id: ID,
-        asset_id: u64,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): (ID, ID) {
-        mc_utils::setup_multicoin_pool_with_cred_pricing(
-            sender,
-            registry_id,
-            collection_id,
-            asset_id,
-            trading_account_id,
             test,
         )
     }
@@ -291,7 +241,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -1519,7 +1469,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
-        let alice_order = pool.place_limit_order(
+        let _alice_order = pool.place_limit_order(
             &policy,
             &mut alice_bm,
             &alice_proof,
@@ -1708,7 +1658,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
-        let alice_order = pool.place_limit_order(
+        let _alice_order = pool.place_limit_order(
             &policy,
             &mut alice_bm,
             &alice_proof,
@@ -2127,7 +2077,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -2174,7 +2124,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -2698,7 +2648,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3044,7 +2994,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 10) {
             pool.place_limit_order(
                 &policy,
@@ -3077,7 +3027,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let bob_trade_cap = test.take_from_sender<TradeCap>();
         let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
 
-        let mut j = 0;
+        let mut j = 0u64;
         while (j < 10) {
             pool.place_limit_order(
                 &policy,
@@ -3177,7 +3127,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let alice_trade_cap = test.take_from_sender<TradeCap>();
         let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
 
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 10) {
             pool.place_limit_order(
                 &policy,
@@ -3216,7 +3166,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3270,7 +3220,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3305,7 +3255,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,
@@ -3352,7 +3302,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         let mut test = begin(OWNER);
 
         // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, collection_id, _collection_cap) = setup_registry_with_multicoin(&mut test);
         let pool_id = setup_multicoin_pool(
             OWNER,
             registry_id,

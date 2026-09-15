@@ -263,7 +263,7 @@ module triex::fee_turnover_tests {
         // An active trader touches the account many times per epoch; every credit
         // must land in the same bucket rather than advancing the ring.
         let mut turnover = fee_turnover::empty(3);
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 50) {
             turnover.roll(3); // no-op, as it would be on every account touch
             turnover.record(2);

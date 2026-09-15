@@ -26,33 +26,11 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
     const OWNER: address = @0x1;
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
-    const CHARLIE: address = @0xCCCC;
 
     // Test asset IDs
     const ASSET_GOLD: u64 = 1;
-    const ASSET_SILVER: u64 = 2;
-    const ASSET_IRON: u64 = 3;
 
     // === Shared Helpers (delegated to integration_multicoin_test_utils) ===
-
-    #[test_only]
-    fun get_time(test: &mut Scenario): u64 { mc_utils::get_time(test) }
-
-    #[test_only]
-    fun set_time(current_time: u64, test: &mut Scenario) { mc_utils::set_time(current_time, test) }
-
-    #[test_only]
-    fun share_clock(test: &mut Scenario) { mc_utils::share_clock(test) }
-
-    #[test_only]
-    fun share_registry_for_testing(test: &mut Scenario): ID {
-        mc_utils::share_registry_for_testing(test)
-    }
-
-    #[test_only]
-    fun add_approved_quote_currencies(owner: address, registry_id: ID, test: &mut Scenario) {
-        mc_utils::add_approved_quote_currencies(owner, registry_id, test)
-    }
 
     #[test_only]
     fun setup_registry_with_multicoin(test: &mut Scenario): (ID, ID, CollectionCap) {
@@ -82,35 +60,6 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
             registry_id,
             collection_id,
             asset_id,
-            test,
-        )
-    }
-
-    #[test_only]
-    fun setup_cred_usdc_reference_pool(
-        sender: address,
-        registry_id: ID,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
-    }
-
-    #[test_only]
-    fun setup_multicoin_pool_with_cred_pricing(
-        sender: address,
-        registry_id: ID,
-        collection_id: ID,
-        asset_id: u64,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): (ID, ID) {
-        mc_utils::setup_multicoin_pool_with_cred_pricing(
-            sender,
-            registry_id,
-            collection_id,
-            asset_id,
-            trading_account_id,
             test,
         )
     }
@@ -488,7 +437,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         let clock = test.take_shared<Clock>();
 
         // Query: if I put in 200 quote, how much base do I get?
-        let (base_out, quote_remaining) = pool.get_quantity_out(
+        let (base_out, _quote_remaining) = pool.get_quantity_out(
             &policy,
             0, // base_quantity (0 since we're buying with quote)
             200 * constants::float_scaling(), // quote_quantity

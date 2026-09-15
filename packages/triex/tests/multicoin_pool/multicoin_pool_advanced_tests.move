@@ -30,7 +30,6 @@ module triex::integration_multicoin_pool_advanced_tests {
     const OWNER: address = @0x1;
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
-    const CHARLIE: address = @0xCCCC;
 
     // Test asset IDs
     const ASSET_GOLD: u64 = 1;
@@ -51,11 +50,6 @@ module triex::integration_multicoin_pool_advanced_tests {
     #[test_only]
     fun share_registry_for_testing(test: &mut Scenario): ID {
         mc_utils::share_registry_for_testing(test)
-    }
-
-    #[test_only]
-    fun add_approved_quote_currencies(owner: address, registry_id: ID, test: &mut Scenario) {
-        mc_utils::add_approved_quote_currencies(owner, registry_id, test)
     }
 
     #[test_only]
@@ -88,16 +82,6 @@ module triex::integration_multicoin_pool_advanced_tests {
             asset_id,
             test,
         )
-    }
-
-    #[test_only]
-    fun setup_cred_usdc_reference_pool(
-        sender: address,
-        registry_id: ID,
-        trading_account_id: ID,
-        test: &mut Scenario,
-    ): ID {
-        mc_utils::setup_cred_usdc_reference_pool(sender, registry_id, trading_account_id, test)
     }
 
     #[test_only]
@@ -476,105 +460,6 @@ module triex::integration_multicoin_pool_advanced_tests {
         return_shared(clock);
         return_shared(bob_bm);
         test.return_to_sender(bob_trade_cap);
-        unit_test::destroy(collection_cap);
-
-        end(test);
-    }
-
-    #[test_only]
-    fun multicoin_test_crossing_multiple(is_bid: bool, num_orders: u64) {
-        let mut test = begin(OWNER);
-
-        // Setup
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
-        let pool_id = setup_multicoin_pool(
-            OWNER,
-            registry_id,
-            collection_id,
-            ASSET_GOLD,
-            &mut test,
-        );
-
-        let alice_bm_id = create_trading_account_with_funds(
-            ALICE,
-            1_000_000 * constants::float_scaling(),
-            1_000_000 * constants::float_scaling(),
-            &mut test,
-        );
-
-        let price = 2 * constants::float_scaling();
-        let quantity = 1 * constants::float_scaling();
-        let expire_timestamp = constants::max_u64();
-
-        let mut i = 0;
-        while (i < num_orders) {
-            test.next_tx(ALICE);
-            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
-            let clock = test.take_shared<Clock>();
-            let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
-            let alice_trade_cap = test.take_from_sender<TradeCap>();
-            let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
-
-            pool.place_limit_order(
-                &policy,
-                &mut alice_bm,
-                &alice_proof,
-                constants::no_restriction(),
-                constants::self_matching_allowed(),
-                price,
-                quantity,
-                is_bid,
-                expire_timestamp,
-                &clock,
-                test.ctx(),
-            );
-
-            return_shared(pool);
-            return_shared(policy);
-            return_shared(clock);
-            return_shared(alice_bm);
-            test.return_to_sender(alice_trade_cap);
-            i = i + 1;
-        };
-
-        let price = if (is_bid) {
-            1 * constants::float_scaling()
-        } else {
-            3 * constants::float_scaling()
-        };
-
-        test.next_tx(ALICE);
-        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let policy = test.take_shared<FeePolicy>();
-        let clock = test.take_shared<Clock>();
-        let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
-        let alice_trade_cap = test.take_from_sender<TradeCap>();
-        let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
-
-        let order_info = pool.place_limit_order(
-            &policy,
-            &mut alice_bm,
-            &alice_proof,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price,
-            num_orders * quantity,
-            !is_bid,
-            expire_timestamp,
-            &clock,
-            test.ctx(),
-        );
-
-        // Verify the crossing order filled all the previous orders
-        assert!(order_info.executed_quantity() == num_orders * quantity, 0);
-        assert!(order_info.cumulative_quote_quantity() == 2 * num_orders * quantity, 1);
-
-        return_shared(pool);
-        return_shared(policy);
-        return_shared(clock);
-        return_shared(alice_bm);
-        test.return_to_sender(alice_trade_cap);
         unit_test::destroy(collection_cap);
 
         end(test);
@@ -1332,7 +1217,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
 
             // 80% leaves the reserve back to Alice; the 20% retention stays.
-            let (refund, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
+            let (_refund, retained) = quote_fee::split_released_fee(alice_maker_fee, 2000);
             assert!(pool.quote_fee_reserve_balance() == retained, 2);
             assert!(pool.locked_maker_fees() == 0, 3);
 
@@ -2007,7 +1892,7 @@ module triex::integration_multicoin_pool_advanced_tests {
     fun test_multicoin_permissionless_pool_invalid_fee_e() {
         let mut test = begin(OWNER);
 
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
@@ -2278,7 +2163,7 @@ module triex::integration_multicoin_pool_advanced_tests {
 
         // Initialize MultiCoin collection
         test.next_tx(OWNER);
-        let (collection, collection_cap) = multicoin::new_collection(test.ctx());
+        let (collection, _collection_cap) = multicoin::new_collection(test.ctx());
         let collection_id = object::id(&collection);
         sui::transfer::public_share_object(collection);
         let _ = collection_id;
@@ -2494,7 +2379,7 @@ module triex::integration_multicoin_pool_advanced_tests {
     fun test_multicoin_permissionless_pools() {
         let mut test = begin(OWNER);
 
-        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let (registry_id, _collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
 
         // Create permissionless pool for ASSET_GOLD with USDC quote
         test.next_tx(OWNER);
@@ -3074,7 +2959,7 @@ module triex::integration_multicoin_pool_advanced_tests {
         let price = 2 * constants::float_scaling();
         let quantity = 10; // 10 raw items (base asset has 0 decimals)
         let expire_timestamp = constants::max_u64();
-        let mut num_orders = 15; // Reduced to 15 total orders (5 + 10) for faster test execution
+        let mut num_orders = 15u64; // Reduced to 15 total orders (5 + 10) for faster test execution
 
         // Alice and Bob place 15 orders total on the SAME side (is_bid)
         // Alice places 5 orders, Bob places 10 orders

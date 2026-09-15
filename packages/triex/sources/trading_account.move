@@ -237,7 +237,7 @@ module triex::trading_account {
         asset_id: u64,
     ): u64 {
         let key = MultiCoinBalanceKey { collection_id, asset_id };
-        if (!dof::exists_(&trading_account.id, key)) {
+        if (!dof::exists(&trading_account.id, key)) {
             0
         } else {
             let bal: &MultiCoinBalance = dof::borrow(&trading_account.id, key);
@@ -601,7 +601,7 @@ module triex::trading_account {
     /// reported holding a tier that has already rolled off.
     public fun fee_turnover<QuoteAsset>(trading_account: &TradingAccount, ctx: &TxContext): u128 {
         let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
-        if (!df::exists_(&trading_account.id, key)) return 0;
+        if (!df::exists(&trading_account.id, key)) return 0;
 
         let ring: &FeeTurnover = df::borrow(&trading_account.id, key);
         ring.total_at(ctx.epoch())
@@ -612,7 +612,7 @@ module triex::trading_account {
     /// dynamic field left attached would leak.
     public(package) fun remove_fee_turnover<QuoteAsset>(trading_account: &mut TradingAccount) {
         let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
-        if (df::exists_(&trading_account.id, key)) {
+        if (df::exists(&trading_account.id, key)) {
             let _ring: FeeTurnover = df::remove(&mut trading_account.id, key);
         };
     }
@@ -622,7 +622,7 @@ module triex::trading_account {
         ctx: &TxContext,
     ): &mut FeeTurnover {
         let key = TurnoverKey { quote: type_name::with_defining_ids<QuoteAsset>() };
-        if (!df::exists_(&trading_account.id, key)) {
+        if (!df::exists(&trading_account.id, key)) {
             df::add(&mut trading_account.id, key, fee_turnover::empty(ctx.epoch()));
         };
 
@@ -711,7 +711,7 @@ module triex::trading_account {
         let asset_id = to_deposit.asset_id();
         let key = MultiCoinBalanceKey { collection_id, asset_id };
 
-        if (dof::exists_(&trading_account.id, key)) {
+        if (dof::exists(&trading_account.id, key)) {
             let existing: &mut MultiCoinBalance = dof::borrow_mut(&mut trading_account.id, key);
             existing.join(to_deposit, ctx);
         } else {
@@ -838,7 +838,7 @@ module triex::trading_account {
         let asset_id = to_deposit.asset_id();
         let key = MultiCoinBalanceKey { collection_id, asset_id };
 
-        if (dof::exists_(&trading_account.id, key)) {
+        if (dof::exists(&trading_account.id, key)) {
             let existing: &mut MultiCoinBalance = dof::borrow_mut(&mut trading_account.id, key);
             existing.join(to_deposit, ctx);
         } else {
@@ -859,7 +859,7 @@ module triex::trading_account {
         trading_account.validate_proof(proof);
 
         let key = MultiCoinBalanceKey { collection_id, asset_id };
-        let key_exists = dof::exists_(&trading_account.id, key);
+        let key_exists = dof::exists(&trading_account.id, key);
 
         if (withdraw_all) {
             if (key_exists) {
