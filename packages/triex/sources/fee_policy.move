@@ -188,12 +188,17 @@ module triex::fee_policy {
         transfer::share_object(new_policy(ctx));
     }
 
-    /// The one constructor. Seeds the genesis hub-share state that
-    /// `operator_share_class` relies on: class 0, starting at zero bps,
-    /// registered as the default class. Neither field has a removal path, so
-    /// resolution always lands on a real class — and class 0 has one defined
-    /// meaning, "the class unassigned collections pay", rather than being a
-    /// free id that happens to double as a fallback.
+    /// The one constructor. Seeds the genesis hub-share state
+    /// `operator_share_class` resolves through: class 0, starting at zero bps,
+    /// registered as the default class. Neither field has a removal path, so on
+    /// an object built here resolution always lands on a real class — and class
+    /// 0 has one defined meaning, "the class unassigned collections pay",
+    /// rather than being a free id that happens to double as a fallback.
+    ///
+    /// This runs from `init`, so it seeds a *fresh publish* only. An upgrade
+    /// keeps the already-shared `FeePolicy`, which never passed through here;
+    /// `seed_operator_share_genesis` is the admin call that brings such an
+    /// object up to this state, and the resolvers stay total in the meantime.
     fun new_policy(ctx: &mut TxContext): FeePolicy {
         let mut policy = FeePolicy {
             id: object::new(ctx),
@@ -643,15 +648,50 @@ module triex::fee_policy {
         upsert(&mut self.id, DefaultOperatorShareKey {}, class_id);
     }
 
+    /// Bring a `FeePolicy` that predates the hub share up to the state
+    /// `new_policy` seeds at genesis: class 0 at zero bps, pointed at by the
+    /// default key.
+    ///
+    /// `init` runs on a first publish, never on an upgrade, so an upgraded
+    /// deployment inherits a policy object with neither field. The resolvers
+    /// tolerate that — the feature is simply inert — but the admin still needs a
+    /// way to switch it on, and `assign_operator_share_class` cannot be the
+    /// first call because it requires a class that exists. This is that call.
+    ///
+    /// Idempotent and non-destructive: it only ever adds what is missing, so
+    /// running it against an already-seeded policy — or twice — cannot reset a
+    /// live rate or re-point a configured default.
+    public fun seed_operator_share_genesis(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        let class_key = OperatorShareClassKey { class_id: 0 };
+        if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
+            df::add(
+                &mut self.id,
+                class_key,
+                OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+            );
+        };
+
+        let default_key = DefaultOperatorShareKey {};
+        if (!df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            df::add(&mut self.id, default_key, 0u16);
+        };
+    }
+
     /// The share rate applying to revenue this collection's pools recognize in
     /// `epoch`, in bps.
     ///
     /// **Total by design — this must never abort.** It is resolved on the
-    /// cancel and modify paths, where an abort would freeze user funds. An
-    /// unconfigured collection resolves through the genesis default (always
-    /// present), and the missing-class check below is a belt — both writers
-    /// assert the class exists, and genesis class 0 always does. The result is
-    /// also clamped to the ceiling as a belt over the write-time assert.
+    /// cancel and modify paths, where an abort would freeze user funds. Every
+    /// lookup below is guarded rather than assumed: an unconfigured collection
+    /// resolves through the genesis default, a policy object that predates the
+    /// feature resolves through `operator_share_class`'s own final fallback to
+    /// class 0, and a class id with no class on it resolves to zero here. The
+    /// result is clamped to the ceiling as a belt over the write-time assert.
+    ///
+    /// The guards are not decorative. `init` seeds the genesis state on a first
+    /// publish only, so an upgrade inherits a `FeePolicy` with none of these
+    /// fields — and the paths that call this are the ones that release user
+    /// escrow.
     public fun operator_share_bps_at(self: &FeePolicy, collection_id: ID, epoch: u64): u64 {
         let class_id = self.operator_share_class(collection_id);
         let key = OperatorShareClassKey { class_id };
@@ -673,15 +713,31 @@ module triex::fee_policy {
     }
 
     /// Share class a collection is priced in, falling back to the default
-    /// class. The default is written in `new_policy` and has no removal path,
-    /// so the borrow cannot miss.
+    /// class, and then to class 0.
+    ///
+    /// **Total, including on a policy object that predates this feature.**
+    /// `new_policy` seeds the default key at genesis, but `init` runs only on a
+    /// first publish — an upgrade over an already-shared `FeePolicy` inherits an
+    /// object with neither the default key nor class 0 on it, and an unguarded
+    /// borrow there would abort. That abort would land on `place_order`,
+    /// `cancel_all_orders` and any bid `cancel_order`/`modify_order` that
+    /// retains escrow, i.e. it would freeze open maker escrow on every multicoin
+    /// pool until an admin transaction seeded the field. The final fallback is
+    /// what makes the feature inert on such an object rather than fatal:
+    /// `operator_share_bps_at` resolves a missing class to zero, so an
+    /// unseeded policy pays no hub anything, which is the intended deploy state.
     public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
         let assignment = OperatorShareAssignmentKey { collection_id };
         if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, assignment)) {
             return *df::borrow<OperatorShareAssignmentKey, u16>(&self.id, assignment)
         };
 
-        *df::borrow<DefaultOperatorShareKey, u16>(&self.id, DefaultOperatorShareKey {})
+        let default_key = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            return *df::borrow<DefaultOperatorShareKey, u16>(&self.id, default_key)
+        };
+
+        0
     }
 
     /// Register the one witness type allowed to register beneficiaries,
@@ -812,6 +868,23 @@ module triex::fee_policy {
         } else {
             option::none()
         }
+    }
+
+    #[test_only]
+    /// Strip the genesis hub-share state, standing up the object an upgrade
+    /// inherits: a `FeePolicy` shared before this feature existed, which
+    /// therefore never ran `new_policy`. The only way to reach that state from
+    /// a test, since every constructor seeds it.
+    public fun strip_operator_share_genesis_for_testing(self: &mut FeePolicy) {
+        let class_key = OperatorShareClassKey { class_id: 0 };
+        if (df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
+            df::remove<OperatorShareClassKey, OperatorShareClass>(&mut self.id, class_key);
+        };
+
+        let default_key = DefaultOperatorShareKey {};
+        if (df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
+            df::remove<DefaultOperatorShareKey, u16>(&mut self.id, default_key);
+        };
     }
 
     #[test_only]

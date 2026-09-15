@@ -43,6 +43,76 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
+    fun an_upgraded_policy_resolves_instead_of_aborting() {
+        // `init` seeds the genesis state on a first publish only. An upgrade
+        // keeps the already-shared `FeePolicy`, which therefore carries neither
+        // the default key nor class 0 — and resolution runs on `place_order`,
+        // `cancel_all_orders` and any bid cancel or modify that retains escrow.
+        // Aborting there would freeze every multicoin pool's open maker escrow,
+        // so the resolvers must be total on an object they did not construct.
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        policy.strip_operator_share_genesis_for_testing();
+
+        assert!(!policy.operator_share_class_exists(0));
+        assert_eq!(policy.operator_share_class(a_collection()), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 99), 0);
+
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    fun seeding_genesis_brings_an_upgraded_policy_up_to_a_fresh_one() {
+        // The admin call that switches the feature on after an upgrade.
+        // `assign_operator_share_class` cannot be first — it requires a class
+        // that exists — so without this there is no way in.
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        policy.strip_operator_share_genesis_for_testing();
+
+        policy.seed_operator_share_genesis(&cap);
+
+        assert!(policy.operator_share_class_exists(0));
+        assert_eq!(policy.operator_share_class(a_collection()), 0);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        // And the configuration path that was closed before is open now.
+        policy.assign_operator_share_class(a_collection(), 0, &cap);
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    fun seeding_genesis_is_idempotent_and_never_resets_a_live_rate() {
+        // Run twice, or against a policy that was already configured, it must
+        // not reset class 0's rate or re-point a default the admin has moved.
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.stage_operator_share_class(0, 1_000, &cap, test.ctx());
+        policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
+        policy.set_default_operator_share_class(CLASS_PARTNER, &cap);
+
+        policy.seed_operator_share_genesis(&cap);
+        policy.seed_operator_share_genesis(&cap);
+
+        assert_eq!(policy.operator_share_class(a_collection()), CLASS_PARTNER);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_500);
+
+        policy.set_default_operator_share_class(0, &cap);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
     fun staging_class_zero_reprices_the_genesis_default() {
         // Class 0 is the genesis default class, so staging it is the explicit
         // "re-price every unassigned collection" operation — with the same
