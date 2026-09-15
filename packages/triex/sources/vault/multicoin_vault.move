@@ -231,6 +231,28 @@ module triex::multicoin_vault {
     /// `N + 1` times — for a feature that is off for every hub by default.
     /// `operator_owed()` is a published view and `OperatorShareClaimed` records every
     /// payout; deposit-level telemetry already exists in `PoolFeesDeposited`.
+    ///
+    /// **`owed <= amount` is what `reserve >= encumbered()` rests on**, and the
+    /// clamp below is what makes it structural rather than inherited. Every
+    /// caller credits against money that entered the reserve in the same call,
+    /// so the invariant survives a credit exactly when the credit cannot exceed
+    /// the deposit that funded it — which holds only while the rate is at most
+    /// 100%. Nothing else in the codebase enforces that: it is the arithmetic
+    /// relationship `MAX_OPERATOR_SHARE_BPS <= FEE_PRECISION` between two
+    /// constants declared in two modules, and raising the ceiling past 100%
+    /// reads like a configuration change while silently minting claims on coins
+    /// that were never collected. That failure is unrecoverable and invisible:
+    /// `withdrawable_quote_fees` saturates to zero, every claim and every sweep
+    /// for the pool aborts, and trading carries on producing more of it.
+    ///
+    /// Clamped rather than asserted because an abort here lands on the fill
+    /// path, and `fee_from_scaled_rate` and `operator_share_bps_at` both already
+    /// clamp rather than abort on an out-of-range rate. The ceiling assert
+    /// stays: it is the *policy* check, and the two are not the same bound —
+    /// `max_operator_share_bps()` is a trust commitment that may be set anywhere
+    /// at or below 100%, while `fee_precision()` is the solvency limit. A build
+    /// that lets them cross is caught in `multicoin_vault_tests`, so the clamp
+    /// is never reached in a correct build.
     public(package) fun credit_operator_share<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         amount: u64,
@@ -243,8 +265,9 @@ module triex::multicoin_vault {
         // (bps = 0) pays nothing for it.
         assert!(operator_bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
 
-        let owed =
-            (((amount as u128) * (operator_bps as u128)) / (quote_fee::fee_precision() as u128)) as u64;
+        let precision = quote_fee::fee_precision();
+        let bps = operator_bps.min(precision);
+        let owed = (((amount as u128) * (bps as u128)) / (precision as u128)) as u64;
         self.operator_owed = self.operator_owed + owed;
     }
 

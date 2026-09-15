@@ -11,6 +11,7 @@ module triex::multicoin_vault_tests {
         balances,
         constants,
         multicoin_vault,
+        quote_fee,
         trading_account::{Self, TradingAccount},
         trading_account_tests::USDC
     };
@@ -910,6 +911,58 @@ module triex::multicoin_vault_tests {
     /// is owed money the reserve does not hold.
     fun assert_solvent<QuoteAsset>(vault: &multicoin_vault::MultiCoinVault<QuoteAsset>) {
         assert!((vault.quote_fee_reserve_balance() as u128) >= vault.encumbered());
+    }
+
+    #[test]
+    /// The one relationship the shared-pot invariant cannot derive for itself.
+    ///
+    /// `credit_operator_share` keeps `reserve >= encumbered()` by crediting at
+    /// most the deposit that funded it, and that holds exactly while the rate is
+    /// at most 100%. The ceiling and the denominator are separate constants in
+    /// separate modules, so nothing but this assertion stops a ceiling raise —
+    /// a one-line edit that reads like configuration, and that CAPABILITIES.md
+    /// presents as the tunable — from crossing the line.
+    ///
+    /// The vault clamps at `fee_precision()`, so a build that crossed it would
+    /// still be solvent. What it would not be is honest: every hub would be paid
+    /// 100% while the published ceiling claimed something else. This is the test
+    /// that makes that loud.
+    fun test_the_ceiling_cannot_exceed_full_precision() {
+        assert!(constants::max_operator_share_bps() <= quote_fee::fee_precision());
+    }
+
+    #[test]
+    fun test_a_credit_never_exceeds_the_revenue_that_funded_it() {
+        // Stated directly, since this — not the ceiling — is what solvency needs.
+        // Every caller credits against money that entered the reserve in the same
+        // call, so `owed <= amount` at every rate is precisely what keeps
+        // `encumbered()` from outrunning the balance backing it.
+        let mut test = begin(OWNER);
+        let (collection_id, collection_cap) = setup_collection(&mut test);
+        let amounts = vector[1u64, 2, 9, 10, 4_999, 5_000, 1_000_000];
+        let rates = vector[1u64, 4_999, 5_000, 9_999, max_bps()];
+
+        amounts.do_ref!(|amount| {
+            rates.do_ref!(|bps| {
+                let mut vault = multicoin_vault::empty<USDC>(
+                    collection_id,
+                    TEST_ASSET_ID,
+                    test.ctx(),
+                );
+                vault.deposit_quote_fees(
+                    mint_for_testing<USDC>(*amount, test.ctx()).into_balance(),
+                );
+                vault.credit_operator_share(*amount, *bps);
+
+                assert!(vault.operator_owed() <= *amount);
+                assert_solvent(&vault);
+
+                destroy(vault);
+            });
+        });
+
+        destroy(collection_cap);
+        end(test);
     }
 
     #[test]
