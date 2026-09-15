@@ -191,6 +191,12 @@ module triex::book_tests {
     // prices against, and what `swap_exact_quantity` sizes its order from. What
     // it reserves for the fee therefore has to be what settlement charges — no
     // more, or the input is never deployed, and no less, or the swap overdraws.
+    //
+    // `coin_book_dry_run_tests` covers the same arithmetic for the coin stack.
+    // These are the multicoin book's copy, and the figures differ because this
+    // book prices on a bare `base x price` product rather than through
+    // FLOAT_SCALING: the irreducible residue here is one base unit's worth of
+    // quote, not a sub-unit rounding crumb.
 
     #[test_only]
     fun rest(b: &mut Book, price: u64, qty: u64, is_bid: bool) {
@@ -221,33 +227,34 @@ module triex::book_tests {
     ///
     /// The reservation used to be sized at `FEE_PENALTY_MULTIPLIER * taker_rate`
     /// while `calculate_partial_fill_balances` charged the plain rate, so the
-    /// difference — 0.25x the fee, i.e. 0.271% of the input at the 1.10% coin
-    /// entry rung and 0.535% at the 2.20% multicoin one — was input the swap
-    /// never deployed and nobody received. It also made the two sides of the
-    /// same book quote asymmetrically, which a router reads as a half-spread
-    /// that does not exist.
+    /// difference — 0.25x the fee — was input the swap never deployed and nobody
+    /// received. It also made the two sides of the same book quote
+    /// asymmetrically, which a router reads as a half-spread that does not exist.
     fun bid_dry_run_reserves_exactly_the_fee_that_settles() {
         let mut test = begin(OWNER);
         let ctx = test.ctx();
-        let mut b = book::empty(ctx);
-        // One deep ask at human price 1.00 (price = 1e6 for a 6-decimal quote
-        // against a 9-decimal base), so a single level absorbs the whole input.
-        rest(&mut b, 1_000_000, 10_000_000_000_000, false);
+        let mut b = book::empty_multicoin(ctx);
+        // One deep ask, priced so a single level absorbs the whole input. One
+        // base unit costs `price` raw quote units on this book.
+        let price = 1_000;
+        rest(&mut b, price, 10_000_000_000, false);
 
         let taker_rate = 11_000_000; // 1.10%
-        let input = 1_000_000_000; // 1_000 CRED at 6 decimals
+        let input = 1_000_000_000;
         let (base_out, quote_left) = b.get_quantity_out(0, input, taker_rate, 0);
+        assert!(base_out > 0, 0);
 
         // What settlement charges for the base this quote says it buys.
-        let quote_spent = math::qty_to_quote(base_out, 1_000_000, book::price_scaling(&b));
+        let quote_spent = math::qty_to_quote(base_out, price, book::price_scaling(&b));
         let fee = quote_fee::fee_from_scaled_rate(taker_rate, quote_spent);
 
         // Nothing is left undeployed beyond the input the level's own price
         // granularity cannot spend, which `quote_left` already accounts for.
         assert!(input - quote_spent - fee == quote_left, input - quote_spent - fee);
-        // And that residue is sub-unit against the trade, not a fraction of a
-        // percent of it: under the old multiplier this was 2_712_701.
-        assert!(quote_left < 1_000, quote_left);
+        // And that residue is under one base unit's worth of quote — granularity
+        // alone, not input withheld against a fee nobody charges. Under the old
+        // multiplier this was 2_713_204, three orders of magnitude larger.
+        assert!(quote_left < price, quote_left);
 
         sui::test_utils::destroy(b);
         test.end();
@@ -264,22 +271,23 @@ module triex::book_tests {
     fun a_round_trip_costs_exactly_two_taker_fees() {
         let mut test = begin(OWNER);
         let ctx = test.ctx();
-        let mut b = book::empty(ctx);
-        rest(&mut b, 1_000_000, 10_000_000_000_000, false);
+        let mut b = book::empty_multicoin(ctx);
+        let price = 1_000;
+        rest(&mut b, price, 10_000_000_000, false);
 
         let taker_rate = 22_000_000; // 2.20%, where the old gap was widest
         let input = 1_000_000_000;
         let (base_out, quote_left) = b.get_quantity_out(0, input, taker_rate, 0);
 
         // Sell the base straight back into a bid at the same price.
-        let mut b2 = book::empty(test.ctx());
-        rest(&mut b2, 1_000_000, 10_000_000_000_000, true);
+        let mut b2 = book::empty_multicoin(test.ctx());
+        rest(&mut b2, price, 10_000_000_000, true);
         let (base_left, quote_out) = b2.get_quantity_out(base_out, 0, taker_rate, 0);
         assert!(base_left == 0, 0);
 
         let leg = quote_fee::fee_from_scaled_rate(
             taker_rate,
-            math::qty_to_quote(base_out, 1_000_000, book::price_scaling(&b)),
+            math::qty_to_quote(base_out, price, book::price_scaling(&b)),
         );
         // Everything the round trip did not return is fee, and it is exactly two
         // of them. Under the multiplier the bid leg also held back 0.25x its fee

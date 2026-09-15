@@ -2,7 +2,6 @@ module triex::math {
     /// scaling setting for float
     const FLOAT_SCALING: u64 = 1_000_000_000;
     const FLOAT_SCALING_U128: u128 = 1_000_000_000;
-    const FLOAT_SCALING_U256: u256 = 1_000_000_000;
     const MAX_U64: u128 = 0xFFFFFFFFFFFFFFFF;
 
     /// Error codes
@@ -72,16 +71,39 @@ module triex::math {
         qty.min(cap as u128) as u64
     }
 
+    /// The smallest base quantity that converts to a non-zero raw quote amount at
+    /// `price` — a minimum order size, derived from the price instead of configured.
+    ///
+    /// `qty_to_quote` floors, so a fill of fewer base units than this settles for
+    /// zero quote: the taker would receive base without paying for it, and the
+    /// maker's `filled_quantity` would advance uncompensated. An order below this
+    /// bound can never produce a fill the matcher will accept, so placement rejects
+    /// it rather than letting it rest as permanently unfillable dust. Deriving the
+    /// bound from the order's own price is what makes it work for a base priced at
+    /// 0.000000001 quote and one priced at 10 billion quote without anyone choosing a
+    /// per-pool constant.
+    ///
+    /// Under multicoin scaling (`price_scaling == 1`) the conversion is a bare
+    /// product, so any non-zero quantity already yields non-zero quote and the
+    /// answer is 1 — the zero-quote case is specific to the coin pools' fixed-point
+    /// division.
+    public fun min_qty_for_nonzero_quote(price: u64, price_scaling: u64): u64 {
+        // Unreachable for a resting order — `MIN_PRICE` is 1 — but the fixed-point
+        // reciprocal below would divide by zero, so it is guarded rather than
+        // assumed. Quantizing to 1 is the identity, matching the multicoin branch.
+        if (price == 0) return 1;
+        if (price_scaling == FLOAT_SCALING) {
+            // ceil(FLOAT_SCALING / price): the reciprocal of the price, rounded up.
+            div_round_up(1, price)
+        } else {
+            1
+        }
+    }
+
     /// Multiply two floating numbers.
     /// This function will round down the result.
     public fun mul(x: u64, y: u64): u64 {
         let (_, result) = mul_internal(x, y);
-
-        result
-    }
-
-    public fun mul_u128(x: u128, y: u128): u128 {
-        let (_, result) = mul_internal_u128(x, y);
 
         result
     }
@@ -102,36 +124,12 @@ module triex::math {
         result
     }
 
-    public fun div_u128(x: u128, y: u128): u128 {
-        let (_, result) = div_internal_u128(x, y);
-
-        result
-    }
-
     /// Divide two floating numbers.
     /// This function will round up the result.
     public fun div_round_up(x: u64, y: u64): u64 {
         let (is_round_down, result) = div_internal(x, y);
 
         result + is_round_down
-    }
-
-    /// given a vector of u64, return the median
-    public fun median(v: vector<u128>): u128 {
-        let n = v.length();
-        if (n == 0) {
-            return 0
-        };
-
-        let sorted_v = quick_sort(v);
-        if (n % 2 == 0) {
-            mul_u128(
-                (sorted_v[n / 2 - 1] + sorted_v[n / 2]),
-                FLOAT_SCALING_U128 / 2,
-            )
-        } else {
-            sorted_v[n / 2]
-        }
     }
 
     /// Computes the integer square root of a scaled u64 value, assuming the
@@ -161,33 +159,6 @@ module triex::math {
         }
     }
 
-    fun quick_sort(data: vector<u128>): vector<u128> {
-        if (data.length() <= 1) {
-            return data
-        };
-
-        let pivot = data[0];
-        let mut less = vector<u128>[];
-        let mut equal = vector<u128>[];
-        let mut greater = vector<u128>[];
-
-        data.do!(|value| {
-            if (value < pivot) {
-                less.push_back(value);
-            } else if (value == pivot) {
-                equal.push_back(value);
-            } else {
-                greater.push_back(value);
-            };
-        });
-
-        let mut sortedData = vector<u128>[];
-        sortedData.append(quick_sort(less));
-        sortedData.append(equal);
-        sortedData.append(quick_sort(greater));
-        sortedData
-    }
-
     fun mul_internal(x: u64, y: u64): (u64, u64) {
         let x = x as u128;
         let y = y as u128;
@@ -198,14 +169,6 @@ module triex::math {
         (round, result as u64)
     }
 
-    fun mul_internal_u128(x: u128, y: u128): (u128, u128) {
-        let x = x as u256;
-        let y = y as u256;
-        let round = if ((x * y) % FLOAT_SCALING_U256 == 0) 0 else 1;
-
-        (round, (x * y / FLOAT_SCALING_U256) as u128)
-    }
-
     fun div_internal(x: u64, y: u64): (u64, u64) {
         let x = x as u128;
         let y = y as u128;
@@ -214,14 +177,6 @@ module triex::math {
         assert!(result <= MAX_U64, EOverflow);
 
         (round, result as u64)
-    }
-
-    fun div_internal_u128(x: u128, y: u128): (u128, u128) {
-        let x = x as u256;
-        let y = y as u256;
-        let round = if ((x * FLOAT_SCALING_U256 % y) == 0) 0 else 1;
-
-        (round, (x * FLOAT_SCALING_U256 / y) as u128)
     }
 
     #[test]
@@ -265,38 +220,6 @@ module triex::math {
 
         // Nothing in, nothing out.
         assert!(quote_to_qty_capped(0, 1, FLOAT_SCALING, uncapped) == 0, 9);
-    }
-
-    #[test]
-    /// Test median function
-    fun test_median() {
-        let v = vector<u128>[
-            1 * FLOAT_SCALING_U128,
-            2 * FLOAT_SCALING_U128,
-            3 * FLOAT_SCALING_U128,
-            4 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 3 * FLOAT_SCALING_U128, 0);
-
-        let v = vector<u128>[
-            10 * FLOAT_SCALING_U128,
-            15 * FLOAT_SCALING_U128,
-            2 * FLOAT_SCALING_U128,
-            3 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 5 * FLOAT_SCALING_U128, 0);
-
-        let v = vector<u128>[
-            10 * FLOAT_SCALING_U128,
-            9 * FLOAT_SCALING_U128,
-            23 * FLOAT_SCALING_U128,
-            4 * FLOAT_SCALING_U128,
-            5 * FLOAT_SCALING_U128,
-            28 * FLOAT_SCALING_U128,
-        ];
-        assert!(median(v) == 9_500_000_000, 0);
     }
 
     #[test]

@@ -1,18 +1,23 @@
 /// Account module manages the account data for each user.
-module triex::account {
+///
+/// Coin-pool fork of `triex::account`. Identical apart from `open_orders` being
+/// keyed by the coin book's encoded `u128` order ids. Turnover, balance and
+/// settlement logic is shared verbatim with `triex::account` — any change to it
+/// must land in both files.
+module triex::coin_account {
     use sui::vec_set::{Self, VecSet};
     use triex::{
         balances::{Self, Balances},
+        coin_fill::Fill,
         constants,
-        fee_turnover::{Self, EpochAmount},
-        fill::Fill
+        fee_turnover::{Self, EpochAmount}
     };
 
     // === Structs ===
     /// Account data that is updated every epoch.
     /// One Account struct per TradingAccount object.
     public struct Account has copy, drop, store {
-        open_orders: VecSet<u64>,
+        open_orders: VecSet<u128>,
         taker_volume: u128,
         maker_volume: u128,
         // unclaimed_rebates: Balances, // #feat:rebate
@@ -30,7 +35,7 @@ module triex::account {
     }
 
     // === Public-View Functions ===
-    public fun open_orders(self: &Account): VecSet<u64> {
+    public fun open_orders(self: &Account): VecSet<u128> {
         self.open_orders
     }
 
@@ -170,11 +175,11 @@ module triex::account {
     //     rebate_amount
     // }
 
-    public(package) fun add_order(self: &mut Account, order_id: u64) {
+    public(package) fun add_order(self: &mut Account, order_id: u128) {
         self.open_orders.insert(order_id);
     }
 
-    public(package) fun remove_order(self: &mut Account, order_id: u64) {
+    public(package) fun remove_order(self: &mut Account, order_id: u128) {
         self.open_orders.remove(&order_id)
     }
 

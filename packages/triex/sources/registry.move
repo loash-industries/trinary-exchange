@@ -17,7 +17,9 @@ module triex::registry {
     const EPackageVersionNotEnabled: u64 = 3;
     const EVersionNotEnabled: u64 = 4;
     const EVersionAlreadyEnabled: u64 = 5;
-    const ECannotDisableCurrentVersion: u64 = 6;
+    // 6 was ECannotDisableCurrentVersion, removed so `disable_version` can act as a
+    // kill switch on the running version. Left unrecycled: an off-chain decoder
+    // mapping an archived abort code should not silently resolve it to a new meaning.
     const EMaxTradingAccountsReached: u64 = 9;
     const EQuoteNotApproved: u64 = 10;
     const EQuoteAlreadyApproved: u64 = 11;
@@ -102,12 +104,24 @@ module triex::registry {
         self.allowed_versions.insert(version);
     }
 
-    /// Disables a package version
-    /// Only Admin can disable a package version
-    /// This function does not have version restrictions
+    /// Disables a package version.
+    ///
+    /// **This is the protocol's kill switch.** The version passed may be the one
+    /// currently running: disabling it halts every pool at once, because
+    /// `pool::load_inner` / `load_inner_mut` assert that the running version is
+    /// still allowed. That is the point — on a live exploit there has to be a way
+    /// to stop trading in one transaction, without first shipping a package
+    /// upgrade.
+    ///
+    /// It is recoverable. `enable_version` is deliberately ungated (it reaches
+    /// `load_value_mut` directly rather than through `load_inner_mut`), so an admin
+    /// can re-enable a version they disabled; pools then pick the change up via the
+    /// permissionless `pool::update_pool_allowed_versions`.
+    ///
+    /// Only Admin can disable a package version.
+    /// This function does not have version restrictions.
     public fun disable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
         let self: &mut RegistryInner = self.inner.load_value_mut();
-        assert!(version != constants::current_version(), ECannotDisableCurrentVersion);
         assert!(self.allowed_versions.contains(&version), EVersionNotEnabled);
         self.allowed_versions.remove(&version);
     }
@@ -362,7 +376,10 @@ module triex::registry {
         *self.pools.borrow<PoolKey, ID>(key)
     }
 
+    #[test_only]
     /// Get the MultiCoin pool ID for the given collection, asset, and quote type.
+    /// Production reaches multicoin pools through the shared object directly; only
+    /// tests resolve one by key.
     public(package) fun get_multicoin_pool_id<QuoteAsset>(
         self: &Registry,
         collection_id: ID,
@@ -408,8 +425,17 @@ module triex::registry {
         self.treasury_address
     }
 
+    /// Deliberately reads the inner value directly rather than through
+    /// `load_inner`, so it is **not** version-gated.
+    ///
+    /// This accessor exists to propagate the allowed-version set to pools, which
+    /// cache it. Gating it on the very flag it propagates would be circular: once an
+    /// admin disabled the running version, `allowed_versions` would abort, so
+    /// `pool::update_allowed_versions` and the permissionless
+    /// `pool::update_pool_allowed_versions` would abort too — and the disable could
+    /// never reach a single pool. The kill switch would flip a flag nothing observes.
     public(package) fun allowed_versions(self: &Registry): VecSet<u64> {
-        let self = self.load_inner();
+        let self: &RegistryInner = self.inner.load_value();
 
         self.allowed_versions
     }

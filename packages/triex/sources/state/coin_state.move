@@ -2,17 +2,21 @@
 /// the accounts and history, and processes all the transactions that update
 /// them. Fee policy lives outside the pool entirely, in the shared
 /// `FeePolicy` object — the pool passes already-resolved rates in.
-module triex::state {
+/// Coin-pool fork of `triex::state`. Structurally identical; it threads the
+/// `coin_*` order/fill/account types, which makes `RefundedFee.order_id` a `u128`.
+/// The fee, escrow and history arithmetic is shared verbatim with `triex::state` —
+/// any change to it must land in both files.
+module triex::coin_state {
     use sui::table::{Self, Table};
     use triex::{
-        account::{Self, Account},
         balances::{Self, Balances},
+        coin_account::{Self, Account},
+        coin_fill::Fill,
+        coin_order::Order,
+        coin_order_info::OrderInfo,
         constants,
         fee_turnover::EpochAmount,
-        fill::Fill,
-        history::{Self, History},
-        order::Order,
-        order_info::OrderInfo
+        history::{Self, History}
     };
 
     // === Errors ===
@@ -64,12 +68,12 @@ module triex::state {
     /// A refund owed to one expired bid maker. Carries the order it came from so
     /// the vault event can be tied back to the `OrderExpired` for that order.
     public struct RefundedFee has copy, drop, store {
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         amount: u64,
     }
 
-    public(package) fun refund_order_id(self: &RefundedFee): u64 {
+    public(package) fun refund_order_id(self: &RefundedFee): u128 {
         self.order_id
     }
 
@@ -658,7 +662,7 @@ module triex::state {
     /// If account doesn't exist, create it. Update account volumes and rebates.
     fun update_account(self: &mut State, trading_account_id: ID) {
         if (!self.accounts.contains(trading_account_id)) {
-            self.accounts.add(trading_account_id, account::empty());
+            self.accounts.add(trading_account_id, coin_account::empty());
         };
         // #feat:rebate
         // let account = &mut self.accounts[trading_account_id];

@@ -180,12 +180,12 @@ module triex::pool_cancel_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_cancel_all_orders_bid_e() {
         cancel_all_orders_case(true, true);
     }
 
-    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_cancel_all_orders_ask_e() {
         cancel_all_orders_case(false, true);
     }
@@ -200,12 +200,12 @@ module triex::pool_cancel_tests {
         cancel_all_orders_case(false, false);
     }
 
-    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_cancel_orders_bid() {
         cancel_orders_case(true);
     }
 
-    #[test, expected_failure(abort_code = ::triex::pool_test_utils::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_cancel_orders_ask() {
         cancel_orders_case(false);
     }

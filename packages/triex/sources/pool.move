@@ -8,19 +8,20 @@ module triex::pool {
         vec_set::{Self, VecSet},
         versioned::{Self, Versioned}
     };
-    use token::cred::{CRED, ProtectedTreasury};
+    use token::cred::CRED;
     use triex::{
-        account::Account,
-        book::{Self, Book},
+        big_vector::BigVector,
+        coin_account::Account,
+        coin_book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
         fee_schedule::FeeSchedule,
-        order::Order,
-        order_info::{Self, OrderInfo},
+        coin_order::Order,
+        coin_order_info::{Self, OrderInfo},
         registry::{TriexAdminCap, Registry},
-        state::{Self, State},
+        coin_state::{Self, State},
         trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
-        vault::{Self, Vault}
+        coin_vault::{Self, Vault}
     };
 
     // use fun df::add as UID.add;
@@ -66,11 +67,6 @@ module triex::pool {
         taker_fee: u64,
         maker_fee: u64,
         treasury_address: address,
-    }
-
-    public struct CredBurned<phantom BaseAsset, phantom QuoteAsset> has copy, drop, store {
-        pool_id: ID,
-        cred_burned: u64,
     }
 
     // #feat:refer
@@ -517,7 +513,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         new_quantity: u64,
         clock: &Clock,
         ctx: &TxContext,
@@ -535,9 +531,7 @@ module triex::pool {
                 trading_account.id(),
                 cancel_quantity,
                 order,
-                self.pool_id,
                 self.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -577,7 +571,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         clock: &Clock,
         ctx: &TxContext,
     ) {
@@ -589,9 +583,7 @@ module triex::pool {
             .process_cancel(
                 &mut order,
                 trading_account.id(),
-                self.pool_id,
                 self.book.price_scaling(),
-                ctx,
             );
         // The refund is already in `settled`, so it must reach the pool balance
         // before settlement pays it out.
@@ -630,7 +622,7 @@ module triex::pool {
         self: &mut Pool<BaseAsset, QuoteAsset>,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
         clock: &Clock,
         ctx: &TxContext,
     ) {
@@ -867,27 +859,6 @@ module triex::pool {
 
     // === Public-Mutative Functions * OPERATIONAL * ===
 
-    /// Burns CRED tokens from the pool. Amount to burn is within history
-    /// #feat:rebate
-    public fun burn_cred<BaseAsset, QuoteAsset>(
-        self: &mut Pool<BaseAsset, QuoteAsset>,
-        treasury_cap: &mut ProtectedTreasury,
-        ctx: &mut TxContext,
-    ): u64 {
-        let self = self.load_inner_mut();
-        let balance_to_burn = self.state.history_mut().reset_balance_to_burn();
-        let cred_to_burn = self.vault.withdraw_cred_to_burn(balance_to_burn).into_coin(ctx);
-        let amount_burned = cred_to_burn.value();
-        token::cred::burn(treasury_cap, cred_to_burn);
-
-        event::emit(CredBurned<BaseAsset, QuoteAsset> {
-            pool_id: self.pool_id,
-            cred_burned: amount_burned,
-        });
-
-        amount_burned
-    }
-
     // #feat:refer
     // /// Mint a TriexReferral and set the additional bps for the referral.
     // public fun mint_referral<BaseAsset, QuoteAsset>(
@@ -1029,7 +1000,7 @@ module triex::pool {
     ): Coin<QuoteAsset> {
         let pool_inner = self.load_inner_mut();
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
-        vault::emit_pool_fees_withdrawn<QuoteAsset>(
+        coin_vault::emit_pool_fees_withdrawn<QuoteAsset>(
             pool_inner.pool_id,
             amount,
             clock.timestamp_ms(),
@@ -1212,19 +1183,11 @@ module triex::pool {
             )
     }
 
-    /// Returns the mid price of the pool.
-    public fun mid_price<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        clock: &Clock,
-    ): u64 {
-        self.load_inner().book.mid_price(clock.timestamp_ms())
-    }
-
     /// Returns the order_id for all open order for the trading_account in the pool.
     public fun account_open_orders<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
         trading_account: &TradingAccount,
-    ): VecSet<u64> {
+    ): VecSet<u128> {
         let self = self.load_inner();
 
         if (!self.state.account_exists(trading_account.id())) {
@@ -1232,64 +1195,6 @@ module triex::pool {
         };
 
         self.state.account(trading_account.id()).open_orders()
-    }
-
-    /// Returns the (price_vec, quantity_vec) for the level2 order book.
-    /// The price_low and price_high are inclusive, all orders within the range are
-    /// returned.
-    /// is_bid is true for bids and false for asks.
-    public fun get_level2_range<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        price_low: u64,
-        price_high: u64,
-        is_bid: bool,
-        clock: &Clock,
-    ): (vector<u64>, vector<u64>) {
-        self
-            .load_inner()
-            .book
-            .get_level2_range_and_ticks(
-                price_low,
-                price_high,
-                constants::max_u64(),
-                is_bid,
-                clock.timestamp_ms(),
-            )
-    }
-
-    /// Returns the (price_vec, quantity_vec) for the level2 order book.
-    /// Ticks are the maximum number of ticks to return starting from best bid and
-    /// best ask.
-    /// (bid_price, bid_quantity, ask_price, ask_quantity) are returned as 4
-    /// vectors.
-    /// The price vectors are sorted in descending order for bids and ascending
-    /// order for asks.
-    public fun get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        ticks: u64,
-        clock: &Clock,
-    ): (vector<u64>, vector<u64>, vector<u64>, vector<u64>) {
-        let self = self.load_inner();
-        let (bid_price, bid_quantity) = self
-            .book
-            .get_level2_range_and_ticks(
-                constants::min_price(),
-                constants::max_price(),
-                ticks,
-                true,
-                clock.timestamp_ms(),
-            );
-        let (ask_price, ask_quantity) = self
-            .book
-            .get_level2_range_and_ticks(
-                constants::min_price(),
-                constants::max_price(),
-                ticks,
-                false,
-                clock.timestamp_ms(),
-            );
-
-        (bid_price, bid_quantity, ask_price, ask_quantity)
     }
 
     /// Get all balances held in this pool.
@@ -1327,7 +1232,7 @@ module triex::pool {
     /// Get the Order struct
     public fun get_order<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
-        order_id: u64,
+        order_id: u128,
     ): Order {
         self.load_inner().book.get_order(order_id)
     }
@@ -1335,7 +1240,7 @@ module triex::pool {
     /// Get multiple orders given a vector of order_ids.
     public fun get_orders<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
     ): vector<Order> {
         let mut orders = vector[];
         let mut i = 0;
@@ -1536,9 +1441,9 @@ module triex::pool {
         let pool_inner = PoolInner<BaseAsset, QuoteAsset> {
             allowed_versions: registry.allowed_versions(),
             pool_id: pool_id.to_inner(),
-            book: book::empty(ctx),
-            state: state::empty(ctx),
-            vault: vault::empty(),
+            book: coin_book::empty(ctx),
+            state: coin_state::empty(ctx),
+            vault: coin_vault::empty(),
             registered_pool: true,
             fee_class,
         };
@@ -1565,15 +1470,13 @@ module triex::pool {
 
     public(package) fun bids<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
-        // ): &BigVector<Order> { // #feat:bv
-    ): &vector<Order> {
+    ): &BigVector<Order> {
         self.book.bids()
     }
 
     public(package) fun asks<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
-        // ): &BigVector<Order> { // #feat:bv
-    ): &vector<Order> {
+    ): &BigVector<Order> {
         self.book.asks()
     }
 
@@ -1646,7 +1549,7 @@ module triex::pool {
             // the shared policy object, which stages changes per epoch itself,
             // so an order placed on an epoch-boundary transaction prices against
             // the freshly effective schedule with no promotion step here.
-            let pending = pool_inner.state.take_pending_turnover(trading_account.id(), ctx);
+            let pending = pool_inner.state.take_pending_turnover(trading_account.id());
             let turnover = trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
             let (
                 _tier,
@@ -1658,7 +1561,7 @@ module triex::pool {
                 turnover,
                 ctx.epoch(),
             );
-            let mut order_info = order_info::new(
+            let mut order_info = coin_order_info::new(
                 pool_inner.pool_id,
                 trading_account.id(),
                 ctx.sender(),
@@ -1683,7 +1586,6 @@ module triex::pool {
                     // &ewma_state, // #feat:ewma
                     taker_fee_rate,
                     maker_fee_rate,
-                    pool_inner.pool_id,
                     ctx,
                 );
             // Makers whose orders expired during this match get the refundable
@@ -1714,7 +1616,7 @@ module triex::pool {
             };
             let fee_deposit = if (taker_fee_amount + maker_fee_amount > 0) {
                 option::some(
-                    vault::new_quote_fee_deposit(
+                    coin_vault::new_quote_fee_deposit(
                         pool_inner.pool_id,
                         trading_account.id(),
                         taker_fee_amount,

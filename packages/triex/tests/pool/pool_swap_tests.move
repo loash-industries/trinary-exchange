@@ -3,11 +3,6 @@ module triex::pool_swap_tests {
     use triex::pool_test_utils;
 
     #[test]
-    fun test_mid_price_ok() {
-        pool_test_utils::test_mid_price_ok();
-    }
-
-    #[test]
     fun test_swap_exact_amount_bid_ask() {
         pool_test_utils::test_swap_exact_amount_bid_ask();
     }

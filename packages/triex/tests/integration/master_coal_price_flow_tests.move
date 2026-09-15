@@ -45,12 +45,6 @@ module triex::integration_master_cred_price_flow_tests {
 
         pool_tests::set_time(0, &mut test);
 
-        utils::check_mid_price<SUI, CRED>(
-            pool1_id,
-            constants::cred_multiplier(),
-            &mut test,
-        );
-
         let alice_trading_account_id = trading_account_tests::create_acct_and_share_with_funds(
             utils::alice(),
             starting_balance,
@@ -173,12 +167,6 @@ module triex::integration_master_cred_price_flow_tests {
         test.next_epoch(utils::owner());
         assert!(test.ctx().epoch() == 1, 0);
         pool_tests::set_time(200_000, &mut test);
-
-        utils::check_mid_price<SUI, CRED>(
-            pool1_id,
-            150 * constants::float_scaling(),
-            &mut test,
-        );
 
         let price = 10 * constants::float_scaling();
         let order_info = pool_tests::place_limit_order<SPAM, SUI>(

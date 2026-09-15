@@ -67,11 +67,4 @@ module token::cred {
         sui::transfer::share_object<ProtectedTreasury>(v0);
         sui::transfer::public_transfer<sui::coin::Coin<CRED>>(v1, sui::tx_context::sender(arg1));
     }
-
-    #[test_only]
-    public fun share_treasury_for_testing(ctx: &mut sui::tx_context::TxContext) {
-        let (v0, v1) = create_coin(CRED {}, 10000000000000000, ctx);
-        sui::transfer::share_object<ProtectedTreasury>(v0);
-        v1.burn_for_testing();
-    }
 }

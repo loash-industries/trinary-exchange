@@ -35,7 +35,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | Function | What the operator can do |
 |---|---|
 | `set_treasury_address` | Redirect where pool-creation fees are sent. Defaults to the publisher. |
-| `enable_version` / `disable_version` | Control which package versions may interact with the protocol. The current version cannot be disabled. These two functions are themselves exempt from version checks, so an admin can always recover from a bad version state. |
+| `enable_version` / `disable_version` | Control which package versions may interact with the protocol, **including the version currently running**. These two functions are themselves exempt from version checks, and `disable_version` is reversible by `enable_version`, so an admin can always recover from a bad version state. |
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
 | `init_trading_account_map` | One-time creation of the owner → trading-account-IDs table on the registry. Idempotent. |
 
@@ -149,12 +149,24 @@ power than it sounds. It cannot:
   destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
-- Change a live pool's tick size, lot size, or min size (that code is disabled)
+- Change a live pool's tick size, lot size, or min size (that code is disabled).
+  Coin pools do enforce a minimum order size, but it is *derived* — the
+  fixed-point reciprocal of the order's own price, the smallest quantity that
+  still settles for a non-zero quote — so it is a property of the arithmetic and
+  not an operator-tunable parameter
 
 The most systemic lever is `enable_version` / `disable_version`: disabling a
-version effectively freezes all protocol interaction through that package
-version, which functions as an emergency stop for old code but also as a
-soft kill switch. Users should weigh this when assessing operator trust.
+version freezes all protocol interaction through that package version. This is
+a real kill switch, not only a way to retire old code — the operator can disable
+the version that is currently running and halt live trading in one transaction.
+Resting orders are not cancelled and funds are not moved, but nothing can be
+placed, cancelled, or settled until a version is re-enabled.
+
+The halt is reversible: `enable_version` restores service, and both functions
+bypass the version gate themselves so the operator cannot lock itself out.
+Disabled version numbers are not recycled, so an archived decoder can never
+resolve a retired version to a new meaning. Users should weigh this when
+assessing operator trust.
 
 ---
 
