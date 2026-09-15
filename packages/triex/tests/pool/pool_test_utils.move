@@ -8124,8 +8124,8 @@ module triex::pool_test_utils {
             assert_eq!(maker, default_maker_fee());
             // The staged ladder carries the incoming entry rung, so the two never
             // diverge.
-            assert_eq!(next.base_taker_fee(), 10_000_000);
-            assert_eq!(next.base_maker_fee(), 8_000_000);
+            assert_eq!(next.tier_at(0).taker_fee(), 10_000_000);
+            assert_eq!(next.tier_at(0).maker_fee(), 8_000_000);
 
             return_shared(policy);
             return_shared(pool);
@@ -8188,8 +8188,8 @@ module triex::pool_test_utils {
 
             let (next, _) = pool.pool_fee_schedule_next(&policy);
             assert_eq!(next.tier_count(), 1);
-            assert_eq!(next.base_taker_fee(), 10_000_000);
-            assert_eq!(next.base_maker_fee(), 5_000_000);
+            assert_eq!(next.tier_at(0).taker_fee(), 10_000_000);
+            assert_eq!(next.tier_at(0).maker_fee(), 5_000_000);
 
             return_shared(policy);
             return_shared(pool);

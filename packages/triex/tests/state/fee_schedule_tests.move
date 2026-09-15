@@ -149,8 +149,8 @@ module triex::fee_schedule_tests {
     fun base_rates_report_the_entry_rung() {
         let schedule = sample_ladder();
 
-        assert_eq!(schedule.base_taker_fee(), 22_000_000);
-        assert_eq!(schedule.base_maker_fee(), 18_000_000);
+        assert_eq!(schedule.tier_at(0).taker_fee(), 22_000_000);
+        assert_eq!(schedule.tier_at(0).maker_fee(), 18_000_000);
     }
 
     // === Validation ===

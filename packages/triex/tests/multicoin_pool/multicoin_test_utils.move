@@ -25,17 +25,6 @@ module triex::integration_multicoin_test_utils {
 
     public fun owner(): address { OWNER }
 
-    // Test asset IDs
-    const ASSET_GOLD: u64 = 1;
-    const ASSET_SILVER: u64 = 2;
-    const ASSET_IRON: u64 = 3;
-
-    public fun asset_gold(): u64 { ASSET_GOLD }
-
-    public fun asset_silver(): u64 { ASSET_SILVER }
-
-    public fun asset_iron(): u64 { ASSET_IRON }
-
     // Quote currency for testing is `trading_account_tests::USDC`, the same type
     // the shared `FeePolicy` is seeded for in `pool_test_utils`.
 

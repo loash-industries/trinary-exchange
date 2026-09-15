@@ -40,9 +40,4 @@ module triex::quote_fee {
 
         (refund, basis - refund)
     }
-
-    #[test_only]
-    public fun fee_precision(): u64 {
-        FEE_PRECISION
-    }
 }
