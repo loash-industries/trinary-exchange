@@ -1,5 +1,6 @@
 #[test_only]
 module triex::book_tests {
+    use std::unit_test::destroy;
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
     use triex::{book::{Self, Book}, constants, math, order::{Self, Order}, order_info, quote_fee};
 
@@ -256,7 +257,7 @@ module triex::book_tests {
         // multiplier this was 2_713_204, three orders of magnitude larger.
         assert!(quote_left < price, quote_left);
 
-        sui::test_utils::destroy(b);
+        destroy(b);
         test.end();
     }
 
@@ -294,13 +295,8 @@ module triex::book_tests {
         // and never spent it, so this came up short by that much.
         assert!(quote_out + quote_left == input - 2 * leg, quote_out + quote_left);
 
-        sui::test_utils::destroy(b);
-        sui::test_utils::destroy(b2);
+        destroy(b);
+        destroy(b2);
         test.end();
     }
-
-    #[test_only]
-    use fun triex::book::get_quantity_out as Book.get_quantity_out;
-    #[test_only]
-    use fun triex::book::create_order as Book.create_order;
 }
