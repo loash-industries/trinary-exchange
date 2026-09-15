@@ -366,6 +366,9 @@ module triex::coin_order_info {
         while (i < num_fills) {
             let fill = &mut fills[i];
             if (!fill.expired()) {
+                // The exact call the dry run in `coin_book::get_quantity_out`
+                // makes, on the same per-fill basis, so a quote can never
+                // disagree with what settles.
                 let fee_amount = if (taker_fee > 0) {
                     quote_fee::fee_from_scaled_rate(taker_fee, fill.quote_quantity())
                 } else {

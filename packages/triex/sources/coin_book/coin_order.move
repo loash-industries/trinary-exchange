@@ -301,25 +301,23 @@ module triex::coin_order {
         quote_fee::fee_from_scaled_rate(maker_fee, quote_quantity)
     }
 
+    /// The funds this order still has locked: quote plus escrowed maker fee for a
+    /// bid, base for an ask.
+    ///
+    /// The quote conversion stays inside the bid arm on purpose. `qty_to_quote`
+    /// asserts its result fits in a `u64`, and an ask locks no quote at all, so
+    /// computing it before the branch let a large enough ask at a high enough
+    /// price abort a read of its own locked balance on a number the ask arm
+    /// then discarded.
     public(package) fun locked_balance(self: &Order, maker_fee: u64, price_scaling: u64): Balances {
-        let is_bid = self.is_bid();
-        let order_price = self.price();
-        let mut base_quantity = 0;
-        let mut quote_quantity = 0;
         let remaining_base_quantity = self.quantity() - self.filled_quantity();
-        let remaining_quote_quantity = math::qty_to_quote(
-            remaining_base_quantity,
-            order_price,
-            price_scaling,
-        );
 
-        if (is_bid) {
-            quote_quantity = quote_quantity + remaining_quote_quantity;
-        } else {
-            base_quantity = base_quantity + remaining_base_quantity;
-        };
-
-        if (is_bid) {
+        if (self.is_bid()) {
+            let quote_quantity = math::qty_to_quote(
+                remaining_base_quantity,
+                self.price(),
+                price_scaling,
+            );
             let maker_fee_amount = quote_fee::fee_from_scaled_rate(maker_fee, quote_quantity);
 
             let mut balances = balances::new(0, quote_quantity, 0);
@@ -329,7 +327,7 @@ module triex::coin_order {
 
             balances
         } else {
-            balances::new(base_quantity, quote_quantity, 0)
+            balances::new(remaining_base_quantity, 0, 0)
         }
     }
 
@@ -337,6 +335,13 @@ module triex::coin_order {
     /// Fields of an `OrderCanceled` for tests asserting the fee split reported on
     /// the cancellation matches the refund the vault emitted.
     public fun canceled_event_parts(self: &OrderCanceled): (u128, u64, u64) {
+        (self.order_id, self.fee_refunded, self.fee_retained)
+    }
+
+    #[test_only]
+    /// Fields of an `OrderModified` for tests asserting the fee split reported on
+    /// the modify-down matches the refund the vault emitted.
+    public fun modified_event_parts(self: &OrderModified): (u128, u64, u64) {
         (self.order_id, self.fee_refunded, self.fee_retained)
     }
 

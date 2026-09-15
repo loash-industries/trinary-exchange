@@ -397,7 +397,7 @@ fun borrow_flashloan_incorrect_return_quote_e() {
 
     #[test]
     fun test_withdrawable_saturates_when_escrow_exceeds_the_reserve() {
-        let mut vault = vault::empty<SPAM, USDC>();
+        let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.deposit_quote_fees(balance::create_for_testing<USDC>(1_000));
         // Unreachable through any real path — `reserve >= locked_maker_fees` is
         // maintained at every writer — but this is a public view and the cap on

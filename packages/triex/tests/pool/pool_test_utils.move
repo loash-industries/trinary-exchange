@@ -2102,13 +2102,20 @@ module triex::pool_test_utils {
     /// quote-denominated dry run above ~1.8e10 raw quote units abort with
     /// `math::EOverflow`, because the base conversion scaled the taker's whole
     /// remaining input by FLOAT_SCALING before the level's size could bound it.
-    /// One 1-unit ask at price 1 — placeable for one raw unit of base, since
-    /// nothing constrains order size — took down `get_base_quantity_out`,
+    /// An ask at price 1 took down `get_base_quantity_out`,
     /// `get_quantity_out_for_account` and the whole bid-side swap router for the
     /// pool, while leaving the real matching path working.
     ///
-    /// The quote must now survive it, and be exactly the dust level's own size
-    /// larger than the same book without it.
+    /// The level rests at the smallest size placement accepts at MIN_PRICE —
+    /// `min_qty_for_nonzero_quote`, since an order below it could only ever
+    /// settle for zero quote — which is the cheapest legal level there and still
+    /// triggers the overflow: what crosses the threshold is the taker's input
+    /// scaled against the price, not the level's own depth.
+    ///
+    /// The quote must now survive it. It is the dust level's own size larger than
+    /// the same book without it, less at most one base unit: the level is the best
+    /// ask, so it is consumed first, and the one raw quote unit it costs is one
+    /// unit less reaching the level behind it.
     public(package) fun test_dust_priced_level_does_not_break_the_quote() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
@@ -2143,7 +2150,11 @@ module triex::pool_test_utils {
         let (baseline, _) = get_quantity_out<SUI, USDC>(pool_id, 0, quote_in, &mut test);
         assert!(baseline > 0, 0);
 
-        // One raw unit of base, resting at MIN_PRICE.
+        // The smallest ask placement accepts at MIN_PRICE.
+        let dust_quantity = math::min_qty_for_nonzero_quote(
+            constants::min_price(),
+            constants::float_scaling(),
+        );
         let dust = place_limit_order<SUI, USDC>(
             ALICE,
             pool_id,
@@ -2151,7 +2162,7 @@ module triex::pool_test_utils {
             constants::no_restriction(),
             constants::self_matching_allowed(),
             constants::min_price(),
-            1,
+            dust_quantity,
             false,
             constants::max_u64(),
             &mut test,
@@ -2159,7 +2170,8 @@ module triex::pool_test_utils {
         assert!(dust.order_inserted(), 1);
 
         let (with_dust, _) = get_quantity_out<SUI, USDC>(pool_id, 0, quote_in, &mut test);
-        assert!(with_dust == baseline + 1, with_dust);
+        assert!(with_dust <= baseline + dust_quantity, with_dust);
+        assert!(with_dust >= baseline + dust_quantity - 1, with_dust);
 
         end(test);
     }
@@ -2200,7 +2212,7 @@ module triex::pool_test_utils {
             constants::no_restriction(),
             constants::self_matching_allowed(),
             constants::min_price(),
-            1,
+            math::min_qty_for_nonzero_quote(constants::min_price(), constants::float_scaling()),
             false,
             constants::max_u64(),
             &mut test,
@@ -7715,14 +7727,16 @@ module triex::pool_test_utils {
                 test.ctx(),
             );
 
-            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 1);
-            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
             assert!(amount == expected_refund, 2);
 
-            let modifies = event::events_by_type<order::OrderModified>();
+            let modifies = event::events_by_type<coin_order::OrderModified>();
             assert!(modifies.length() == 1, 3);
-            let (_mid, fee_refunded, fee_retained) = order::modified_event_parts(&modifies[0]);
+            let (_mid, fee_refunded, fee_retained) = coin_order::modified_event_parts(
+                &modifies[0],
+            );
             assert!(fee_refunded == expected_refund, 4);
             assert!(fee_retained == expected_retained, 5);
             // The halves still sum exactly to the escrow released, so the escrow

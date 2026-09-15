@@ -133,11 +133,6 @@ module triex::coin_book {
     ): (u64, u64) {
         assert!((base_quantity > 0) != (quote_quantity > 0), invalid_amount_in());
         let is_bid = quote_quantity > 0;
-        let input_fee_rate = math::mul(
-            constants::fee_penalty_multiplier(),
-            trade_specific_taker_fee,
-        );
-        let fee_waived = false;
 
         let mut quantity_out = 0;
         let mut quantity_in_left = if (is_bid) quote_quantity else base_quantity;
@@ -158,14 +153,25 @@ module triex::coin_book {
 
                 if (is_bid) {
                     // Bid takers pay the fee on top of the quote they spend, so
-                    // part of the input is reserved for it.
-                    let quantity_to_match = if (fee_waived) {
-                        quantity_in_left
-                    } else {
-                        math::div(quantity_in_left, constants::float_scaling() + input_fee_rate)
-                    };
+                    // part of the input is reserved for it — at the rate
+                    // settlement charges, no more. Reserving a multiple of a
+                    // known, exactly computable fee is not a reserve; it is input
+                    // the swap never deploys and nobody receives, and it made the
+                    // bid and ask sides of the same book quote asymmetrically.
+                    let quantity_to_match = math::div(
+                        quantity_in_left,
+                        constants::float_scaling() + trade_specific_taker_fee,
+                    );
+                    // Capped inside the conversion rather than with a
+                    // `.min(cur_quantity)` after it: the uncapped form has to
+                    // land the whole scaled quotient in a `u64` before any cap
+                    // applies, which a level resting near MIN_PRICE overflows —
+                    // on an answer that was only ever going to be `cur_quantity`.
                     matched_base_quantity =
-                        math::quote_to_qty(quantity_to_match, cur_price, self.price_scaling).min(
+                        math::quote_to_qty_capped(
+                            quantity_to_match,
+                            cur_price,
+                            self.price_scaling,
                             cur_quantity,
                         );
                     let matched_quote_quantity = math::qty_to_quote(
@@ -181,11 +187,14 @@ module triex::coin_book {
                     // first such maker while settlement filled straight through it.
                     if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
                         quantity_out = quantity_out + matched_base_quantity;
-                        quantity_in_left = quantity_in_left - matched_quote_quantity;
-                        if (!fee_waived) {
-                            quantity_in_left =
-                                quantity_in_left - math::mul(matched_quote_quantity, input_fee_rate);
-                        };
+                        // Same helper, same per-level basis as
+                        // `calculate_partial_fill_balances`, so the quote reserves
+                        // exactly the fee that settles.
+                        let fee = quote_fee::fee_from_scaled_rate(
+                            trade_specific_taker_fee,
+                            matched_quote_quantity,
+                        );
+                        quantity_in_left = quantity_in_left - matched_quote_quantity - fee;
                     };
                 } else {
                     // Ask takers have the fee deducted from the quote proceeds,
@@ -202,14 +211,10 @@ module triex::coin_book {
                     // As above: a maker worth no quote is stepped over, not treated as
                     // the end of the book.
                     if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
-                        let fee = if (fee_waived) {
-                            0
-                        } else {
-                            quote_fee::fee_from_scaled_rate(
-                                trade_specific_taker_fee,
-                                matched_quote_quantity,
-                            )
-                        };
+                        let fee = quote_fee::fee_from_scaled_rate(
+                            trade_specific_taker_fee,
+                            matched_quote_quantity,
+                        );
                         quantity_out = quantity_out + matched_quote_quantity - fee;
                         quantity_in_left = quantity_in_left - matched_base_quantity;
                     };
