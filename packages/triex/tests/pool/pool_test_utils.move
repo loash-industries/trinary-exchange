@@ -9442,7 +9442,7 @@ module triex::pool_test_utils {
             1000000 * constants::float_scaling(),
             &mut test,
         );
-        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+        let _pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
             ALICE,
             registry_id,
             trading_account_id_alice,
@@ -9509,7 +9509,7 @@ module triex::pool_test_utils {
 
         let price = 2 * constants::float_scaling();
         let quantity = 1 * constants::float_scaling();
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,
@@ -9554,7 +9554,7 @@ module triex::pool_test_utils {
 
         let price = 2 * constants::float_scaling();
         let quantity = 1 * constants::float_scaling();
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,
@@ -9620,7 +9620,7 @@ module triex::pool_test_utils {
 
         let price = 2 * constants::float_scaling();
         let quantity = 1 * constants::float_scaling();
-        let mut i = 0;
+        let mut i = 0u64;
         while (i < 10) {
             place_limit_order<SUI, USDC>(
                 ALICE,

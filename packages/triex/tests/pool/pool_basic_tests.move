@@ -1,6 +1,5 @@
 #[test_only]
 module triex::pool_basic_tests {
-    use std::unit_test::destroy;
     use sui::{sui::SUI, test_scenario::{begin, end, return_shared, Scenario}};
     use token::cred::CRED;
     use triex::{

@@ -16,7 +16,8 @@
 /// vector's best case.
 #[test_only]
 module triex::book_vector_workload_tests {
-    use sui::{test_scenario::begin, test_utils};
+    use std::unit_test::destroy;
+    use sui::test_scenario::begin;
     use triex::{book::{Self, Book}, constants, order_info};
 
     const OWNER: address = @0x1;
@@ -184,14 +185,14 @@ module triex::book_vector_workload_tests {
                 placed.push_back(place(&mut b, price, QTY, true, 2));
                 if (placed.length() > band_size) {
                     let o = b.cancel_order(placed.remove(0));
-                    test_utils::destroy(o);
+                    destroy(o);
                 };
             };
             op = op + 1;
             if (op % FLUSH_EVERY == 0) { test.next_tx(OWNER); };
         };
 
-        test_utils::destroy(b);
+        destroy(b);
         test.end();
     }
 
