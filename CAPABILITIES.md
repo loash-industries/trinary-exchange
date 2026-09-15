@@ -93,11 +93,22 @@ vault re-checks it rather than trusting the policy to have done so.
 
 Read it as a bound on redistribution, not on cost: a share divides fees already
 collected, so it cannot change what a trader pays, and taker/maker rates, tier
-ladders and dry-run quotes are untouched by it. The rate ships at **0% for every
-hub**, applies only to collections the admin has explicitly assigned to a share
-class, and — like every other rate here — takes effect no earlier than the
-**next epoch boundary**, visible on-chain beforehand through
-`operator_share_bps_at()`. The share is credited the moment revenue is recognized, at
+ladders and dry-run quotes are untouched by it. The rate ships at **20% for every
+hub** — genesis share class 0, which every collection the admin has not assigned
+a class of its own resolves through — and is live from the first fill on a
+freshly published `FeePolicy` rather than staged, since there is no earlier epoch
+for a launch rate to be announced in. Every *later* change to it, including a
+re-price of class 0 itself, takes effect no earlier than the **next epoch
+boundary** and is visible on-chain beforehand through `operator_share_bps_at()`.
+
+One consequence of a non-zero launch rate belongs here rather than in a release
+note: the share is credited whether or not the collection has a beneficiary
+registered yet, and `withdrawable_pool_fees()` subtracts `operator_owed` in full.
+Until the admin registers an adapter type and hub owners register through it,
+that 20% of multicoin revenue is neither claimable by an operator nor sweepable
+by the treasury. It is encumbered, not lost — a later registration pays out the
+whole accrued balance, and `claim_operator_share` aborts rather than banking it
+for the treasury in the meantime. The share is credited the moment revenue is recognized, at
 the rate live in that instant, so a rate change can only affect revenue that has
 not happened yet — there is no deferred settlement whose timing anyone could
 game, and `operator_owed()` carries no unsettled remainder beside it.

@@ -58,6 +58,12 @@ module triex::fee_policy {
     // was chosen independently.
     const GENESIS_CANCEL_RETENTION_BPS: u64 = 2000; // 20% retained
 
+    /// Share of recognized multicoin fee revenue a trade hub's operator is paid
+    /// at launch, for every collection the admin has not assigned a class of its
+    /// own. Live from the first fill on a freshly published policy, so it is a
+    /// deploy-time commitment rather than an opt-in — see `new_policy`.
+    const GENESIS_OPERATOR_SHARE_BPS: u64 = 2000; // 20% to the hub operator
+
     /// Coin pools: 1.10% taker / 0.90% maker at the entry tier, down to
     /// 0.55% / 0.45% at the top.
     fun coin_taker_fees(): vector<u64> {
@@ -189,11 +195,24 @@ module triex::fee_policy {
     }
 
     /// The one constructor. Seeds the genesis hub-share state
-    /// `operator_share_class` resolves through: class 0, starting at zero bps,
-    /// registered as the default class. Neither field has a removal path, so on
-    /// an object built here resolution always lands on a real class — and class
-    /// 0 has one defined meaning, "the class unassigned collections pay",
-    /// rather than being a free id that happens to double as a fallback.
+    /// `operator_share_class` resolves through: class 0 at
+    /// `GENESIS_OPERATOR_SHARE_BPS`, registered as the default class. Neither
+    /// field has a removal path, so on an object built here resolution always
+    /// lands on a real class — and class 0 has one defined meaning, "the class
+    /// unassigned collections pay", rather than being a free id that happens to
+    /// double as a fallback.
+    ///
+    /// The genesis rate is live from the first fill, not staged: there is no
+    /// earlier epoch for it to be announced in, and a launch rate every hub is
+    /// told about up front is announced by publication. Note what that obliges
+    /// on deploy — the share is credited whether or not the collection has a
+    /// beneficiary registered yet, and `withdrawable_quote_fees` subtracts
+    /// `operator_owed` in full, so until an adapter is registered and hubs
+    /// register through it, this fraction of multicoin revenue is neither
+    /// claimable nor sweepable. It is encumbered, not lost: a later
+    /// registration still pays the whole accrued balance. An admin who wants
+    /// the feature dark at launch stages class 0 to zero before the first
+    /// multicoin pool is created.
     ///
     /// This runs from `init`, so it seeds a *fresh publish* only. An upgrade
     /// keeps the already-shared `FeePolicy`, which never passed through here;
@@ -210,7 +229,11 @@ module triex::fee_policy {
         df::add(
             &mut policy.id,
             OperatorShareClassKey { class_id: 0 },
-            OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+            OperatorShareClass {
+                current_bps: GENESIS_OPERATOR_SHARE_BPS,
+                next_bps: GENESIS_OPERATOR_SHARE_BPS,
+                effective_epoch: 0,
+            },
         );
         df::add(&mut policy.id, DefaultOperatorShareKey {}, 0u16);
 
@@ -491,7 +514,23 @@ module triex::fee_policy {
     //
     // `FeePolicy` has a `UID` but no versioned inner, so its struct cannot gain
     // fields on an upgrade — dynamic fields on its `id` can. Everything below is
-    // additive. The rates are admin-written at epoch cadence, which is what the
+    // additive.
+    //
+    // EXTENDING THIS LATER: add a new *key* struct. Never store a new value type
+    // under a key that already exists. Field identity is
+    // `hash(parent || name || Name-type)` — the value type is not part of it —
+    // so a `V2` value under `OperatorShareClassKey` aborts `df::add` with
+    // `EFieldAlreadyExists` (`upsert` included, since its `exists_with_type`
+    // probe misses and it falls through to `add`), and every read misses the
+    // same way, which resolves `operator_share_bps_at` to zero and pays every
+    // hub nothing — silently, with no abort and no event. Nothing undoes that:
+    // the no-removal invariant below is deliberate and
+    // `strip_operator_share_genesis_for_testing` is test-only. `OperatorShareClass`
+    // itself is frozen either way, since a compatible upgrade cannot add a field
+    // to an existing struct, and Move's upgrade checker accepts the broken
+    // version happily — so this paragraph is the only guard rail there is.
+    //
+    // The rates are admin-written at epoch cadence, which is what the
     // module invariant allows. The payout address is written exactly once, on
     // presentation of the registered adapter's witness — the adapter package is
     // what binds the write to the storage unit's `OwnerCap`, so the address
@@ -636,8 +675,15 @@ module triex::fee_policy {
     }
 
     /// Class for collections nobody has configured. Ships pointing at genesis
-    /// class 0, which pays zero — deploying the feature changes nothing until a
-    /// hub is assigned, class 0 is re-priced, or the default is re-pointed.
+    /// class 0, which pays `GENESIS_OPERATOR_SHARE_BPS` from the first fill, so
+    /// the share is on for every unassigned collection at publication rather
+    /// than opted into per collection. Re-pointing this moves every unassigned
+    /// collection to another class at once; staging class 0 re-prices them in
+    /// place.
+    ///
+    /// An admin who wants the feature dark at launch stages class 0 to zero
+    /// before the first multicoin pool is created — see `new_policy` for what
+    /// the non-zero launch rate obliges on deploy.
     public fun set_default_operator_share_class(
         self: &mut FeePolicy,
         class_id: u16,
@@ -649,14 +695,24 @@ module triex::fee_policy {
     }
 
     /// Bring a `FeePolicy` that predates the hub share up to the state
-    /// `new_policy` seeds at genesis: class 0 at zero bps, pointed at by the
-    /// default key.
+    /// `new_policy` seeds at genesis: class 0 at `GENESIS_OPERATOR_SHARE_BPS`,
+    /// pointed at by the default key.
+    ///
+    /// It seeds the launch rate rather than zero so that an upgraded deployment
+    /// and a fresh publish price hubs identically — the alternative leaves the
+    /// rate an accident of which deployment a pool happens to live on. The
+    /// deploy-time obligation in `new_policy` applies here too, and lands the
+    /// moment this is called rather than at publication.
     ///
     /// `init` runs on a first publish, never on an upgrade, so an upgraded
     /// deployment inherits a policy object with neither field. The resolvers
     /// tolerate that — the feature is simply inert — but the admin still needs a
     /// way to switch it on, and `assign_operator_share_class` cannot be the
-    /// first call because it requires a class that exists. This is that call.
+    /// first call because it requires a class that exists. This is the call
+    /// that reproduces genesis. It is not the only way in — staging a class and
+    /// pointing the default at it works too — but that route leaves class 0
+    /// permanently absent, so the id that means "the class unassigned
+    /// collections pay" resolves to nothing on that deployment.
     ///
     /// Idempotent and non-destructive: it only ever adds what is missing, so
     /// running it against an already-seeded policy — or twice — cannot reset a
@@ -667,7 +723,11 @@ module triex::fee_policy {
             df::add(
                 &mut self.id,
                 class_key,
-                OperatorShareClass { current_bps: 0, next_bps: 0, effective_epoch: 0 },
+                OperatorShareClass {
+                    current_bps: GENESIS_OPERATOR_SHARE_BPS,
+                    next_bps: GENESIS_OPERATOR_SHARE_BPS,
+                    effective_epoch: 0,
+                },
             );
         };
 
@@ -725,7 +785,9 @@ module triex::fee_policy {
     /// pool until an admin transaction seeded the field. The final fallback is
     /// what makes the feature inert on such an object rather than fatal:
     /// `operator_share_bps_at` resolves a missing class to zero, so an
-    /// unseeded policy pays no hub anything, which is the intended deploy state.
+    /// unseeded policy pays no hub anything — inert on an object this module
+    /// did not construct, until `seed_operator_share_genesis` brings it up to
+    /// the genesis rate a fresh publish starts at.
     public fun operator_share_class(self: &FeePolicy, collection_id: ID): u16 {
         let assignment = OperatorShareAssignmentKey { collection_id };
         if (df::exists_with_type<OperatorShareAssignmentKey, u16>(&self.id, assignment)) {

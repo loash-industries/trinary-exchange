@@ -1,6 +1,6 @@
 /// Depth tests for the coin book's `BigVector` storage.
 ///
-/// `MAX_SLICE_SIZE` is 64, so a side holding more than 64 resting orders is
+/// `MAX_SLICE_SIZE` is 16, so a side holding more than 16 resting orders is
 /// stored across several leaf slices. Everything the book does then depends on
 /// slice-boundary traversal — `next_slice` / `prev_slice` hopping leaves, removal
 /// rebalancing or merging them — which a book of a handful of orders never
@@ -30,14 +30,14 @@ module triex::coin_book_slice_tests {
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
 
-    /// Above `MAX_SLICE_SIZE` (64) so the side spans more than one leaf, and below
+    /// Above `MAX_SLICE_SIZE` (16) so the side spans more than one leaf, and below
     /// `MAX_OPEN_ORDERS` (100) so one account can hold it all.
     const DEEP: u64 = 80;
 
     fun quantity(): u64 { 1 * constants::float_scaling() }
 
     /// Spread the deep book over several price levels so the tests cover grouping
-    /// by level as well as raw depth. 8 levels × 10 orders straddles the 64-order
+    /// by level as well as raw depth. 8 levels × 10 orders straddles the 16-order
     /// slice boundary in the middle of a level, which is the interesting case.
     const LEVELS: u64 = 8;
     const PER_LEVEL: u64 = 10;

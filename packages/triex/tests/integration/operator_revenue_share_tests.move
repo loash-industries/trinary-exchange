@@ -38,6 +38,9 @@ module triex::integration_hub_revenue_share_tests {
     const ASSET_GOLD: u64 = 1;
     const ASSET_SILVER: u64 = 2;
     const HUB_CLASS: u16 = 7;
+    /// `fee_policy::GENESIS_OPERATOR_SHARE_BPS` — the launch rate class 0
+    /// carries, mirrored here because the source constant is private.
+    const GENESIS_SHARE_BPS: u64 = 2000;
 
     /// Stands in for the witness the audited adapter package mints after
     /// checking the caller's `OwnerCap<StorageUnit>` against the collection.
@@ -613,15 +616,15 @@ module triex::integration_hub_revenue_share_tests {
     /// reserve is immediately the treasury's — deploying this changes nothing
     /// until someone opts a hub in, with no settle step in front of the sweep.
     #[test]
-    fun an_unconfigured_hub_accrues_nothing_and_never_blocks() {
+    fun an_unconfigured_hub_accrues_at_the_genesis_rate_and_never_blocks() {
         let mut test = begin(OWNER);
         let (pool_id, _, _, alice_ta, bob_ta, collection_cap) = setup(&mut test);
 
         let price = 2 * constants::float_scaling();
         let (order_id, _, _) = rest_a_bid(pool_id, alice_ta, price, 1000, &mut test);
         sell_into_the_book(pool_id, bob_ta, price, 400, &mut test);
-        // Cancellation resolves the rate too — zero — and must not abort on the
-        // absent configuration.
+        // Cancellation resolves the rate too, and must not abort on the absent
+        // configuration.
         cancel_the_order(pool_id, alice_ta, order_id, &mut test);
 
         test.next_tx(OWNER);
@@ -629,8 +632,18 @@ module triex::integration_hub_revenue_share_tests {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
             let revenue = pool.quote_fee_reserve_balance();
             assert!(revenue > 0);
-            assert!(pool.operator_owed() == 0);
-            assert!(pool.withdrawable_pool_fees() == revenue);
+            // No class is assigned to this collection, so it resolves through
+            // the genesis default — which is live, not zero. An unconfigured
+            // hub accrues from the first fill; opting in is about *where* the
+            // share is paid, not whether it is earned.
+            let owed = pool.operator_owed();
+            assert!(owed > 0);
+            assert_share_in_band(owed as u128, revenue as u128, GENESIS_SHARE_BPS);
+            // And it is withheld from the treasury until there is someone to
+            // pay it to: encumbered, not banked and not lost.
+            // `claiming_without_a_beneficiary_aborts` pins that the claim
+            // refuses rather than reassigning it.
+            assert!(pool.withdrawable_pool_fees() == revenue - owed);
             return_shared(pool);
         };
 

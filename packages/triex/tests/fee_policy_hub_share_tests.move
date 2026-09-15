@@ -15,6 +15,9 @@ module triex::fee_policy_operator_share_tests {
     const OWNER: address = @0x1;
     const CLASS_STANDARD: u16 = 10;
     const CLASS_PARTNER: u16 = 11;
+    /// `GENESIS_OPERATOR_SHARE_BPS` — class 0's launch rate, mirrored here
+    /// because the source constant is private.
+    const GENESIS_SHARE_BPS: u64 = 2000;
 
     fun a_collection(): ID {
         object::id_from_address(@0xC0FFEE)
@@ -25,18 +28,20 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
-    fun unconfigured_resolves_to_zero() {
-        // Deploying the ladder has to change nothing. A fresh policy ships with
-        // genesis class 0 at zero bps registered as the default, so an
-        // unassigned collection resolves to a real class that prices to zero
-        // until someone opts a hub in.
+    fun unconfigured_resolves_to_the_genesis_share() {
+        // A fresh policy ships with genesis class 0 at the launch rate,
+        // registered as the default, so an unassigned collection resolves to a
+        // real class priced at that rate rather than to zero — the share is on
+        // for every hub from the first fill, not opted into per collection.
         let mut test = begin(OWNER);
         let policy = fee_policy::create_for_testing(test.ctx());
 
         assert!(policy.operator_share_class_exists(0));
         assert_eq!(policy.operator_share_class(a_collection()), 0);
-        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
-        assert_eq!(policy.operator_share_bps_at(a_collection(), 99), 0);
+        // Live in the publishing epoch, not staged: there is no earlier epoch
+        // to announce it in.
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), GENESIS_SHARE_BPS);
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 99), GENESIS_SHARE_BPS);
 
         destroy(policy);
         end(test);
@@ -77,7 +82,9 @@ module triex::fee_policy_operator_share_tests {
 
         assert!(policy.operator_share_class_exists(0));
         assert_eq!(policy.operator_share_class(a_collection()), 0);
-        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        // Up to a fresh publish's state, which means the launch rate — not
+        // zero, or an upgraded deployment would price hubs differently.
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), GENESIS_SHARE_BPS);
         // And the configuration path that was closed before is open now.
         policy.assign_operator_share_class(a_collection(), 0, &cap);
 
@@ -124,7 +131,9 @@ module triex::fee_policy_operator_share_tests {
 
         policy.stage_operator_share_class(0, 1_000, &cap, test.ctx());
 
-        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), 0);
+        // The genesis rate is the *running* rate, so staging replaces the
+        // future and this epoch still prices at launch.
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), GENESIS_SHARE_BPS);
         assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 1_000);
 
         policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
@@ -327,7 +336,7 @@ module triex::fee_policy_operator_share_tests {
     }
 
     #[test]
-    fun the_ceiling_itself_is_settable() {
+    fun a_class_can_be_staged_at_the_ceiling() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());

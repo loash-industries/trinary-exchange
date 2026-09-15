@@ -1221,12 +1221,13 @@ module triex::integration_multicoin_pool_advanced_tests {
             assert!(pool.quote_fee_reserve_balance() == retained, 2);
             assert!(pool.locked_maker_fees() == 0, 3);
 
-            // The retention is recognized revenue, split at this instant. No hub
-            // is configured, so the operator's share is zero and the whole
-            // retention is immediately the treasury's — nothing provisional,
-            // nothing to settle before the sweep.
-            assert!(pool.operator_owed() == 0, 4);
-            assert!(pool.withdrawable_pool_fees() == retained, 5);
+            // The retention is recognized revenue, split at this instant. Every
+            // collection resolves through the genesis share class, so the
+            // operator is credited its cut here and the treasury keeps the rest
+            // — nothing provisional, nothing to settle before the sweep.
+            let operator_cut = retained * 2000 / 10_000; // genesis share: 20%
+            assert!(pool.operator_owed() == operator_cut, 4);
+            assert!(pool.withdrawable_pool_fees() == retained - operator_cut, 5);
 
             return_shared(ta);
             return_shared(policy);
@@ -1432,12 +1433,14 @@ module triex::integration_multicoin_pool_advanced_tests {
             );
             assert!(order.status() == constants::filled(), 3);
             assert!(pool.locked_maker_fees() == 0, 4);
-            // No escrow outstanding, and the reserve is wholly sweepable: the
-            // split was applied at recognition, no hub is configured, so every
-            // fee in it belongs to the treasury with nothing held back.
+            // No escrow outstanding, so the reserve divides cleanly in two: the
+            // operator's cut, credited at recognition through the genesis share
+            // class, and the treasury's remainder. Nothing is held back beyond
+            // what is already owed to someone.
             let reserve = pool.quote_fee_reserve_balance();
-            assert!(pool.operator_owed() == 0, 5);
-            assert!(pool.withdrawable_pool_fees() == reserve, 6);
+            let operator_cut = pool.operator_owed();
+            assert!(operator_cut > 0, 5);
+            assert!(pool.withdrawable_pool_fees() == reserve - operator_cut, 6);
             return_shared(ta);
             return_shared(clock);
             return_shared(pool);
@@ -3239,11 +3242,12 @@ module triex::integration_multicoin_pool_advanced_tests {
             assert!(pool.locked_maker_fees() == 0, 6);
             assert!(pool.quote_fee_reserve_balance() == alice_escrow - refund, 7);
             // Expiry retention is recognized revenue like any other, split at
-            // recognition. No hub is configured, so all of it is immediately
-            // sweepable.
+            // recognition through the genesis share class. It is the reserve's
+            // only source here, so the cut is exact rather than banded.
             let reserve = pool.quote_fee_reserve_balance();
-            assert!(pool.operator_owed() == 0, 8);
-            assert!(pool.withdrawable_pool_fees() == reserve, 9);
+            let operator_cut = reserve * 2000 / 10_000; // genesis share: 20%
+            assert!(pool.operator_owed() == operator_cut, 8);
+            assert!(pool.withdrawable_pool_fees() == reserve - operator_cut, 9);
 
             return_shared(ta);
             return_shared(clock);

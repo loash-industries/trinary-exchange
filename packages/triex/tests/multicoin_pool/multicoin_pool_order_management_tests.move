@@ -2525,21 +2525,27 @@ module triex::integration_multicoin_pool_order_management_tests {
             let reserve_before = pool.quote_fee_reserve_balance();
             assert!(reserve_before > 0, 2);
 
-            // With the split applied at recognition, the whole reserve is exact:
-            // no share class is assigned, so nothing accrued to an operator and
-            // the sweep takes everything with no settle in front of it.
-            assert!(pool.operator_owed() == 0, 3);
-            assert!(pool.withdrawable_pool_fees() == reserve_before, 4);
+            // With the split applied at recognition, the reserve arrives already
+            // divided: the operator's accrued cut — every collection resolves
+            // through the genesis share class — and the treasury's remainder.
+            // The sweep takes the remainder, with no settle in front of it.
+            let owed = pool.operator_owed();
+            assert!(owed > 0, 3);
+            let sweepable = pool.withdrawable_pool_fees();
+            assert!(sweepable == reserve_before - owed, 4);
 
             let fee_coin = pool.withdraw_pool_fees(
                 &policy,
                 &admin_cap,
-                reserve_before,
+                sweepable,
                 &clock,
                 test.ctx(),
             );
-            assert!(fee_coin.value() == reserve_before, 6);
-            assert!(pool.quote_fee_reserve_balance() == 0, 7);
+            assert!(fee_coin.value() == sweepable, 6);
+            // The operator's cut stays in the reserve: no beneficiary is
+            // registered yet, so the sweep has nobody to pay it to and must not
+            // take it itself.
+            assert!(pool.quote_fee_reserve_balance() == owed, 7);
 
             unit_test::destroy(fee_coin);
             return_shared(clock);

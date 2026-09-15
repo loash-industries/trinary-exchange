@@ -59,7 +59,7 @@ module triex::constants {
     const MAX_OPEN_ORDERS: u64 = 100;
 
     // Big vector params, used by the coin pool book (`triex::coin_book`).
-    const MAX_SLICE_SIZE: u64 = 64;
+    const MAX_SLICE_SIZE: u64 = 16;
     const MAX_FAN_OUT: u64 = 64;
 
     // Per-side order-id sequence seeds for the coin pool book. Key order is what
