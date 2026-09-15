@@ -1835,10 +1835,6 @@ module triex::pool_test_utils {
         test_market_order(false);
     }
 
-    public(package) fun test_mid_price_ok() {
-        test_mid_price();
-    }
-
     public(package) fun test_swap_exact_not_fully_filled_bid_ok() {
         test_swap_exact_not_fully_filled(true, false, false, false, false);
     }
@@ -3508,128 +3504,6 @@ module triex::pool_test_utils {
         base_out.burn_for_testing();
         quote_out.burn_for_testing();
         cred_out.burn_for_testing();
-
-        end(test);
-    }
-
-    /// Test getting the mid price of the order book
-    /// Expired orders are skipped
-    fun test_mid_price() {
-        let mut test = begin(OWNER);
-        let registry_id = setup_test(OWNER, &mut test);
-        let trading_account_id_alice = create_acct_and_share_with_funds(
-            ALICE,
-            1000000 * constants::float_scaling(),
-            &mut test,
-        );
-        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
-            ALICE,
-            registry_id,
-            trading_account_id_alice,
-            &mut test,
-        );
-
-        let price_bid_1 = 1 * constants::float_scaling();
-        let price_bid_best = 2 * constants::float_scaling();
-        let price_bid_expired = 2_200_000_000;
-        let price_ask_1 = 6 * constants::float_scaling();
-        let price_ask_best = 5 * constants::float_scaling();
-        let price_ask_expired = 3_200_000_000;
-        let quantity = 1 * constants::float_scaling();
-        let expire_timestamp = constants::max_u64();
-        let expire_timestamp_e = get_time(&mut test) + 100;
-        let is_bid = true;
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_bid_1,
-            quantity,
-            is_bid,
-            expire_timestamp,
-            &mut test,
-        );
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_bid_best,
-            quantity,
-            is_bid,
-            expire_timestamp,
-            &mut test,
-        );
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_bid_expired,
-            quantity,
-            is_bid,
-            expire_timestamp_e,
-            &mut test,
-        );
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_ask_1,
-            quantity,
-            !is_bid,
-            expire_timestamp,
-            &mut test,
-        );
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_ask_best,
-            quantity,
-            !is_bid,
-            expire_timestamp,
-            &mut test,
-        );
-
-        place_limit_order<SUI, USDC>(
-            ALICE,
-            pool_id,
-            trading_account_id_alice,
-            constants::no_restriction(),
-            constants::self_matching_allowed(),
-            price_ask_expired,
-            quantity,
-            !is_bid,
-            expire_timestamp_e,
-            &mut test,
-        );
-
-        let expected_mid_price = (price_bid_expired + price_ask_expired) / 2;
-        assert!(
-            get_mid_price<SUI, USDC>(pool_id, &mut test) == expected_mid_price,
-            constants::e_incorrect_mid_price(),
-        );
-
-        set_time(200, &mut test);
-        let expected_mid_price = (price_bid_best + price_ask_best) / 2;
-        assert!(
-            get_mid_price<SUI, USDC>(pool_id, &mut test) == expected_mid_price,
-            constants::e_incorrect_mid_price(),
-        );
 
         end(test);
     }
@@ -6166,20 +6040,6 @@ module triex::pool_test_utils {
         destroy(admin_cap);
 
         pool_id
-    }
-
-    fun get_mid_price<BaseAsset, QuoteAsset>(pool_id: ID, test: &mut Scenario): u64 {
-        test.next_tx(OWNER);
-        {
-            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let clock = test.take_shared<Clock>();
-
-            let mid_price = pool.mid_price<BaseAsset, QuoteAsset>(&clock);
-            return_shared(pool);
-            return_shared(clock);
-
-            mid_price
-        }
     }
 
     fun get_quantity_out<BaseAsset, QuoteAsset>(

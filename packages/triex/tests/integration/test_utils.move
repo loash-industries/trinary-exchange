@@ -171,22 +171,6 @@ module triex::integration_test_utils {
         }
     }
 
-    public fun check_mid_price<BaseAsset, QuoteAsset>(
-        pool_id: ID,
-        expected_mid_price: u64,
-        test: &mut Scenario,
-    ) {
-        test.next_tx(OWNER);
-        {
-            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let mid_price = pool::mid_price(&pool, &clock);
-            assert!(mid_price == expected_mid_price, 0);
-            return_shared(pool);
-            return_shared(clock);
-        }
-    }
-
     public fun execute_cross_trading<BaseAsset, QuoteAsset>(
         pool_id: ID,
         trading_account_id_1: ID,
@@ -350,54 +334,6 @@ module triex::integration_test_utils {
         // quote-denominated expectation dead weight.
         assert!(quote == expected_balances.usdc, 1);
         assert!(cred == expected_balances.cred, 2);
-    }
-
-    public fun get_level2_range<BaseAsset, QuoteAsset>(
-        sender: address,
-        pool_id: ID,
-        price_low: u64,
-        price_high: u64,
-        is_bid: bool,
-        test: &mut Scenario,
-    ): (vector<u64>, vector<u64>) {
-        test.next_tx(sender);
-        {
-            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let (prices, quantities) = pool.get_level2_range<BaseAsset, QuoteAsset>(
-                price_low,
-                price_high,
-                is_bid,
-                &clock,
-            );
-            return_shared(pool);
-            return_shared(clock);
-
-            (prices, quantities)
-        }
-    }
-
-    public fun get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(
-        sender: address,
-        pool_id: ID,
-        ticks: u64,
-        test: &mut Scenario,
-    ): (vector<u64>, vector<u64>, vector<u64>, vector<u64>) {
-        test.next_tx(sender);
-        {
-            let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let clock = test.take_shared<Clock>();
-            let (
-                bid_prices,
-                bid_quantities,
-                ask_prices,
-                ask_quantities,
-            ) = pool.get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(ticks, &clock);
-            return_shared(pool);
-            return_shared(clock);
-
-            (bid_prices, bid_quantities, ask_prices, ask_quantities)
-        }
     }
 
     public fun locked_balance<BaseAsset, QuoteAsset>(

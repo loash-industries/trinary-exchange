@@ -102,8 +102,6 @@ module triex::constants {
     #[test_only]
     const EBookOrderMismatch: u64 = 1;
     #[test_only]
-    const EIncorrectMidPrice: u64 = 2;
-    #[test_only]
     const EIncorrectPoolId: u64 = 3;
     #[test_only]
     const EFillMismatch: u64 = 4;
@@ -333,11 +331,6 @@ module triex::constants {
     #[test_only]
     public fun e_book_order_mismatch(): u64 {
         EBookOrderMismatch
-    }
-
-    #[test_only]
-    public fun e_incorrect_mid_price(): u64 {
-        EIncorrectMidPrice
     }
 
     #[test_only]

@@ -340,40 +340,6 @@ module triex::coin_book_slice_tests {
     }
 
     #[test]
-    /// Level2 aggregation seeds its walk from a key derived from the price bound,
-    /// then hops slices. Every level of a deep book must still be reported once,
-    /// with the whole level's resting quantity summed.
-    fun test_level2_spans_slices() {
-        let mut test = begin(OWNER);
-        let (pool_id, trading_account_id) = setup(&mut test);
-        fill_bid_side(pool_id, trading_account_id, &mut test);
-
-        test.next_tx(ALICE);
-        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let clock = test.take_shared<sui::clock::Clock>();
-        let (prices, quantities) = pool.get_level2_range(
-            constants::min_price(),
-            constants::max_price(),
-            true,
-            &clock,
-        );
-        assert!(prices.length() == LEVELS);
-        assert!(quantities.length() == LEVELS);
-
-        // Bids report best price first, and each level holds PER_LEVEL orders.
-        let mut i = 0;
-        while (i < LEVELS) {
-            assert!(prices[i] == (LEVELS - i) * constants::float_scaling());
-            assert!(quantities[i] == PER_LEVEL * quantity());
-            i = i + 1;
-        };
-
-        return_shared(clock);
-        return_shared(pool);
-        end(test);
-    }
-
-    #[test]
     /// Paging with a limit that lands exactly on the slice boundary is the case a
     /// page-break bug would hide in: the cursor has to carry across leaves without
     /// repeating or dropping the order either side of the seam.
@@ -423,49 +389,4 @@ module triex::coin_book_slice_tests {
         end(test);
     }
 
-    #[test]
-    /// `mid_price` reads the extreme key of each side. With a deep book those sit
-    /// in different leaves from each other, and the walk that skips expired orders
-    /// has to be able to leave its starting slice.
-    fun test_mid_price_on_deep_book() {
-        let mut test = begin(OWNER);
-        let (pool_id, trading_account_id) = setup(&mut test);
-        fill_bid_side(pool_id, trading_account_id, &mut test);
-
-        // Asks above every bid, also more than one slice deep. They go on a second
-        // account: `MAX_OPEN_ORDERS` caps one account at 100, and the bid side
-        // already holds 80.
-        let ask_account = create_acct_and_share_with_funds(
-            BOB,
-            1_000_000 * constants::float_scaling(),
-            &mut test,
-        );
-        let mut n = 0;
-        while (n < 70) {
-            pool_test_utils::place_limit_order<SUI, USDC>(
-                BOB,
-                pool_id,
-                ask_account,
-                constants::no_restriction(),
-                constants::self_matching_allowed(),
-                (10 + n) * constants::float_scaling(),
-                quantity(),
-                false,
-                constants::max_u64(),
-                &mut test,
-            );
-            n = n + 1;
-        };
-
-        test.next_tx(ALICE);
-        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        let clock = test.take_shared<sui::clock::Clock>();
-        // Best bid is the top level (8), best ask the lowest ask (10).
-        let expected = (8 * constants::float_scaling() + 10 * constants::float_scaling()) / 2;
-        assert!(pool.mid_price(&clock) == expected);
-        return_shared(clock);
-        return_shared(pool);
-
-        end(test);
-    }
 }

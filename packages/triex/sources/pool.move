@@ -1183,14 +1183,6 @@ module triex::pool {
             )
     }
 
-    /// Returns the mid price of the pool.
-    public fun mid_price<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        clock: &Clock,
-    ): u64 {
-        self.load_inner().book.mid_price(clock.timestamp_ms())
-    }
-
     /// Returns the order_id for all open order for the trading_account in the pool.
     public fun account_open_orders<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
@@ -1203,64 +1195,6 @@ module triex::pool {
         };
 
         self.state.account(trading_account.id()).open_orders()
-    }
-
-    /// Returns the (price_vec, quantity_vec) for the level2 order book.
-    /// The price_low and price_high are inclusive, all orders within the range are
-    /// returned.
-    /// is_bid is true for bids and false for asks.
-    public fun get_level2_range<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        price_low: u64,
-        price_high: u64,
-        is_bid: bool,
-        clock: &Clock,
-    ): (vector<u64>, vector<u64>) {
-        self
-            .load_inner()
-            .book
-            .get_level2_range_and_ticks(
-                price_low,
-                price_high,
-                constants::max_u64(),
-                is_bid,
-                clock.timestamp_ms(),
-            )
-    }
-
-    /// Returns the (price_vec, quantity_vec) for the level2 order book.
-    /// Ticks are the maximum number of ticks to return starting from best bid and
-    /// best ask.
-    /// (bid_price, bid_quantity, ask_price, ask_quantity) are returned as 4
-    /// vectors.
-    /// The price vectors are sorted in descending order for bids and ascending
-    /// order for asks.
-    public fun get_level2_ticks_from_mid<BaseAsset, QuoteAsset>(
-        self: &Pool<BaseAsset, QuoteAsset>,
-        ticks: u64,
-        clock: &Clock,
-    ): (vector<u64>, vector<u64>, vector<u64>, vector<u64>) {
-        let self = self.load_inner();
-        let (bid_price, bid_quantity) = self
-            .book
-            .get_level2_range_and_ticks(
-                constants::min_price(),
-                constants::max_price(),
-                ticks,
-                true,
-                clock.timestamp_ms(),
-            );
-        let (ask_price, ask_quantity) = self
-            .book
-            .get_level2_range_and_ticks(
-                constants::min_price(),
-                constants::max_price(),
-                ticks,
-                false,
-                clock.timestamp_ms(),
-            );
-
-        (bid_price, bid_quantity, ask_price, ask_quantity)
     }
 
     /// Get all balances held in this pool.
