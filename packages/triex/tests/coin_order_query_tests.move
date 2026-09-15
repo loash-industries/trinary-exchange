@@ -10,7 +10,8 @@ module triex::coin_order_query_tests {
         pool_tests::{
             setup_test,
             setup_pool_with_default_fees_and_reference_pool,
-            place_limit_order
+            place_limit_order,
+            cancel_order
         },
         trading_account_tests::{
             USDC,
@@ -231,11 +232,14 @@ module triex::coin_order_query_tests {
         assert!(page.orders()[0].order_id() == bid_id(price, 2));
         assert!(page.orders()[8].order_id() == bid_id(price, 10));
 
-        // Anchor miss: an id naming no live order yields an empty page. The vector
-        // implementation used to fall back to the top of the book and re-serve page
-        // one; keyed seeking finds nothing below a key that low and stops, which is
-        // the better answer — a stale cursor is a caller error, not a request to
-        // start over.
+        // Anchor below the whole bid key range. Seeking is positional, so what makes
+        // this page empty is that no live key sorts past `999` — not that `999` names
+        // no live order. An id that is merely stale but in range resolves to its
+        // neighbour and keeps paging; see
+        // `test_stale_in_range_anchor_resumes_from_its_neighbour` below.
+        //
+        // The property being pinned here is that the vector implementation's fallback
+        // is gone: no anchor re-serves page one.
         let page = iter_orders(
             &pool,
             option::some(999),
@@ -934,6 +938,70 @@ module triex::coin_order_query_tests {
         };
 
         destroy(pool);
+        end(test);
+    }
+
+    #[test]
+    /// A cursor that was valid when the caller paged and went stale before they
+    /// resumed. Unlike anchor `999` above, this id sits strictly *between* live
+    /// keys, so it isolates staleness from being out of range.
+    ///
+    /// Seeking is positional: the page resumes from the neighbour of where the
+    /// dead order sat. It is not an empty page and it is not page one.
+    fun test_stale_in_range_anchor_resumes_from_its_neighbour() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_test(OWNER, &mut test);
+        let acct = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = setup_pool_with_default_fees_and_reference_pool<SUI, USDC, SUI, CRED>(
+            ALICE,
+            registry_id,
+            acct,
+            &mut test,
+        );
+
+        let price = 2 * constants::float_scaling();
+        let mut i = 1u64;
+        while (i <= 10) {
+            place_limit_order<SUI, USDC>(
+                ALICE,
+                pool_id,
+                acct,
+                constants::no_restriction(),
+                constants::self_matching_allowed(),
+                price,
+                1 * constants::float_scaling(),
+                true,
+                constants::max_u64(),
+                &mut test,
+            );
+            i = i + 1;
+        };
+
+        // Retire the 5th bid, leaving a hole in the middle of the key range.
+        cancel_order<SUI, USDC>(ALICE, pool_id, acct, bid_id(price, 5), &mut test);
+
+        test.next_tx(ALICE);
+        let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+
+        let page = iter_orders(
+            &pool,
+            option::some(bid_id(price, 5)),
+            option::none(),
+            option::none(),
+            100,
+            true,
+        );
+
+        // Bids 6..10 — the orders that follow the hole, not an empty page.
+        assert!(page.orders().length() == 5);
+        assert!(page.orders()[0].order_id() == bid_id(price, 6));
+        assert!(page.orders()[4].order_id() == bid_id(price, 10));
+
+        return_shared(pool);
         end(test);
     }
 }

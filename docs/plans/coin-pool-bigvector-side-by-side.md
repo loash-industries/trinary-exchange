@@ -127,7 +127,7 @@ keeping two triex-isms intact:
 | `inject_limit_order` | `book_side_mut(id).insert(id, order)`; `find_insert_position` is not forked |
 | `match_against_book` | slice walk + post-match removal of filled/expired makers by key from `fills_ref()`; replaces the index-collection removal dance |
 | `cancel_order` / `modify_order` / `get_order` | `remove` / `borrow_mut` / `borrow` by key; linear scans and the pop_back fast path are not forked |
-| `mid_price`, `get_level2_range_and_ticks` | keyed versions (`slice_before(key_high)` / `slice_following(key_low)`), preserving expiry-skip semantics |
+| `mid_price`, `get_level2_range_and_ticks` | ~~keyed versions (`slice_before(key_high)` / `slice_following(key_low)`), preserving expiry-skip semantics~~ — ported as planned, then **removed** from the coin path on 2026-09-15; see §9 deviation 5 |
 | `get_quantity_out` | **keep the triex fee math byte-for-byte** (quote-denominated fees, penalty multiplier, `quote_fee::fee_from_scaled_rate`); change only the iteration to a slice walk with the same `max_fills` counter and expiry behavior |
 | `find_order_index` | not forked (vector-only helper) |
 
@@ -277,7 +277,7 @@ New, delineated coin stack (all `public(package)` boundaries unchanged):
 | File | Notes |
 | --- | --- |
 | `sources/helper/big_vector.move` | Vendored verbatim from deepbookv3; only the module path and its two `use fun` aliases repointed. Header marks it frozen. |
-| `sources/coin_book/coin_book.move` | The rewrite. `BigVector<Order>` per side, per-side id allocators, keyed cancel/modify/get, slice-walk matching, level2 and mid-price. |
+| `sources/coin_book/coin_book.move` | The rewrite. `BigVector<Order>` per side, per-side id allocators, keyed cancel/modify/get, slice-walk matching. (Level2 and mid-price were ported, then removed — see §9 deviation 5.) |
 | `sources/coin_book/coin_order.move`, `coin_order_info.move`, `coin_fill.move` | Forks; `u128` order ids, otherwise line-for-line their originals. |
 | `sources/state/coin_account.move`, `coin_state.move` | Forks; `VecSet<u128>` open orders, `u128` refund ids. |
 | `sources/vault/coin_vault.move` | Fork; `u128` ids on the refund path. |
@@ -309,12 +309,26 @@ which kept their signatures.
    assert "order is gone" now expect `big_vector::ENotFound`. The multicoin book keeps
    code 8.
 3. **`iter_orders` anchor-miss behaviour changed.** The vector version fell back to the top
-   of the book and re-served page one when `start_order_id` named no live order; keyed
-   seeking finds nothing and returns an empty page. Better semantics — a stale cursor is a
-   caller error — but a visible API change, asserted in `coin_order_query_tests`.
+   of the book and re-served page one when `start_order_id` named no live order. Keyed
+   seeking never does that — but the "returns an empty page" claim first written here was
+   **wrong**, and the doc comment and test that asserted it were both corrected on
+   2026-09-15. `slice_before` / `slice_following` seek by *position*, not by presence: an
+   anchor that has been filled or cancelled resolves to the slot it would have occupied
+   and the page resumes from its neighbour. Only an anchor outside the side's key range
+   yields an empty page, which is what the original test (anchor `999`) actually pinned.
+   `test_stale_in_range_anchor_resumes_from_its_neighbour` now covers the real case.
    The exclusive-anchor contract is preserved on **both** sides: `slice_before` is already
    strictly-before for bids, and the ask path explicitly steps over an exact hit because
    `slice_following` is inclusive.
+5. **`mid_price` and `get_level2_range_and_ticks` were removed from the coin path**
+   (2026-09-15), along with the `pool::mid_price`, `pool::get_level2_range` and
+   `pool::get_level2_ticks_from_mid` wrappers and `constants::e_incorrect_mid_price`.
+   Neither view was reachable from any on-chain caller, and a sweep of the workspace —
+   `sdks/`, `triex-app-api`, `etl-api` — found no off-chain caller either: the app computes
+   its mid client-side from best bid/ask and sources the book from the ETL indexer. They
+   were also the two views that reported unfillable dust as real depth (see §10.3), so
+   removing them closed that defect by deletion. Multicoin keeps both. Re-adding a public
+   function later is a compatible upgrade if an integrator ever needs them.
 4. **`book.move` was touched after all**, comments only — verified by diffing the
    non-comment lines, which are byte-identical. 294 lines of commented-out BigVector code
    were deleted (they are now real code in `coin_book.move`, so keeping them was a drift
@@ -357,11 +371,15 @@ budget.
 
 ---
 
-## 10. Follow-up: the two gaps the DeepBook comparison surfaced
+## 10. Follow-up: the gaps the DeepBook comparison surfaced, and one it introduced
 
 A systematic comparison against DeepBook v3 (`../deepbookv3`, upstream `5f21dea8`) after the
-conversion landed turned up two defects worth fixing immediately. Both are pre-existing
-triex behaviour, not products of the BigVector work.
+conversion landed turned up two defects worth fixing immediately (§10.1, §10.2). Both were
+pre-existing triex behaviour, not products of the BigVector work.
+
+§10.3 is different in kind and worth reading as a cautionary note: it is a defect the §10.2
+fix *introduced*, caught in review before merge. The fix was right about which fills to
+refuse and wrong about how the caller should read that refusal.
 
 ### 10.1 The kill switch did not exist, in two independent ways
 
@@ -409,17 +427,21 @@ of the price, which self-sizes across the whole range:
 | 1e9 | 1.0 | 1 |
 | max_price | — | 1 |
 
-Two enforcement points:
-- `coin_order_info::match_maker` declines a **live** fill worth zero quote. Expiries are
-  exempt — they move no quote, they return the maker's own principal — which also keeps
-  expired orders reachable for cleanup behind a sub-bound remainder.
+Three enforcement points:
+- `coin_order_info::match_maker` declines a **live** fill worth zero quote, and reports
+  *why* via `MatchOutcome` so the book walk knows whether to stop or to step over — see
+  §10.3, where treating that refusal as terminal turned out to wedge the whole side.
+  Expiries are exempt: they move no quote, they return the maker's own principal.
 - `coin_order_info::validate_inputs` rejects a limit order below the bound at its own price,
   since it could never produce an acceptable fill and would rest as unfillable dust. Market
   orders are exempt: they match at each maker's price, not the sentinel they carry, and never
   rest. This reuses DeepBook's code 1, `EOrderBelowMinimumSize`.
+- `coin_order::modify` applies the same bound to the remainder a modify-down leaves
+  (added 2026-09-15). Checking only `original_quantity` at placement left one modify able
+  to park a healthy order below the bound; see §10.3.
 
-`coin_book::get_quantity_out` mirrors the refusal so a quote never promises a fill the matcher
-would decline.
+`coin_book::get_quantity_out` walks the same way the matcher does, so a quote never promises
+a fill the matcher would decline, nor hides liquidity the matcher would reach.
 
 **Deliberately *not* done: quantizing fills to a multiple of the bound.** The first attempt did,
 and `pool_quote_decimal_precision_tests::test_q6_fractional_price_fee_captured` caught it — a
@@ -428,9 +450,52 @@ shaved *normal* trades. Only the zero case is refused; the taker keeps a roundin
 one raw quote unit per fill, as in any fixed-point book. Escrow is safe either way, since
 sum-of-floors never exceeds the floor-of-sum a bid maker locked at placement.
 
-Seven tests in `tests/coin_book/coin_book_zero_quote_tests.move` pin the arithmetic, both
-enforcement points, the market-order path, and — importantly — that an ordinary fill is *not*
-truncated.
+Seven tests in `tests/coin_book/coin_book_zero_quote_tests.move` pin the arithmetic, the
+placement and match-time enforcement points, the market-order path, and — importantly — that
+an ordinary fill is *not* truncated. Eight more in `tests/coin_book/coin_book_dust_tests.move`
+cover the blocker case and the `modify` bound (§10.3).
+
+### 10.3 The zero-quote guard wedged the whole book side
+
+Found by review of PR #13 (`docs/reviews/pr-13-bigvector-coin-pools.md`) and fixed on
+2026-09-15. The guard added in §10.2 was correct about *what* to refuse and wrong about
+*what that means for the walk*.
+
+`match_maker` returned `false` for a zero-quote fill — the same `false` it returns when the
+price no longer crosses or the taker is filled — and `match_against_book` reads `false` as
+`break`. One resting order under the bound at the best price therefore made **every order
+behind it unreachable**: across all worse price levels, on both sides, for limit and market
+takers alike. Reproduced, and the repros now live in `coin_book_dust_tests.move`.
+
+It was reachable two ways. Accidentally, since nothing re-checked the *remaining* quantity
+after a partial fill — an ordinary taker leaving a sub-bound residue created a blocker.
+Deliberately and cheaply, since `modify` asserted only `filled < new < quantity`: rest a
+legal order inside the spread, modify it to 1 unit, and the side is dead for the cost of two
+transactions. With `expire_timestamp = max_u64` it never aged out, and only the attacker
+could cancel it.
+
+Three changes:
+
+1. **`match_maker` returns `MatchOutcome`** — `Filled` / `Skipped` / `Stopped` — instead of
+   a bool that meant both "this maker cannot trade" and "the book cannot trade". Only
+   `Stopped` ends the walk. Using a three-state type rather than a second bool is the point:
+   the overloading *was* the bug, so it is now unrepresentable.
+2. **A maker that can never fill again is retired on sight**, via the path an expiry already
+   takes: no quote moves, the maker's own principal is returned, the order leaves the book.
+   Skipping alone would have left a weaker wedge — `max_fills` is 100, so ~100 planted dust
+   orders would still exhaust every taker's budget permanently. The test is read off the
+   **maker's own remaining quantity**, never off the crossing amount; reading `matchable`
+   instead would let any taker arriving with a small residue evict a healthy resting order.
+   `a_healthy_maker_survives_a_taker_carrying_a_sub_bound_residue` pins that.
+3. **`coin_order::modify` re-applies the bound**, closing the deliberate route.
+
+`get_quantity_out` carried the identical `break` in both arms and was fixed in the same
+change — necessarily, not incidentally: fixing only the matcher would have created a
+dry-run/settlement divergence that did not previously exist, since the quote would
+under-report liquidity the matcher now fills straight through.
+
+The two views that reported such dust as real depth, `mid_price` and
+`get_level2_range_and_ticks`, were removed instead of fixed — see §9 deviation 5.
 
 ### Still open from the comparison
 

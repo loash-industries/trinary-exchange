@@ -21,12 +21,21 @@ module triex::coin_order_query {
     /// asks are keyed ascending and walked up from the bottom. Both therefore yield
     /// price-time priority.
     ///
-    /// `start_order_id` (if provided) acts as an **exclusive** anchor: iteration
-    /// starts at the order immediately after it in book order, so paging through
-    /// with the last id of the previous page never repeats it. Unlike the vector
-    /// implementation, an anchor that names no live order yields an empty page
-    /// rather than silently restarting from the top of the book — a stale id is a
-    /// caller error, not a request for page one.
+    /// `start_order_id` (if provided) acts as an **exclusive**, *positional* anchor:
+    /// iteration resumes at the first live order strictly past it in book order, so
+    /// paging with the last id of the previous page never repeats it.
+    ///
+    /// The anchor does not have to name a live order. `slice_before` /
+    /// `slice_following` seek by key, so an id that has since been filled or
+    /// cancelled resolves to the position it *would* have occupied and the page
+    /// continues from its neighbour. That is what a paginator wants — a cursor
+    /// stays usable when the order under it leaves the book — but it does mean a
+    /// stale cursor is served silently rather than reported. Callers that need to
+    /// detect staleness must track it themselves.
+    ///
+    /// An anchor outside the side's key range is the one case that yields an empty
+    /// page: there is no position past it to resume from. Unlike the vector
+    /// implementation, no anchor ever restarts from the top of the book.
     ///
     /// `end_order_id` (if provided) acts as a hard stop when encountered, and the
     /// order it names is not included.
