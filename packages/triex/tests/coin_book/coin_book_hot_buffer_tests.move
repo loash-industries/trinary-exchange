@@ -23,9 +23,10 @@ module triex::coin_book_hot_buffer_tests {
 
     const OWNER: address = @0x1;
 
-    /// Mirrors `coin_book::HOT_CAPACITY`, which is private. A test that silently
-    /// tracked a changed capacity would stop testing the boundary it names.
-    const HOT_CAPACITY: u64 = 16;
+    /// Mirror `coin_book`'s private buffer constants. A test that silently tracked
+    /// a changed capacity would stop testing the boundary it names.
+    const HOT_CAPACITY: u64 = 32;
+    const HOT_SPILL_TARGET: u64 = 24;
 
     fun scaling(): u64 { constants::float_scaling() }
 
@@ -111,17 +112,15 @@ module triex::coin_book_hot_buffer_tests {
             i = i + 1;
         };
 
-        // A drained buffer in front of a stocked tree would mean a refill was
-        // missed, and would let the next placement land on the wrong side of the
-        // seam.
+        // Note what is *not* asserted, and would be under a refilling design: that a
+        // stocked tree implies a stocked buffer. Spill is one-way, so the buffer
+        // legitimately sits empty in front of a full tree after a sweep, until a
+        // competitive quote arrives to repopulate it.
+        //
+        // The worst hot order still beats the best tree order. This is the whole
+        // invariant: it is what lets a side be read as buffer-then-tree.
         let tree = read_tree(book, is_bid);
-        if (hot.length() == 0) {
-            assert!(tree.length() == 0);
-            return
-        };
-
-        // The worst hot order still beats the best tree order.
-        if (tree.length() > 0) {
+        if (hot.length() > 0 && tree.length() > 0) {
             assert!(better(is_bid, hot[0].order_id(), tree[0]));
         };
 
@@ -231,29 +230,95 @@ module triex::coin_book_hot_buffer_tests {
     // === Draining across the seam ===
 
     #[test]
-    /// A taker that eats more than the buffer holds has to cross into the tree
-    /// mid-sweep and then refill behind itself.
-    fun sweep_past_the_buffer_refills_from_the_tree() {
+    /// A taker that eats more than the buffer holds crosses into the tree mid-sweep
+    /// and leaves nothing behind it. Under one-way spill that is the intended
+    /// outcome, not a missed refill: the side goes on being served straight from the
+    /// tree until a competitive quote rebuilds the buffer.
+    fun sweep_past_the_buffer_leaves_it_empty() {
+        let mut test = begin(OWNER);
+        let mut book = coin_book::empty(test.ctx());
+
+        // Deep enough that the buffer spills and a tree exists behind it.
+        let mut i = 0;
+        while (i < 60) {
+            rest(&mut book, price_at(59 - i), false);
+            i = i + 1;
+        };
+        assert_ordered(&book, false, 60);
+        let hot_before = book.hot_asks().length();
+        assert!(hot_before > 0);
+        assert!(book.asks().length() > 0);
+
+        // More orders than the buffer holds, so the walk has to leave it.
+        let taker = sweep(&mut book, price_at(59), hot_before + 4, true);
+        assert!(taker.executed_quantity() == qty() * (hot_before + 4));
+
+        assert_invariant(&book, false);
+        assert_ordered(&book, false, 60 - hot_before - 4);
+        // Emptied, and deliberately not repopulated.
+        assert!(book.hot_asks().length() == 0);
+        assert!(!book.asks().is_empty());
+
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// The buffer repopulates from ordinary quoting with no tree traffic at all —
+    /// the property that pays for removing the return path.
+    fun competitive_quotes_rebuild_the_buffer_without_touching_the_tree() {
         let mut test = begin(OWNER);
         let mut book = coin_book::empty(test.ctx());
 
         let mut i = 0;
-        while (i < 40) {
-            rest(&mut book, price_at(39 - i), false);
+        while (i < 60) {
+            rest(&mut book, price_at(59 - i), false);
             i = i + 1;
         };
-        assert_ordered(&book, false, 40);
+        let hot_before = book.hot_asks().length();
+        sweep(&mut book, price_at(59), hot_before, true);
+        assert!(book.hot_asks().length() == 0);
 
-        // Twenty orders is more than the buffer holds, so the walk leaves it.
-        let taker = sweep(&mut book, price_at(39), 20, true);
-        assert!(taker.executed_quantity() == qty() * 20);
+        let tree_after_sweep = book.asks().length();
+        let best_tree = read_tree(&book, false)[0];
+        let best_tree_px = book.get_order(best_tree).price();
 
-        assert_invariant(&book, false);
-        assert_ordered(&book, false, 20);
-        // The refill put the new best orders back in the buffer rather than
-        // leaving the side to be served from the tree.
-        assert!(book.hot_asks().length() > 0);
+        // Quote successively better than the tree's best; all of it lands inline.
+        let mut j = 1;
+        while (j <= HOT_CAPACITY) {
+            rest(&mut book, best_tree_px - j * scaling() / 4, false);
+            assert!(book.hot_asks().length() == j);
+            assert!(book.asks().length() == tree_after_sweep);
+            assert_invariant(&book, false);
+            j = j + 1;
+        };
 
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// Spill is gated on genuine overflow, so a buffer at capacity is what a run of
+    /// improving quotes settles at — not the spill target. Without the gate the
+    /// buffer is pinned at `HOT_SPILL_TARGET` and every placement past that depth
+    /// pays a tree insert.
+    fun spill_is_gated_on_real_overflow() {
+        let mut test = begin(OWNER);
+        let mut book = coin_book::empty(test.ctx());
+
+        let mut i = 0;
+        while (i < HOT_CAPACITY) {
+            rest(&mut book, price_at(i), true);
+            i = i + 1;
+        };
+        assert!(book.hot_bids().length() == HOT_CAPACITY);
+        assert!(book.bids().is_empty());
+
+        rest(&mut book, price_at(HOT_CAPACITY), true);
+        assert!(book.hot_bids().length() == HOT_SPILL_TARGET);
+        assert!(book.bids().length() == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+
+        assert_invariant(&book, true);
         book.drop_for_testing();
         test.end();
     }
@@ -333,29 +398,38 @@ module triex::coin_book_hot_buffer_tests {
     }
 
     #[test]
-    /// A side refilled to empty and then rebuilt: the placement path has to handle
-    /// a buffer that is empty while the tree is not, which is the one state where
-    /// it cannot tell from the buffer alone where a new order belongs.
+    /// A side swept to empty and then rebuilt. Depths are derived from
+    /// `HOT_CAPACITY` rather than written as literals: at a hardcoded 20 orders this
+    /// test stopped spilling the moment the buffer grew past that, and went on
+    /// passing while testing nothing about the seam it is named for.
     fun rebuilds_after_being_emptied() {
         let mut test = begin(OWNER);
         let mut book = coin_book::empty(test.ctx());
 
+        let deep = HOT_CAPACITY * 2;
         let mut i = 0;
-        while (i < 20) {
+        while (i < deep) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
-        let taker = sweep(&mut book, price_at(0), 20, false);
-        assert!(taker.executed_quantity() == qty() * 20);
+        // The build must actually have straddled the seam, or the rest proves
+        // nothing.
+        assert!(!book.bids().is_empty());
+
+        let taker = sweep(&mut book, price_at(0), deep, false);
+        assert!(taker.executed_quantity() == qty() * deep);
         assert!(book.side_is_empty(true));
 
+        let rebuild = HOT_CAPACITY + 8;
         let mut j = 0;
-        while (j < 25) {
+        while (j < rebuild) {
             rest(&mut book, price_at(j), true);
             assert_invariant(&book, true);
             j = j + 1;
         };
-        assert_ordered(&book, true, 25);
+        assert_ordered(&book, true, rebuild);
+        // And the rebuild straddled it too.
+        assert!(!book.bids().is_empty());
 
         book.drop_for_testing();
         test.end();
