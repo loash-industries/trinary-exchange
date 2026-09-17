@@ -66,21 +66,34 @@ module triex::coin_book {
     /// side means walking the buffer from its back and then continuing into the tree.
     /// `Cursor` is the only thing that needs to know this.
     ///
-    /// The two watermarks exist to stop the buffer thrashing against its own edges.
-    /// Held exactly *at* capacity, it would overflow on every top-of-book placement
-    /// and underflow on every cancel, paying a tree write each time — precisely the
-    /// cost it exists to avoid. Instead it floats between `HOT_REFILL_FLOOR` and
-    /// `HOT_CAPACITY` and only rebalances when it leaves that band, so a run of churn
-    /// at the inside market touches the tree once and then not at all.
-    const HOT_CAPACITY: u64 = 16;
+    /// **Spill is one-way.** Orders leave the buffer for the tree on overflow and
+    /// never travel back; the tree drains in place through matching and cancels, and
+    /// the buffer repopulates on its own, because any newly posted order at a
+    /// competitive price beats the tree's best key and is admitted inline. This
+    /// matches `triex::book`, and for the same reason: refill-on-drain makes every
+    /// sweep that empties the buffer pay tree *removals* to repopulate it, and the
+    /// repopulated buffer then re-spills on the placements that follow — paying twice
+    /// for one sweep. Removing the return path was the largest single improvement in
+    /// the multicoin storage experiment (42–47% off a 10-order sweep).
+    ///
+    /// It matters more here than the headline suggests. With the buffer cycling
+    /// between `HOT_SPILL_TARGET` and `HOT_CAPACITY` rather than sitting pinned at
+    /// capacity, an ordinary taker consuming a handful of makers off a
+    /// freshly-spilled buffer used to drop it under the old refill floor — and
+    /// measured mainnet coin flow is 98% takers of five makers or fewer, so that
+    /// was the common case, not the tail.
+    const HOT_CAPACITY: u64 = 32;
 
-    /// On overflow, spill down to here rather than back to `HOT_CAPACITY`, leaving
-    /// headroom for the placements that follow.
-    const HOT_SPILL_TARGET: u64 = 12;
-
-    /// On draining to here, refill to `HOT_CAPACITY` in one batch, so a taker sweep
-    /// pays one tree descent per batch rather than one per order consumed.
-    const HOT_REFILL_FLOOR: u64 = 8;
+    /// On genuine overflow, spill down to here rather than back to `HOT_CAPACITY`,
+    /// leaving headroom for the placements that follow. Held exactly *at* capacity
+    /// the buffer would spill on every top-of-book placement, paying a tree write
+    /// each time — precisely the cost it exists to avoid.
+    ///
+    /// The gap to capacity sets how *lumpy* spilling is, not how much it costs: a
+    /// run of new-best placements pays one tree insert per placement amortised for
+    /// any gap, but a wider gap concentrates them into rarer, larger batches. Eight
+    /// keeps the same proportion `triex::book` uses at capacity 16.
+    const HOT_SPILL_TARGET: u64 = 24;
 
     /// === Structs ===
     public struct Book has store {
@@ -430,14 +443,13 @@ module triex::coin_book {
         }
     }
 
-    /// Cancels an order given order_id
+    /// Cancels an order given order_id.
+    ///
+    /// Nothing refills the buffer behind the removal: spill is one-way, and a
+    /// drained buffer repopulates from the next competitively-priced placement.
     /// #ref:order_cancel
     public(package) fun cancel_order(self: &mut Book, order_id: u128): Order {
-        let (is_bid, _, _) = utils::decode_order_id(order_id);
-        let order = self.remove_order(order_id);
-        self.top_up(is_bid);
-
-        order
+        self.remove_order(order_id)
     }
 
     /// Modifies an order given order_id and new_quantity.
@@ -557,38 +569,6 @@ module triex::coin_book {
         };
     }
 
-    /// Refill a drained hot buffer from the tree, in one batch up to `HOT_CAPACITY`.
-    /// A no-op until the buffer falls below `HOT_REFILL_FLOOR`, so the ordinary
-    /// place-and-cancel cycle at the inside market never reaches the tree at all.
-    fun top_up(self: &mut Book, is_bid: bool) {
-        let mut len = if (is_bid) self.hot_bids.length() else self.hot_asks.length();
-        if (len >= HOT_REFILL_FLOOR) return;
-
-        // The buffer is worst-first and everything pulled below is worse than all of
-        // it, so the orders belong at the front. Reversing to best-first lets them be
-        // appended instead, at two O(HOT_CAPACITY) reverses rather than a memmove per
-        // order.
-        if (is_bid) self.hot_bids.reverse() else self.hot_asks.reverse();
-        while (len < HOT_CAPACITY) {
-            let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
-            if (cold_empty) break;
-
-            // The tree's own best order. Its key is its id, so reading it needs no
-            // separate key lookup.
-            let key = if (is_bid) {
-                let (r, o) = self.bids.max_slice();
-                slice_borrow(self.bids.borrow_slice(r), o).order_id()
-            } else {
-                let (r, o) = self.asks.min_slice();
-                slice_borrow(self.asks.borrow_slice(r), o).order_id()
-            };
-            let order = if (is_bid) self.bids.remove(key) else self.asks.remove(key);
-            if (is_bid) self.hot_bids.push_back(order) else self.hot_asks.push_back(order);
-            len = len + 1;
-        };
-        if (is_bid) self.hot_bids.reverse() else self.hot_asks.reverse();
-    }
-
     /// Access side of book where order_id belongs. The side is carried in the
     /// id's top bit, so no lookup is needed to route by it.
     fun book_side(self: &Book, order_id: u128): &BigVector<Order> {
@@ -631,10 +611,6 @@ module triex::coin_book {
                 self.remove_order(fill.maker_order_id());
             };
         });
-        // One batched refill for the whole sweep. Doing it inside the loop above
-        // would pay a tree descent per order consumed, which is what the buffer is
-        // here to avoid.
-        self.top_up(maker_is_bid);
 
         if (current_fills == max_fills) {
             order_info.set_fill_limit_reached();
@@ -667,13 +643,25 @@ module triex::coin_book {
             if (cold_empty) {
                 // First order on this side.
                 if (is_bid) self.hot_bids.push_back(order) else self.hot_asks.push_back(order);
+                return
+            };
+
+            // Buffer drained but the tree is not. Spill is one-way, so the only way
+            // to hold the hot-over-tree invariant is to admit inline exactly those
+            // orders that beat the whole tree, and send the rest behind it. Reading
+            // the tree's best key is the one structural cost of removing the return
+            // path, and it prices as computation.
+            let best_cold = if (is_bid) {
+                let (r, o) = self.bids.max_slice();
+                slice_borrow(self.bids.borrow_slice(r), o).order_id()
             } else {
-                // Buffer drained but the tree is not: the new order cannot be placed
-                // in the buffer without knowing whether it beats what is still in the
-                // tree, so it goes to the tree and the refill sorts out which orders
-                // belong in front.
+                let (r, o) = self.asks.min_slice();
+                slice_borrow(self.asks.borrow_slice(r), o).order_id()
+            };
+            if (better(is_bid, key, best_cold)) {
+                if (is_bid) self.hot_bids.push_back(order) else self.hot_asks.push_back(order);
+            } else {
                 if (is_bid) self.bids.insert(key, order) else self.asks.insert(key, order);
-                self.top_up(is_bid);
             };
             return
         };
