@@ -29,7 +29,7 @@ module triex::order_info {
         // ID of the pool
         pool_id: ID,
         // ID of the order within the pool
-        order_id: u64,
+        order_id: u128,
         // ID of the account the order uses
         trading_account_id: ID,
         // Trader of the order
@@ -82,8 +82,8 @@ module triex::order_info {
     /// Emitted when a maker order is filled.
     public struct OrderFilled has copy, drop, store {
         pool_id: ID,
-        maker_order_id: u64,
-        taker_order_id: u64,
+        maker_order_id: u128,
+        taker_order_id: u128,
         price: u64,
         taker_is_bid: bool,
         taker_fee: u64,
@@ -99,7 +99,7 @@ module triex::order_info {
     public struct OrderPlaced has copy, drop, store {
         trading_account_id: ID,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trader: address,
         price: u64,
         is_bid: bool,
@@ -117,7 +117,7 @@ module triex::order_info {
     public struct OrderExpired has copy, drop, store {
         trading_account_id: ID,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trader: address, // trader that expired the order
         price: u64,
         is_bid: bool,
@@ -131,14 +131,14 @@ module triex::order_info {
     #[test_only]
     /// Fields of an `OrderExpired` for tests asserting the fee split reported on
     /// the expiry matches the refund the vault emitted.
-    public fun expired_event_parts(self: &OrderExpired): (u64, u64, u64) {
+    public fun expired_event_parts(self: &OrderExpired): (u128, u64, u64) {
         (self.order_id, self.fee_refunded, self.fee_retained)
     }
 
     /// Emitted when an order is fully filled.
     public struct OrderFullyFilled has copy, drop, store {
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         original_quantity: u64,
         is_bid: bool,
@@ -150,7 +150,7 @@ module triex::order_info {
         self.pool_id
     }
 
-    public fun order_id(self: &OrderInfo): u64 {
+    public fun order_id(self: &OrderInfo): u128 {
         self.order_id
     }
 
@@ -280,7 +280,7 @@ module triex::order_info {
         self.market_order
     }
 
-    public(package) fun set_order_id(self: &mut OrderInfo, order_id: u64) {
+    public(package) fun set_order_id(self: &mut OrderInfo, order_id: u128) {
         self.order_id = order_id;
     }
 
@@ -576,7 +576,7 @@ module triex::order_info {
 
     public(package) fun emit_order_fully_filled(
         self: &OrderInfo,
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         original_quantity: u64,
         is_bid: bool,

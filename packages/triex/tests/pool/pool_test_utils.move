@@ -10,7 +10,6 @@ module triex::pool_test_utils {
     };
     use token::cred::CRED;
     use triex::{
-        big_vector::{BigVector, borrow as borrow},
         coin_book,
         coin_fill::Fill,
         coin_order::{Self, Order},
@@ -762,7 +761,7 @@ module triex::pool_test_utils {
     /// to be truncated to whole basis points on the way in, so a sub-basis-point
     /// maker rate collected nothing at all, and a fractional taker rate made
     /// `get_quantity_out` disagree with what actually settled.
-    public(package) fun test_fractional_basis_point_fees_are_charged_as_configured() {
+    public(package) fun test_single_basis_point_fees_are_charged_as_configured() {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -782,17 +781,19 @@ module triex::pool_test_utils {
             &mut test,
         );
 
-        // Taker 1.5 bp, maker 0.5 bp: both legal (multiples of the 0.01 bp fee
-        // step, taker above its 1 bp floor), neither a whole basis point.
-        set_next_epoch_fee_for_testing<USDC>(150_000, 50_000, 2000, &mut test);
+        // Taker 3 bp, maker 1 bp: the finest rates the schedule admits, now that
+        // `FEE_MULTIPLE` is a whole basis point. Both sit just above the 1 bp
+        // taker floor, so this still exercises the small-rate arithmetic the
+        // fractional case used to.
+        set_next_epoch_fee_for_testing<USDC>(300_000, 100_000, 2000, &mut test);
         test.next_epoch(OWNER);
 
         let price = 2 * constants::float_scaling();
         let quantity = 100 * constants::float_scaling();
         let notional = 200 * constants::float_scaling();
-        // On 200 quote: maker 0.5 bp = 0.01, taker 1.5 bp = 0.03
-        let maker_fee = constants::float_scaling() / 100;
-        let taker_fee = 3 * constants::float_scaling() / 100;
+        // On 200 quote: maker 1 bp = 0.02, taker 3 bp = 0.06
+        let maker_fee = 2 * constants::float_scaling() / 100;
+        let taker_fee = 6 * constants::float_scaling() / 100;
 
         // Alice rests a bid: her escrow is the configured 0.5 bp, not zero.
         place_limit_order<SUI, USDC>(
@@ -5668,9 +5669,10 @@ module triex::pool_test_utils {
         assert!(fill.maker_fee() >= 0, constants::e_fill_mismatch());
     }
 
-    /// Helper, borrow orderbook and verify an order. The order id is its own
-    /// `BigVector` key, so this is a direct O(log n) borrow rather than the index
-    /// scan the vector book needed.
+    /// Helper, read an order out of the book and verify it. Goes through
+    /// `pool::get_order` rather than straight at the `BigVector`, because a side now
+    /// spans two stores and its best orders are in the inline buffer, not the tree.
+    /// `is_bid` is vestigial: the side is carried in the id's own top bit.
     public(package) fun borrow_and_verify_book_order<BaseAsset, QuoteAsset>(
         pool_id: ID,
         book_order_id: u128,
@@ -5684,9 +5686,10 @@ module triex::pool_test_utils {
     ) {
         test.next_tx(@0x1);
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        let order: &Order = borrow_orderbook(&pool, is_bid).borrow(book_order_id);
+        assert_side(book_order_id, is_bid);
+        let order = pool.get_order(book_order_id);
         verify_book_order(
-            order,
+            &order,
             book_order_id,
             quantity,
             filled_quantity,
@@ -5698,8 +5701,8 @@ module triex::pool_test_utils {
         return_shared(pool);
     }
 
-    /// Internal function to borrow orderbook to ensure order exists. Aborts inside
-    /// `BigVector` with `ENotFound` if the id is not on the given side.
+    /// Internal function to read an order to ensure it exists. Still aborts inside
+    /// `BigVector` with `ENotFound` when the id is on neither store of its side.
     public(package) fun borrow_order_ok<BaseAsset, QuoteAsset>(
         pool_id: ID,
         book_order_id: u128,
@@ -5708,8 +5711,17 @@ module triex::pool_test_utils {
     ) {
         test.next_tx(@0x1);
         let pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-        borrow_orderbook(&pool, is_bid).borrow(book_order_id);
+        assert_side(book_order_id, is_bid);
+        pool.get_order(book_order_id);
         return_shared(pool);
+    }
+
+    /// `get_order` routes by the id's own side bit and ignores the caller's claim
+    /// about it, so keep checking that claim here — the old helper borrowed the named
+    /// side directly and would abort on a mismatch.
+    fun assert_side(book_order_id: u128, is_bid: bool) {
+        let (id_is_bid, _, _) = triex::utils::decode_order_id(book_order_id);
+        assert!(id_is_bid == is_bid, constants::e_book_order_mismatch());
     }
 
     /// Internal function to verifies an order in the book
@@ -5728,19 +5740,6 @@ module triex::pool_test_utils {
         assert!(order.epoch() == epoch, constants::e_book_order_mismatch());
         assert!(order.status() == status, constants::e_book_order_mismatch());
         assert!(order.expire_timestamp() == expire_timestamp, constants::e_book_order_mismatch());
-    }
-
-    /// Internal function to borrow orderbook
-    fun borrow_orderbook<BaseAsset, QuoteAsset>(
-        pool: &Pool<BaseAsset, QuoteAsset>,
-        is_bid: bool,
-    ): &BigVector<Order> {
-        let orderbook = if (is_bid) {
-            pool.load_inner().bids()
-        } else {
-            pool.load_inner().asks()
-        };
-        orderbook
     }
 
     // used for logging debugs
@@ -9466,8 +9465,8 @@ module triex::pool_test_utils {
         let mut t = 0;
         while (t < tiers) {
             min_turnovers.push_back((t as u128) * 1_000_000_000_000_000);
-            taker_fees.push_back(22_000_000 - (t * 1000));
-            maker_fees.push_back(18_000_000 - (t * 1000));
+            taker_fees.push_back(22_000_000 - (t * 100_000));
+            maker_fees.push_back(18_000_000 - (t * 100_000));
             t = t + 1;
         };
 

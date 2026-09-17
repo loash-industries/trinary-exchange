@@ -157,7 +157,7 @@ module triex::integration_hub_revenue_share_tests {
         price: u64,
         qty: u64,
         test: &mut Scenario,
-    ): (u64, u64, u64) {
+    ): (u128, u64, u64) {
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -218,7 +218,7 @@ module triex::integration_hub_revenue_share_tests {
         return_shared(pool);
     }
 
-    fun cancel_the_order(pool_id: ID, ta_id: ID, order_id: u64, test: &mut Scenario) {
+    fun cancel_the_order(pool_id: ID, ta_id: ID, order_id: u128, test: &mut Scenario) {
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -248,7 +248,7 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// The same, by explicit id list — the other batch entry point.
-    fun cancel_these_orders(pool_id: ID, ta_id: ID, order_ids: vector<u64>, test: &mut Scenario) {
+    fun cancel_these_orders(pool_id: ID, ta_id: ID, order_ids: vector<u128>, test: &mut Scenario) {
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();

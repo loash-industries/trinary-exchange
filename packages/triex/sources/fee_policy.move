@@ -36,7 +36,11 @@ module triex::fee_policy {
     const EUnauthorizedAdapter: u64 = 10;
 
     // === Constants ===
-    const FEE_MULTIPLE: u64 = 1000; // 0.01 basis points
+    /// Rates are quoted in whole basis points. The scaled representation is finer
+    /// than that, but nothing is allowed to use the extra resolution: a resting
+    /// order stores its snapshotted maker rate in basis points, and a whole-bp
+    /// floor is what lets that field be a `u16` across the full 0–100% range.
+    const FEE_MULTIPLE: u64 = 100000; // 1 basis point
     const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
     // Maker rates may be zero; only takers keep a floor. The caps bound what the
     // admin can ever set.
@@ -50,9 +54,9 @@ module triex::fee_policy {
     // === Genesis ladder ===
     // Launch pricing, written by `bootstrap_quote`. Eight tiers, hand-specified
     // rather than derived from a single discount formula — each column decreases
-    // on its own curve, rounded to the nearest 0.01% (still a `FEE_MULTIPLE`
-    // multiple, and two orders of magnitude finer than the floor it needs to
-    // clear). Multicoin prices at exactly double the coin-pool entry rate — that
+    // on its own curve, rounded to the nearest 0.01% — one basis point, which is
+    // exactly `FEE_MULTIPLE` and the finest rate the schedule admits.
+    // Multicoin prices at exactly double the coin-pool entry rate — that
     // relationship is deliberate and pinned by a test — but the two ladders are
     // not proportional tier-for-tier above the entry rung; each rate above tier 0
     // was chosen independently.

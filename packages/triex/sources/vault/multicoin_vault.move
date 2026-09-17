@@ -498,7 +498,7 @@ module triex::multicoin_vault {
     public(package) fun unlock_quote_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         amount: u64,
         timestamp: u64,

@@ -7,7 +7,7 @@ module triex::fill {
     /// It is used to update the state.
     public struct Fill has copy, drop, store {
         // ID of the maker order
-        maker_order_id: u64,
+        maker_order_id: u128,
         // Execution price
         execution_price: u64,
         // account_id of the maker order
@@ -38,7 +38,7 @@ module triex::fill {
     }
 
     // === Public-View Functions ===
-    public fun maker_order_id(self: &Fill): u64 {
+    public fun maker_order_id(self: &Fill): u128 {
         self.maker_order_id
     }
 
@@ -96,7 +96,7 @@ module triex::fill {
 
     // === Public-Package Functions ===
     public(package) fun new(
-        maker_order_id: u64,
+        maker_order_id: u128,
         execution_price: u64,
         trading_account_id: ID,
         expired: bool,

@@ -6,7 +6,7 @@
 /// seeking to an anchor is O(log n) rather than the linear scan the vector book
 /// needed.
 module triex::coin_order_query {
-    use triex::{big_vector::slice_borrow, coin_order::Order, pool::Pool};
+    use triex::{coin_order::Order, pool::Pool};
 
     /// === Structs ===
     public struct OrderPage has drop {
@@ -37,6 +37,10 @@ module triex::coin_order_query {
     /// page: there is no position past it to resume from. Unlike the vector
     /// implementation, no anchor ever restarts from the top of the book.
     ///
+    /// The walk runs on `coin_book::Cursor`, which spans the inline top-of-book
+    /// buffer and the `BigVector` behind it as one sequence, so a page that starts at
+    /// the best price reads no dynamic field until it runs past the buffer.
+    ///
     /// `end_order_id` (if provided) acts as a hard stop when encountered, and the
     /// order it names is not included.
     public fun iter_orders<BaseAsset, QuoteAsset>(
@@ -47,9 +51,8 @@ module triex::coin_order_query {
         limit: u64,
         bids: bool,
     ): OrderPage {
-        let self = self.load_inner();
-        let side = if (bids) self.bids() else self.asks();
-        if (side.is_empty() || limit == 0) {
+        let book = self.load_inner().book();
+        if (book.side_is_empty(bids) || limit == 0) {
             return OrderPage { orders: vector[], has_next_page: false }
         };
 
@@ -64,26 +67,15 @@ module triex::coin_order_query {
         let end = end_order_id.get_with_default(0);
         let min_expire = min_expire_timestamp.get_with_default(0);
 
-        let (mut ref, mut offset) = if (bids) {
-            side.slice_before(start)
-        } else {
-            side.slice_following(start)
-        };
-        // `slice_before` is already strictly-before, but `slice_following` is
-        // inclusive, so an exact anchor hit on the ask side has to be stepped over
-        // to keep the anchor exclusive on both sides.
-        if (!bids && !ref.is_null()) {
-            let landed = slice_borrow(side.borrow_slice(ref), offset);
-            if (landed.order_id() == start) {
-                (ref, offset) = side.next_slice(ref, offset);
-            };
-        };
+        // Exclusive on both sides: `cursor_after` lands on the first order strictly
+        // worse than the anchor.
+        let mut cur = book.cursor_after(bids, start);
 
         let mut orders = vector[];
         let mut stopped_by_end = false;
 
-        while (!ref.is_null() && orders.length() < limit) {
-            let order = slice_borrow(side.borrow_slice(ref), offset);
+        while (!cur.cursor_is_null() && orders.length() < limit) {
+            let order = book.cursor_borrow(bids, &cur);
 
             if (end != 0 && order.order_id() == end) {
                 stopped_by_end = true;
@@ -94,16 +86,12 @@ module triex::coin_order_query {
                 orders.push_back(order.copy_order());
             };
 
-            (ref, offset) = if (bids) {
-                side.prev_slice(ref, offset)
-            } else {
-                side.next_slice(ref, offset)
-            };
+            cur = book.cursor_next(bids, cur);
         };
 
         // The walk advances past the last order it took, so a non-null cursor here
         // means the limit was what stopped it and more orders remain.
-        let has_next_page = !stopped_by_end && !ref.is_null();
+        let has_next_page = !stopped_by_end && !cur.cursor_is_null();
 
         OrderPage { orders, has_next_page }
     }
