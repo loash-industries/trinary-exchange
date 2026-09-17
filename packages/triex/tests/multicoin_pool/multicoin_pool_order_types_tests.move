@@ -1340,7 +1340,7 @@ module triex::integration_multicoin_pool_order_types_tests {
 
     // === Self-Matching Cancel Maker Tests ===
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_self_matching_cancel_maker_bid_e() {
         let mut test = begin(OWNER);
 
@@ -1452,7 +1452,7 @@ module triex::integration_multicoin_pool_order_types_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_self_matching_cancel_maker_ask_e() {
         let mut test = begin(OWNER);
 

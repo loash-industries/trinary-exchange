@@ -1,0 +1,344 @@
+  <!-- ============ 11 ============ -->
+  <section id="s11">
+    <div class="sec-h"><span class="sec-n">11</span><h2>Appendix B — Cost curves by book size and rank</h2></div>
+    <div class="prose">
+      <p>The campaign in §4–§7 samples book depth to 300 and holds the operation at top of book
+      or at rank 28. This appendix separates the two dimensions and pushes both much further
+      out: <em class="term">how deep is the book</em>, and
+      <em class="term">how far into it does this operation reach</em>. It answers directly what
+      §7 answers only in aggregate — which layout is right for which market — and it revises
+      one of the eight findings, because at this resolution the inline buffer turns out to earn
+      much less on churn than the weighted composites suggested.</p>
+
+      <h3><span class="h3n">B.1</span>Method</h3>
+      <p>One pool per design. The ask side is grown in place through five size classes —
+      <b>tiny 8</b>, <b>small 48</b>, <b>medium 128</b>, <b>large 512</b>, <b>xl 2,048</b>
+      standing orders — and at every size a dedicated prober account places one limit order at
+      rank <code>n</code> and then cancels it, so the book returns to its exact prior shape.
+      Seeded asks use a price stride of 10, which leaves room to place a probe at
+      <em class="term">any</em> rank without colliding with a seeded price. Rank 1 is top of
+      book, a new best ask. Nothing crosses, so no fills are involved: this isolates the insert
+      and cancel paths from matching entirely.</p>
+      <p>Ranks probed: 1, 4, 8, 16, 32, 48, 64, 80, 100, 128, 156, 256, 300, 512, 816, 1,024,
+      1,516 and 2,048, at every class large enough to hold them — 51 cells per design, three
+      repetitions each, two operations per repetition, one transaction per operation.
+      <strong>2,448 measured transactions</strong> across the two build orders below. Every
+      number is read from a transaction's own <code>effects.gasUsed</code>; the tabulated value
+      is the median of repetitions 2 and 3, because the first touch of a given price by the
+      prober carries one-off growth in its account map.</p>
+      <p>Two metrics, both per operation:</p>
+      <dl class="deflist">
+        <dt>net storage</dt>
+        <dd><code>storageCost − storageRebate</code> — the storage deposit that moves in this
+        transaction. <span class="q">Positive</span> on an insert, because the object written is
+        larger than the one it replaces; <span class="q">negative</span> on a cancel, because
+        the deposit comes back. The two do not cancel exactly, and the residue is the burned
+        fee.</dd>
+        <dt>computation</dt>
+        <dd><code>computationCost</code> — execution. Never rebated, and quantised into
+        10,000-MIST buckets, so every difference visible below is a resolved measurement rather
+        than an estimate.</dd>
+      </dl>
+
+      <h3><span class="h3n">B.2</span>Two build orders, because buffer occupancy is path-dependent</h3>
+      <p>A property this grid surfaced and the §4–§7 campaign could not: under unidirectional
+      spill the inline buffer's occupancy depends on the order in which the book was assembled,
+      and that difference is worth more than any parameter choice.</p>
+      <p>An order is admitted to the buffer only if it beats the buffer's worst resident. So if
+      a book is built by quoting successively <em class="term">better</em> prices — the normal
+      competitive case — every new order enters the buffer and pushes the buffer's worst down
+      into the tree, and the buffer settles holding the best twelve to sixteen orders. But if a
+      book is built outward from one anchor quote, each new order successively
+      <em class="term">worse</em> than the last, then nothing ever beats the buffer's worst,
+      every order goes straight to the tree, and the buffer never grows past its first member.
+      Both are real market paths, so the grid is run twice and the two runs bracket the
+      behaviour of any cached design.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th class="label">Build</th><th class="label">Buffer ends holding</th>
+            <th>C16u burn, rank 1</th><th>C16u burn, rank 32</th></tr></thead>
+          <tbody>
+            <tr><td class="label"><b>best-price-last</b> — each quote improves the best</td>
+              <td class="label">the best 12–16 orders</td><td>260,832</td><td>350,436</td></tr>
+            <tr><td class="label"><b>worst-price-last</b> — each quote sits behind the last</td>
+              <td class="label">one order</td><td>175,104</td><td>264,708</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="tnote">Depth 2,048, MIST. The direction is the one §6 F5 predicts: inline orders
+      are rewritten on every operation, so a populated buffer costs about 85,000 MIST more per
+      operation and earns it back only where it keeps the operation out of a dynamic field. Use
+      the control above the figures to switch between the two. Figures quoted in the text are
+      the best-price-last build, the shape a contested two-sided book settles into.</p>
+
+      <h3><span class="h3n">B.3</span>What the curves show</h3>
+      <ol class="findings">
+        <li><b>Book depth is the only thing that matters — and only for the flat vector.</b>
+          A top-of-book insert into the flat vector burns 208,544 MIST at depth 8 and
+          <strong>13,542,060 at depth 2,048</strong>: a straight line at 6,536 MIST per standing
+          order, the same slope as the 6,710 fitted over depths 5–300 in §6, now confirmed
+          nearly seven times further out. Fitted over the same five sizes the keyed designs come
+          out at 7, 0 and 59 MIST per order — flat, and flat in the strong sense that most of
+          their cells are bit-identical across a 256-fold change in book size. Figure 6 is the
+          argument for keyed storage in one picture: on log–log axes a cost proportional to
+          depth is a straight diagonal, and a cost independent of depth is a horizontal
+          line.</li>
+
+        <li><b>Rank inside the book is nearly free information.</b>
+          Moving the operation from rank 1 to rank 2,048 of a 2,048-deep flat book changes its
+          burned fee by 0.2%, because the object is rewritten whole wherever the order lands.
+          For the keyed designs rank matters in exactly one place: the step where the order
+          stops landing in the inline buffer and starts landing in a <code>BigVector</code>
+          slice. For C16u that step sits between rank 8 and rank 32 and is worth
+          <strong>89,604 MIST per operation</strong>; for D64u it sits between rank 48 and
+          rank 80. Everywhere else both are flat lines. This is the practical content of
+          <em class="term">interaction depth</em>: a layout only has to be fast where orders
+          actually land, and Figure 9 shows what getting that one boundary right is worth.</li>
+
+        <li><b>In a flat book deeper than about 85 orders, cancelling stops being a refund and
+          becomes a charge.</b>
+          Net storage on a top-of-book cancel is −498,712 MIST at depth 8 — money back, which is
+          what deleting an order ought to do — and <strong>+12,834,804 at depth 2,048</strong>.
+          The non-refundable slice is levied on the whole rewritten object, so past a certain
+          depth it exceeds the deposit released by removing one order. Every keyed design
+          refunds at every depth. This is the sharpest form of the cost-shape problem in §1: on
+          a deep flat book a maker cannot withdraw a quote without paying for all the depth
+          standing behind it, which turns quoting into a one-way ratchet.</li>
+
+        <li><b>Computation has the same shape an order of magnitude smaller, so away from
+          matching this is a storage decision.</b>
+          The flat vector's insert computation rises from 1.72M to 2.13M MIST between depth 8
+          and 2,048 — 203 MIST per standing order, matching the 209 fitted in §6 — while the
+          keyed designs hold flat at 1.76M. Against storage differences of millions these are
+          differences of hundreds of thousands: the keyed designs are 2.3% more expensive on
+          computation at depth 8 and 17.4% cheaper at depth 2,048, crossing near depth 100–150,
+          while storage crosses between depth 8 and 48. The computation blow-up of §6 F4(c) is
+          a property of the multi-fill sweep path, not of single-order operations, and this grid
+          is where that becomes unambiguous.</li>
+
+        <li><b>Revision to §6 F5: on churn alone the 16-order buffer is close to cost-neutral,
+          not positive.</b>
+          At rank 1 the buffer saves a slice write worth 89,604 MIST — and the twelve to
+          sixteen inline orders it is holding cost 92,872 MIST to rewrite, on
+          <em class="term">every</em> operation including the ones that never touch them. The
+          two almost exactly cancel: at depth 2,048 the bare tree burns 257,564 per top-of-book
+          insert against C16u's 260,832, and at every deeper rank the bare tree is
+          <em class="term">cheaper</em>, 257,564 against 350,436. Per inline order that tax is
+          7,144 MIST, which is the same ~7.1k §6 F5 measured independently — the grid confirms
+          the mechanism and then shows that the benefit it was supposed to buy is, for pure
+          insert and cancel traffic, approximately zero.
+          <br><br>
+          This does not move §7's decision, and it is worth being precise about why. C16u's
+          margin over the bare tree was never on churn: it is on sweeps, where refill-free
+          draining cuts a ten-order taker by 42–47% (§6 F6, Figure 3), and on construction,
+          where spill batching beats it (§6 F8). What the grid removes is a churn benefit that
+          the weighted composites appeared to credit but which does not survive being resolved
+          per-rank. The correct statement is that a small buffer is
+          <em class="term">free</em> on churn and valuable on matching.</li>
+
+        <li><b>A large buffer is unambiguously bad, at every rank and every size.</b>
+          §6 F5 refuted the brief's 28–30 sizing using weighted composites; the grid shows it
+          pointwise, which is a stronger claim. D64u's <em class="term">cheapest</em> operation
+          — a buffer hit — burns 546,592 MIST at depth 2,048, which is 1.56× C16u's
+          <em class="term">most expensive</em> one, a tree write at 350,436, and 2.12× the bare
+          tree's 257,564. Thirty inline orders are rewritten on every operation whether or not
+          it touches them, and the extra eighteen ranks of coverage never repay that. There is
+          no rank and no book size in the grid where the 64-order buffer is the better
+          choice.</li>
+
+        <li><b>The buffer boundary carries a spill transaction, and it is cheap.</b>
+          Inserting exactly at the buffer's edge pushes it over capacity and pays the spill in
+          the same transaction: C16u's rank-16 insert burns 375,516 MIST against 350,436 for an
+          ordinary tree write, and D64u's rank-64 insert 661,276 against 636,196. A 7% and 4%
+          surcharge respectively, on one rank. That is the migration cost §6 F7 declined to
+          amortise, now visible as a single point on a curve rather than as a maximum over a
+          construction run.</li>
+
+        <li><b>The flat vector does have one O(1) operation, and it buys nothing.</b>
+          Switch Figure 10 to <span class="q">computation</span> and row A's two deepest panels
+          are the only place in the grid with real structure. Cancelling at rank 1 costs
+          2,110,000 MIST against 2,560,000 at rank 4 — a 450,000 discontinuity — because
+          <code>cancel_order</code> carries an explicit fast path that <code>pop_back</code>s
+          the best price in constant time rather than scanning for it. Past that rank the cancel
+          curve declines mildly (2,560,000 down to 2,360,000 at rank 2,048) while the insert
+          curve rises mildly (2,130,000 up to 2,310,000): the O(n) position scan and the O(n)
+          element shift trade off against each other in opposite directions as the operation
+          moves deeper into the book. All of that is ±10% on a quantity where the same operation
+          is paying <strong>13.5M MIST of storage</strong> — a genuine constant-time path, on
+          the axis that does not decide anything. It is the tidiest illustration of this
+          report's thesis: the complexity that matters on Sui is the cost of the bytes you
+          rewrite, not the steps you execute.</li>
+      </ol>
+
+      <h3><span class="h3n">B.4</span>Which design for which market</h3>
+      <div class="tbl">
+        <div class="tbl-head"><span class="tbl-n">Table B1</span>
+          <p class="tbl-t">Permanent cost of one place-and-cancel round trip at top of book</p></div>
+        <div class="scroll"><table id="t-ladder-rt"></table></div>
+        <p class="tnote">Round trip = <code>computation + burned</code> summed over one insert
+        and one cancel at rank 1 — the part of the bill that never comes back, in MIST. Green
+        marks the cheapest design in each row. C16u and D64u are the only designs whose rows
+        differ between the two build orders, because only they have a buffer whose occupancy the
+        build order can change.</p>
+      </div>
+      <p>Read down the flat-vector column. It is cheapest in exactly one row — the tiny class,
+      by <strong>2.9%</strong> — and from the small class onward it loses monotonically: 1.08×
+      at 48, 1.35× at 128, 2.65× at 512 and <strong>7.77×</strong> at 2,048, where it is also
+      two-thirds of the way to the object-size limit that stops it outright at 2,973. The keyed
+      designs are within 0.2% of each other in every row, and none of them varies with depth at
+      all.</p>
+      <p>That is the cross-subsidy of §7, now priced exactly rather than averaged. The shallow
+      tail pays 114,352 MIST per round trip — 2.9% — in the class where the absolute numbers are
+      smallest and the transaction counts lowest. What it buys is a 7.77× reduction at the head
+      and the removal of a hard ceiling. And the transaction-weighted result that makes the flat
+      vector look competitive in §7.1 rests on a fixed computation premium that scales with
+      nothing: by the large class, as Figure 7 shows, it has already reversed sign.</p>
+      <p class="tnote">One caveat on the absolute levels. This grid was measured on a fresh
+      local network with its own pool and account objects, so its MIST figures are not
+      directly comparable in <em class="term">level</em> with Appendix A's — only in slope,
+      ratio and shape. Where the two overlap they agree closely: 6,536 against 6,710 MIST per
+      standing order on burned fee, 203 against 209 on computation, and 7,144 per inline order
+      on the buffer's rewrite tax.</p>
+    </div>
+
+    <div class="segctl" id="build-ctl">
+      <span class="seg-k">Build order</span>
+      <div class="seg" role="group" aria-label="Book build order">
+        <button type="button" data-build="desc" class="on" aria-pressed="true">best-price-last</button>
+        <button type="button" data-build="asc" aria-pressed="false">worst-price-last</button>
+      </div>
+      <span class="seg-note">Switches every figure below. Only the buffered designs move:
+      the flat vector and the bare tree have no buffer whose occupancy a build order could
+      change.</span>
+    </div>
+
+    <figure class="fig">
+      <div class="fig-head"><span class="fig-n">Figure 10</span>
+        <p class="fig-t">Every design at every book size: insert and cancel, rank by rank</p></div>
+      <div class="segctl" id="metric-ctl" style="margin-left:0">
+        <span class="seg-k">Metric</span>
+        <div class="seg" role="group" aria-label="Metric">
+          <button type="button" data-metric="net" class="on" aria-pressed="true">net storage</button>
+          <button type="button" data-metric="burn" aria-pressed="false">burned fee</button>
+          <button type="button" data-metric="comp" aria-pressed="false">computation</button>
+        </div>
+      </div>
+      <div class="legend" id="lg10"></div>
+      <div class="chartbox" id="cb10"></div>
+      <figcaption>The whole grid in one view: twenty panels, one per design and book size,
+      each plotting the insert and its matching cancel against the rank the operation lands at.
+      <b>Every panel is scaled to its own data, with the range printed at its top-right and
+      bottom-right</b> — otherwise the flat vector's xl panel would flatten the other nineteen.
+      So compare <em class="term">shape</em> between panels and read magnitude off the printed
+      numbers, which are the interesting series in their own right: across row A the ceiling
+      goes 1.2M → 1.5M → 2.0M → 4.6M → 15M, while across C16u's it goes 1.4M → 1.8M → 1.8M →
+      1.8M → 1.8M.
+      <br><br>
+      Four statements about shape. <b>Row A</b> is dead flat inside every panel: cost is the
+      whole book, so where the order lands is irrelevant. <b>Row B</b> is flat both ways — a
+      slice write costs the same at any rank and any depth. <b>Rows C16u and D64u</b> are flat
+      with one step each, at the rank where the order stops landing in the inline buffer and
+      starts landing in a slice; the step moves right as the buffer grows, sitting between rank
+      8 and 32 for C16u and between 48 and 80 for D64u, and it is absent in the 8-deep column
+      because a book that shallow is entirely inline. On <span class="q">net storage</span> the
+      dashed cancel line sits below the dotted zero rule wherever the deposit comes back — and
+      in A's <b>512- and 2,048-deep panels there is no zero rule at all</b>, because the panel's
+      whole range has gone positive: both operations now charge storage rather than return it.
+      That is Figure 8's sign change, here as geometry. Switch the metric to
+      <span class="q">computation</span> and the same twenty panels flatten to within a couple
+      of percent everywhere except row A's deep columns, where the only real structure in the
+      grid lives: a 450,000-MIST discontinuity between rank 1 and rank 4 on the cancel, which is
+      the flat vector's constant-time best-price fast path, and gentle opposing drifts either
+      side of it. Finding 8 takes that apart. Hover any panel for exact values.</figcaption>
+    </figure>
+
+    <figure class="fig">
+      <div class="fig-head"><span class="fig-n">Figure 6</span>
+        <p class="fig-t">Insert at top of book: storage cost is either proportional to depth, or flat</p></div>
+      <div class="legend" id="lg6"></div>
+      <div class="chartbox" id="cb6"></div>
+      <figcaption>Net storage cost for one limit-order insert at rank 1, against the number of
+      standing orders on that side. <b>Both axes are logarithmic</b>, so a cost proportional to
+      depth is a straight line of slope 1 and a cost independent of depth is horizontal. The
+      three keyed designs are horizontal because their measurements barely move across a
+      256-fold change in book size; the flat vector's line is straight because its cost is the
+      whole book, every time. Hover for exact values.</figcaption>
+    </figure>
+
+    <figure class="fig">
+      <div class="fig-head"><span class="fig-n">Figure 7</span>
+        <p class="fig-t">Computation has the same shape, an order of magnitude smaller</p></div>
+      <div class="legend" id="lg7"></div>
+      <div class="chartbox" id="cb7"></div>
+      <figcaption>Computation for the same insert. The vertical axis is linear and
+      <b>does not start at zero</b> — the whole range shown is a few hundred thousand MIST, so
+      that the flat vector's 24% rise across the five sizes is legible beside three flat lines.
+      Read the magnitudes against Figure 6: this chart's entire vertical extent is smaller than
+      one gridline there. The keyed designs begin 2.3% above the flat vector and end 17.4%
+      below it, crossing near depth 100–150. Quantisation is 10,000 MIST, a tenth of a
+      gridline, so every step shown is resolved.</figcaption>
+    </figure>
+
+    <figure class="fig">
+      <div class="fig-head"><span class="fig-n">Figure 8</span>
+        <p class="fig-t">Cancelling in a deep flat book costs storage instead of refunding it</p></div>
+      <div class="legend" id="lg8"></div>
+      <div class="chartbox" id="cb8"></div>
+      <figcaption>Net storage for a top-of-book cancel. Below the zero rule the transaction
+      returns more deposit than it posts, which is what deleting an order ought to do; above it
+      the non-refundable slice charged against the whole rewritten object exceeds the deposit
+      released. The keyed designs sit below zero at every size. The flat vector crosses near
+      depth 85 and reaches +12.8M MIST at 2,048. Horizontal axis logarithmic, vertical axis
+      linear so that the sign change is visible where it happens.</figcaption>
+    </figure>
+
+    <figure class="fig">
+      <div class="fig-head"><span class="fig-n">Figure 9</span>
+        <p class="fig-t">Where in the book you act is almost irrelevant — except at the buffer edge</p></div>
+      <div class="legend" id="lg9"></div>
+      <div class="chartbox" id="cb9"></div>
+      <figcaption>Net storage for an insert at rank <code>n</code> of the 2,048-deep book, both
+      axes logarithmic. The flat vector is flat because it rewrites the whole object wherever
+      the order lands, and the bare tree is flat because every rank is a slice write. The two
+      buffered designs are flat with one step each — the rank at which the order stops landing
+      in the buffer and starts landing in a slice, between 8 and 32 for C16u's 16-order buffer
+      and between 48 and 80 for D64u's 64-order one. The single point that rises above each step
+      is the insert that lands exactly at the edge and pays the spill in the same transaction.
+      Note that the bare tree sits below C16u at every rank past the step: that is the inline
+      buffer's rewrite tax, and finding 5 above is what it means. Switch the control to
+      worst-price-last to see the same designs with the buffer holding one order — the step moves
+      to rank 1 and every curve drops, because there are no inline bytes to rewrite.</figcaption>
+    </figure>
+
+    <div class="stats">
+      <div class="stat is-cliff"><span class="sk">Flat vector, xl book</span>
+        <span class="sv">13.54M</span>
+        <span class="sd">MIST burned per top-of-book insert at depth 2,048</span></div>
+      <div class="stat is-win"><span class="sk">Keyed, any book</span>
+        <span class="sv">258–261k</span>
+        <span class="sd">MIST burned — flat from depth 8 to 2,048</span></div>
+      <div class="stat is-cliff"><span class="sk">Round trip, xl book</span>
+        <span class="sv">7.77×</span>
+        <span class="sd">A ÷ C16u on cost that never comes back</span></div>
+      <div class="stat"><span class="sk">Inline order, per op</span>
+        <span class="sv">7,144</span>
+        <span class="sd">MIST — the buffer's rewrite tax, ≈ what it saves</span></div>
+    </div>
+
+    <div class="prose">
+      <p class="tnote">Every cell behind these four figures — both build orders, all three
+      repetitions, and the gross <code>storageCost</code> and <code>storageRebate</code>
+      components — is tabulated in
+      <code>docs/plans/multicoin-book-storage-position-cost-data.md</code>.</p>
+    </div>
+
+    <hr class="end">
+    <p class="colophon">Raw per-transaction records, the measurement driver, the analysis
+    scripts and the parameterised variant book source are committed alongside this report at
+    <code>docs/plans/multicoin-book-storage-experiment-data/</code>. Figures and appendix tables
+    in this document are generated from those records, so they cannot drift from what was
+    measured. Pre-registration:
+    <code>docs/plans/multicoin-book-storage-experiment.md</code>. Result summary:
+    <code>docs/plans/multicoin-book-storage-experiment-results.md</code>. Rank × book-size
+    grid: <code>docs/plans/multicoin-book-storage-position-cost-data.md</code>.</p>
+  </section>

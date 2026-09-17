@@ -16,6 +16,7 @@ module triex::multicoin_pool {
     use token::cred::CRED;
     use triex::{
         account::Account,
+        big_vector::BigVector,
         book::{Self, Book},
         constants,
         fee_policy::FeePolicy,
@@ -596,7 +597,7 @@ module triex::multicoin_pool {
         policy: &FeePolicy,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         new_quantity: u64,
         clock: &Clock,
         ctx: &mut TxContext,
@@ -671,7 +672,7 @@ module triex::multicoin_pool {
         policy: &FeePolicy,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -713,7 +714,7 @@ module triex::multicoin_pool {
         defer_recognition: bool,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_id: u64,
+        order_id: u128,
         clock: &Clock,
         ctx: &mut TxContext,
     ): u64 {
@@ -829,7 +830,7 @@ module triex::multicoin_pool {
         policy: &FeePolicy,
         trading_account: &mut TradingAccount,
         trade_proof: &TradeProof,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -1149,7 +1150,7 @@ module triex::multicoin_pool {
     public fun account_open_orders<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
         trading_account: &TradingAccount,
-    ): VecSet<u64> {
+    ): VecSet<u128> {
         let pool_inner = self.load_inner();
         if (!pool_inner.state.account_exists(trading_account.id())) {
             return vec_set::empty()
@@ -1246,7 +1247,7 @@ module triex::multicoin_pool {
 
     /// Get the Order struct.
     /// #ref:order_query
-    public fun get_order<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>, order_id: u64): Order {
+    public fun get_order<QuoteAsset>(self: &MultiCoinPool<QuoteAsset>, order_id: u128): Order {
         self.load_inner().book.get_order(order_id)
     }
 
@@ -1254,7 +1255,7 @@ module triex::multicoin_pool {
     /// #ref:order_query
     public fun get_orders<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
-        order_ids: vector<u64>,
+        order_ids: vector<u128>,
     ): vector<Order> {
         let mut orders = vector[];
         order_ids.do_ref!(|order_id| {
@@ -1405,12 +1406,19 @@ module triex::multicoin_pool {
 
     // === Public-Package Functions ===
 
-    public(package) fun bids<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &vector<Order> {
+    /// The cold tree of a side. Not the whole side — see `book::bids`.
+    public(package) fun bids<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &BigVector<Order> {
         self.book.bids()
     }
 
-    public(package) fun asks<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &vector<Order> {
+    public(package) fun asks<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &BigVector<Order> {
         self.book.asks()
+    }
+
+    /// The book itself, for callers that must walk a side whole — across the inline
+    /// top-of-book buffer as well as the tree behind it.
+    public(package) fun book<QuoteAsset>(self: &MultiCoinPoolInner<QuoteAsset>): &Book {
+        &self.book
     }
 
     /// Trailing turnover the next trade on this pool resolves against: the

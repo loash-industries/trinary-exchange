@@ -7,12 +7,33 @@ module triex::order {
     // === Errors ===
     const EInvalidNewQuantity: u64 = 0;
     const EOrderExpired: u64 = 1;
+    /// A snapshotted rate was out of range, or finer than the whole basis point
+    /// the order stores. The real bounds are enforced where the rates are set, in
+    /// `triex::fee_policy`; these are the backstop that keeps the encoding total.
+    const EMakerFeeRateTooWide: u64 = 2;
+    const ECancelRetentionTooWide: u64 = 3;
+
+    /// Widths of the two snapshotted rates. A resting order is stored inside the
+    /// pool object and the whole object is rewritten on every transaction that
+    /// touches the book, so each byte here is paid again on every order in the
+    /// book, every transaction — worth encoding to the bound rather than to the
+    /// word size. `fee_policy` caps a maker rate at 1e9 (100%, scaled) and a
+    /// retention at 10,000 bps, which fit `u32` and `u16` with room to spare.
+    /// Scaled units per basis point. Rates arrive from `triex::fee_policy` in the
+    /// 1e9 scale, but the schedule admits nothing finer than a whole basis point
+    /// (`FEE_MULTIPLE`), so the order stores bps and converts on the way in and
+    /// out. Exact in both directions for any rate the policy can produce.
+    const SCALED_PER_BPS: u64 = 100_000;
+    /// 10,000 bps is 100%, the widest rate the policy allows — and it fits `u16`,
+    /// so storing bps costs no range at all.
+    const MAX_MAKER_FEE_BPS: u64 = 10_000;
+    const MAX_CANCEL_RETENTION: u64 = 10_000;
 
     // === Structs ===
     /// Order struct represents the order in the order book. It is optimized for space.
     public struct Order has drop, store {
         trading_account_id: ID,
-        order_id: u64,
+        order_id: u128,
         price: u64,
         is_bid: bool,
         quantity: u64,
@@ -21,13 +42,14 @@ module triex::order {
         /// Maker fee rate snapshotted at placement. Cancel/modify/locked-balance
         /// and fill-time maker fees read this instead of replaying a global
         /// per-epoch rate, so the order settles at its placement rate even after
-        /// rates change.
-        maker_fee_rate: u64,
+        /// rates change. Stored in whole basis points — see `SCALED_PER_BPS`.
+        maker_fee_rate: u16,
         /// Cancel-retention rate snapshotted at placement, in basis points. The
         /// share of released escrow the protocol keeps on cancel/modify-down/
         /// expiry; the rest is refunded. Snapshotted for the same reason the fee
         /// rate is — an admin policy change must not re-price a resting order.
-        cancel_retention_bps: u64,
+        /// Already in basis points, and bounded by `MAX_CANCEL_RETENTION`.
+        cancel_retention_bps: u16,
         status: u8,
         expire_timestamp: u64,
     }
@@ -42,7 +64,7 @@ module triex::order {
     public struct OrderCanceled has copy, drop, store {
         trading_account_id: ID,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trader: address,
         price: u64,
         is_bid: bool,
@@ -59,7 +81,7 @@ module triex::order {
     public struct OrderModified has copy, drop, store {
         trading_account_id: ID,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trader: address,
         price: u64,
         is_bid: bool,
@@ -76,7 +98,7 @@ module triex::order {
         self.trading_account_id
     }
 
-    public fun order_id(self: &Order): u64 {
+    public fun order_id(self: &Order): u128 {
         self.order_id
     }
 
@@ -93,11 +115,11 @@ module triex::order {
     }
 
     public fun maker_fee_rate(self: &Order): u64 {
-        self.maker_fee_rate
+        (self.maker_fee_rate as u64) * SCALED_PER_BPS
     }
 
     public fun cancel_retention_bps(self: &Order): u64 {
-        self.cancel_retention_bps
+        self.cancel_retention_bps as u64
     }
 
     public fun status(self: &Order): u8 {
@@ -115,7 +137,7 @@ module triex::order {
     // === Public-Package Functions ===
     /// initialize the order struct.
     public(package) fun new(
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         price: u64,
         is_bid: bool,
@@ -127,6 +149,10 @@ module triex::order {
         status: u8,
         expire_timestamp: u64,
     ): Order {
+        assert!(maker_fee_rate % SCALED_PER_BPS == 0, EMakerFeeRateTooWide);
+        assert!(maker_fee_rate / SCALED_PER_BPS <= MAX_MAKER_FEE_BPS, EMakerFeeRateTooWide);
+        assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION, ECancelRetentionTooWide);
+
         Order {
             order_id,
             trading_account_id,
@@ -135,8 +161,8 @@ module triex::order {
             quantity,
             filled_quantity,
             epoch,
-            maker_fee_rate,
-            cancel_retention_bps,
+            maker_fee_rate: (maker_fee_rate / SCALED_PER_BPS) as u16,
+            cancel_retention_bps: cancel_retention_bps as u16,
             status,
             expire_timestamp,
         }
@@ -181,8 +207,8 @@ module triex::order {
             quote_quantity,
             is_bid,
             self.epoch,
-            self.maker_fee_rate,
-            self.cancel_retention_bps,
+            self.maker_fee_rate(),
+            self.cancel_retention_bps as u64,
         )
     }
 
@@ -247,7 +273,7 @@ module triex::order {
     ): (u64, u64) {
         let basis = self.locked_fee_released(maker_fee, cancel_quantity, price_scaling);
 
-        quote_fee::split_released_fee(basis, self.cancel_retention_bps)
+        quote_fee::split_released_fee(basis, self.cancel_retention_bps as u64)
     }
 
     /// The maker fee escrowed against the portion of this order being released,
@@ -304,14 +330,14 @@ module triex::order {
     #[test_only]
     /// Fields of an `OrderCanceled` for tests asserting the fee split reported on
     /// the cancellation matches the refund the vault emitted.
-    public fun canceled_event_parts(self: &OrderCanceled): (u64, u64, u64) {
+    public fun canceled_event_parts(self: &OrderCanceled): (u128, u64, u64) {
         (self.order_id, self.fee_refunded, self.fee_retained)
     }
 
     #[test_only]
     /// Fields of an `OrderModified` for tests asserting the fee split reported on
     /// the modify-down matches the refund the vault emitted.
-    public fun modified_event_parts(self: &OrderModified): (u64, u64, u64) {
+    public fun modified_event_parts(self: &OrderModified): (u128, u64, u64) {
         (self.order_id, self.fee_refunded, self.fee_retained)
     }
 
@@ -371,7 +397,7 @@ module triex::order {
     public(package) fun emit_cancel_maker(
         trading_account_id: ID,
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         trader: address,
         price: u64,
         is_bid: bool,

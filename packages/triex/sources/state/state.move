@@ -64,12 +64,12 @@ module triex::state {
     /// A refund owed to one expired bid maker. Carries the order it came from so
     /// the vault event can be tied back to the `OrderExpired` for that order.
     public struct RefundedFee has copy, drop, store {
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         amount: u64,
     }
 
-    public(package) fun refund_order_id(self: &RefundedFee): u64 {
+    public(package) fun refund_order_id(self: &RefundedFee): u128 {
         self.order_id
     }
 

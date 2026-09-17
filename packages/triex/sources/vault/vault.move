@@ -71,13 +71,13 @@ module triex::vault {
     #[test_only]
     /// Fields of a `PoolFeesRefunded` for tests asserting that a refund is
     /// attributable to the order and maker it belongs to.
-    public fun refunded_event_parts(self: &PoolFeesRefunded): (u64, u64, ID) {
+    public fun refunded_event_parts(self: &PoolFeesRefunded): (u128, u64, ID) {
         (self.order_id, self.amount, self.trading_account_id)
     }
 
     public(package) fun emit_pool_fees_refunded<QuoteAsset>(
         pool_id: ID,
-        order_id: u64,
+        order_id: u128,
         amount: u64,
         trading_account_id: ID,
         timestamp: u64,
@@ -125,7 +125,7 @@ module triex::vault {
     public struct PoolFeesRefunded has copy, drop {
         pool_id: ID,
         quote_type: TypeName,
-        order_id: u64,
+        order_id: u128,
         amount: u64,
         trading_account_id: ID,
         timestamp: u64,
