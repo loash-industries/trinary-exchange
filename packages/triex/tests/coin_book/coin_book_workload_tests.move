@@ -316,8 +316,11 @@ module triex::coin_book_workload_tests {
     #[test]
     fun workload_shallow_slice_64() { run(64, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
+    // Depth 0 rather than 1: the inline top-of-book buffer holds the best 16 orders
+    // of the side, so a ~26-order book leaves only ~10-16 in the tree — one leaf at
+    // slice 32, where all 26 needed two.
     #[test]
-    fun workload_shallow_slice_32() { run(32, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }
+    fun workload_shallow_slice_32() { run(32, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
     #[test]
     fun workload_shallow_slice_16() { run(16, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }

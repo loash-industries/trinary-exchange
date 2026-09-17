@@ -1,21 +1,25 @@
-/// The same measured mainnet workload, run against the **multicoin** vector book.
+/// The same measured mainnet workload, run against the **multicoin** book.
 ///
 /// Companion to `coin_book_workload_tests`, which runs the identical distribution
-/// against the coin pools' `BigVector`. Together they answer whether multicoin's
-/// `vector<Order>` should adopt BigVector too, rather than settling it by analogy.
+/// against the coin pools' book. The two answered whether multicoin's flat
+/// `vector<Order>` should adopt `BigVector` too, rather than settling it by
+/// analogy; it has, and this module now measures the design that replaced it —
+/// `BigVector` keyed by encoded `u128` ids behind a 16-order inline hot buffer
+/// that spills one way.
 ///
 /// The workload, book shape and draw sequence are copied verbatim from that module
-/// so the two are directly comparable. Only the storage engine differs:
-/// `triex::book` keeps a sorted `vector<Order>` addressed by position with opaque
-/// `u64` serial ids, so cancel is a linear scan and insert is a memmove.
+/// so the two remain directly comparable. What differs now is only what the two
+/// stacks still differ in — price scaling, and matching that returns `bool` here
+/// against a three-state outcome there.
 ///
 /// One caveat this harness cannot escape: the Move test meter prices computation
-/// and not storage. The vector holds the whole book inline in the pool object, so
-/// every mutation rewrites all of it on-chain — the cost that motivated BigVector
-/// in the first place — and none of that shows up below. These numbers are the
-/// vector's best case.
+/// and not storage, and storage is the whole reason for the layout under test. The
+/// storage figures live in `docs/plans/multicoin-book-storage-whitepaper.md`, which
+/// measured them on a running node. What this module can still show is the
+/// computation side: the flat vector's O(depth x fills) removal scan, which keyed
+/// removal eliminates, and which was the largest single number in that experiment.
 #[test_only]
-module triex::book_vector_workload_tests {
+module triex::book_workload_tests {
     use std::unit_test::destroy;
     use sui::test_scenario::begin;
     use triex::{book::{Self, Book}, constants, order_info};
@@ -74,7 +78,7 @@ module triex::book_vector_workload_tests {
 
     /// `price_scaling` is 1 here, matching `book::empty_multicoin`: multicoin prices
     /// are already quote-unit denominated, so the conversion is a bare product.
-    fun place(b: &mut Book, price: u64, quantity: u64, is_bid: bool, ts: u64): u64 {
+    fun place(b: &mut Book, price: u64, quantity: u64, is_bid: bool, ts: u64): u128 {
         let mut info = order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
@@ -127,7 +131,7 @@ module triex::book_vector_workload_tests {
         tail: u64,
         band_size: u64,
         test: &mut sui::test_scenario::Scenario,
-    ): vector<u64> {
+    ): vector<u128> {
         // Seed the tail from the worst price upward, so the sorted-vector book
         // appends rather than memmoving the whole array on every insert. Setup order
         // is arbitrary in reality, and handing one engine its worst case would
@@ -164,7 +168,7 @@ module triex::book_vector_workload_tests {
         let mut b = book::empty_multicoin(test.ctx());
 
         let mut band = seed(&mut b, tail, band_size, &mut test);
-        assert!(b.bids().length() == tail + band_size);
+        assert!(b.side_length(true) == tail + band_size);
 
         let mut placed = vector[];
         let mut seed_state = 0x5EED_1234_5678_9ABC;
@@ -197,85 +201,85 @@ module triex::book_vector_workload_tests {
     }
 
     #[test]
-    fun vector_workload_deep() { run(DEEP_TAIL, DEEP_BAND, OPS) }
+    fun workload_deep() { run(DEEP_TAIL, DEEP_BAND, OPS) }
 
     #[test]
-    fun vector_workload_shallow() { run(SHALLOW_TAIL, SHALLOW_BAND, OPS) }
+    fun workload_shallow() { run(SHALLOW_TAIL, SHALLOW_BAND, OPS) }
 
-    // === Crossover sweep (mirror of the BigVector sweep) ===
+    // === Crossover sweep (mirror of the coin book's sweep) ===
     const SWEEP_BAND: u64 = 14;
     const SWEEP_LO: u64 = 100;
     const SWEEP_HI: u64 = 200;
 
     #[test]
-    fun sweep_vec_40_lo() { run(12, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_40_lo() { run(12, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_40_hi() { run(12, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_40_hi() { run(12, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_100_lo() { run(72, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_100_lo() { run(72, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_100_hi() { run(72, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_100_hi() { run(72, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_200_lo() { run(172, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_200_lo() { run(172, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_200_hi() { run(172, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_200_hi() { run(172, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_300_lo() { run(272, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_300_lo() { run(272, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_300_hi() { run(272, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_300_hi() { run(272, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_500_lo() { run(472, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_500_lo() { run(472, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_500_hi() { run(472, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_500_hi() { run(472, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_800_lo() { run(772, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_800_lo() { run(772, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_800_hi() { run(772, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_800_hi() { run(772, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_1150_lo() { run(1122, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_1150_lo() { run(1122, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_1150_hi() { run(1122, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_1150_hi() { run(1122, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_110_lo() { run(82, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_110_lo() { run(82, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_110_hi() { run(82, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_110_hi() { run(82, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_120_lo() { run(92, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_120_lo() { run(92, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_120_hi() { run(92, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_120_hi() { run(92, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_130_lo() { run(102, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_130_lo() { run(102, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_130_hi() { run(102, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_130_hi() { run(102, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_150_lo() { run(122, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_150_lo() { run(122, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_150_hi() { run(122, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_150_hi() { run(122, SWEEP_BAND, SWEEP_HI) }
 
     #[test]
-    fun sweep_vec_175_lo() { run(147, SWEEP_BAND, SWEEP_LO) }
+    fun sweep_mc_175_lo() { run(147, SWEEP_BAND, SWEEP_LO) }
 
     #[test]
-    fun sweep_vec_175_hi() { run(147, SWEEP_BAND, SWEEP_HI) }
+    fun sweep_mc_175_hi() { run(147, SWEEP_BAND, SWEEP_HI) }
 }

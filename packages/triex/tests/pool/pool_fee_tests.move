@@ -65,8 +65,8 @@ module triex::pool_fee_tests {
     }
 
     #[test]
-    fun test_fractional_basis_point_fees_are_charged_as_configured() {
-        pool_test_utils::test_fractional_basis_point_fees_are_charged_as_configured();
+    fun test_single_basis_point_fees_are_charged_as_configured() {
+        pool_test_utils::test_single_basis_point_fees_are_charged_as_configured();
     }
 
     #[test]

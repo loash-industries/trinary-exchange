@@ -1,0 +1,465 @@
+{"phase": "construction", "i": 0, "depth_before": 0, "op": "place_new_best", "computationCost": 1760000, "storageCost": 24935600, "storageRebate": 18606852, "nonRefundableStorageFee": 187948}
+{"phase": "construction", "i": 1, "depth_before": 1, "op": "place_new_best", "computationCost": 1750000, "storageCost": 20983600, "storageRebate": 19825740, "nonRefundableStorageFee": 200260}
+{"phase": "construction", "i": 2, "depth_before": 2, "op": "place_new_best", "computationCost": 1760000, "storageCost": 21941200, "storageRebate": 20773764, "nonRefundableStorageFee": 209836}
+{"phase": "construction", "i": 3, "depth_before": 3, "op": "place_new_best", "computationCost": 1760000, "storageCost": 22898800, "storageRebate": 21721788, "nonRefundableStorageFee": 219412}
+{"phase": "construction", "i": 4, "depth_before": 4, "op": "place_new_best", "computationCost": 1760000, "storageCost": 23856400, "storageRebate": 22669812, "nonRefundableStorageFee": 228988}
+{"phase": "construction", "i": 5, "depth_before": 5, "op": "place_new_best", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564}
+{"phase": "construction", "i": 6, "depth_before": 6, "op": "place_new_best", "computationCost": 1760000, "storageCost": 25771600, "storageRebate": 24565860, "nonRefundableStorageFee": 248140}
+{"phase": "construction", "i": 7, "depth_before": 7, "op": "place_new_best", "computationCost": 1760000, "storageCost": 26729200, "storageRebate": 25513884, "nonRefundableStorageFee": 257716}
+{"phase": "construction", "i": 8, "depth_before": 8, "op": "place_new_best", "computationCost": 1760000, "storageCost": 27686800, "storageRebate": 26461908, "nonRefundableStorageFee": 267292}
+{"phase": "construction", "i": 9, "depth_before": 9, "op": "place_new_best", "computationCost": 1760000, "storageCost": 28644400, "storageRebate": 27409932, "nonRefundableStorageFee": 276868}
+{"phase": "construction", "i": 10, "depth_before": 10, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444}
+{"phase": "construction", "i": 11, "depth_before": 11, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30559600, "storageRebate": 29305980, "nonRefundableStorageFee": 296020}
+{"phase": "construction", "i": 12, "depth_before": 12, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31517200, "storageRebate": 30254004, "nonRefundableStorageFee": 305596}
+{"phase": "construction", "i": 13, "depth_before": 13, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32474800, "storageRebate": 31202028, "nonRefundableStorageFee": 315172}
+{"phase": "construction", "i": 14, "depth_before": 14, "op": "place_new_best", "computationCost": 1760000, "storageCost": 33432400, "storageRebate": 32150052, "nonRefundableStorageFee": 324748}
+{"phase": "construction", "i": 15, "depth_before": 15, "op": "place_new_best", "computationCost": 1760000, "storageCost": 34390000, "storageRebate": 33098076, "nonRefundableStorageFee": 334324}
+{"phase": "construction", "i": 16, "depth_before": 16, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39793600, "storageRebate": 34046100, "nonRefundableStorageFee": 343900}
+{"phase": "construction", "i": 17, "depth_before": 17, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29617200, "storageRebate": 28373004, "nonRefundableStorageFee": 286596}
+{"phase": "construction", "i": 18, "depth_before": 18, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30574800, "storageRebate": 29321028, "nonRefundableStorageFee": 296172}
+{"phase": "construction", "i": 19, "depth_before": 19, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31532400, "storageRebate": 30269052, "nonRefundableStorageFee": 305748}
+{"phase": "construction", "i": 20, "depth_before": 20, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32490000, "storageRebate": 31217076, "nonRefundableStorageFee": 315324}
+{"phase": "construction", "i": 21, "depth_before": 21, "op": "place_new_best", "computationCost": 1760000, "storageCost": 33447600, "storageRebate": 32165100, "nonRefundableStorageFee": 324900}
+{"phase": "construction", "i": 22, "depth_before": 22, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34405200, "storageRebate": 33113124, "nonRefundableStorageFee": 334476}
+{"phase": "construction", "i": 23, "depth_before": 23, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35362800, "storageRebate": 34061148, "nonRefundableStorageFee": 344052}
+{"phase": "construction", "i": 24, "depth_before": 24, "op": "place_new_best", "computationCost": 1780000, "storageCost": 49909200, "storageRebate": 46031832, "nonRefundableStorageFee": 464968}
+{"phase": "construction", "i": 25, "depth_before": 25, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30590000, "storageRebate": 29336076, "nonRefundableStorageFee": 296324}
+{"phase": "construction", "i": 26, "depth_before": 26, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31547600, "storageRebate": 30284100, "nonRefundableStorageFee": 305900}
+{"phase": "construction", "i": 27, "depth_before": 27, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32505200, "storageRebate": 31232124, "nonRefundableStorageFee": 315476}
+{"phase": "construction", "i": 28, "depth_before": 28, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33462800, "storageRebate": 32180148, "nonRefundableStorageFee": 325052}
+{"phase": "construction", "i": 29, "depth_before": 29, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34420400, "storageRebate": 33128172, "nonRefundableStorageFee": 334628}
+{"phase": "construction", "i": 30, "depth_before": 30, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35378000, "storageRebate": 34076196, "nonRefundableStorageFee": 344204}
+{"phase": "construction", "i": 31, "depth_before": 31, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36335600, "storageRebate": 35024220, "nonRefundableStorageFee": 353780}
+{"phase": "construction", "i": 32, "depth_before": 32, "op": "place_new_best", "computationCost": 1780000, "storageCost": 51064400, "storageRebate": 47175480, "nonRefundableStorageFee": 476520}
+{"phase": "construction", "i": 33, "depth_before": 33, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31562800, "storageRebate": 30299148, "nonRefundableStorageFee": 306052}
+{"phase": "construction", "i": 34, "depth_before": 34, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32520400, "storageRebate": 31247172, "nonRefundableStorageFee": 315628}
+{"phase": "construction", "i": 35, "depth_before": 35, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33478000, "storageRebate": 32195196, "nonRefundableStorageFee": 325204}
+{"phase": "construction", "i": 36, "depth_before": 36, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34435600, "storageRebate": 33143220, "nonRefundableStorageFee": 334780}
+{"phase": "construction", "i": 37, "depth_before": 37, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35393200, "storageRebate": 34091244, "nonRefundableStorageFee": 344356}
+{"phase": "construction", "i": 38, "depth_before": 38, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36350800, "storageRebate": 35039268, "nonRefundableStorageFee": 353932}
+{"phase": "construction", "i": 39, "depth_before": 39, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37308400, "storageRebate": 35987292, "nonRefundableStorageFee": 363508}
+{"phase": "construction", "i": 40, "depth_before": 40, "op": "place_new_best", "computationCost": 1780000, "storageCost": 52219600, "storageRebate": 48319128, "nonRefundableStorageFee": 488072}
+{"phase": "construction", "i": 41, "depth_before": 41, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32535600, "storageRebate": 31262220, "nonRefundableStorageFee": 315780}
+{"phase": "construction", "i": 42, "depth_before": 42, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33493200, "storageRebate": 32210244, "nonRefundableStorageFee": 325356}
+{"phase": "construction", "i": 43, "depth_before": 43, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34450800, "storageRebate": 33158268, "nonRefundableStorageFee": 334932}
+{"phase": "construction", "i": 44, "depth_before": 44, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35408400, "storageRebate": 34106292, "nonRefundableStorageFee": 344508}
+{"phase": "construction", "i": 45, "depth_before": 45, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36366000, "storageRebate": 35054316, "nonRefundableStorageFee": 354084}
+{"phase": "construction", "i": 46, "depth_before": 46, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37323600, "storageRebate": 36002340, "nonRefundableStorageFee": 363660}
+{"phase": "construction", "i": 47, "depth_before": 47, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38281200, "storageRebate": 36950364, "nonRefundableStorageFee": 373236}
+{"phase": "construction", "i": 48, "depth_before": 48, "op": "place_new_best", "computationCost": 1780000, "storageCost": 53374800, "storageRebate": 49462776, "nonRefundableStorageFee": 499624}
+{"phase": "construction", "i": 49, "depth_before": 49, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33508400, "storageRebate": 32225292, "nonRefundableStorageFee": 325508}
+{"phase": "construction", "i": 50, "depth_before": 50, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34466000, "storageRebate": 33173316, "nonRefundableStorageFee": 335084}
+{"phase": "construction", "i": 51, "depth_before": 51, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35423600, "storageRebate": 34121340, "nonRefundableStorageFee": 344660}
+{"phase": "construction", "i": 52, "depth_before": 52, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36381200, "storageRebate": 35069364, "nonRefundableStorageFee": 354236}
+{"phase": "construction", "i": 53, "depth_before": 53, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37338800, "storageRebate": 36017388, "nonRefundableStorageFee": 363812}
+{"phase": "construction", "i": 54, "depth_before": 54, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38296400, "storageRebate": 36965412, "nonRefundableStorageFee": 373388}
+{"phase": "construction", "i": 55, "depth_before": 55, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39254000, "storageRebate": 37913436, "nonRefundableStorageFee": 382964}
+{"phase": "construction", "i": 56, "depth_before": 56, "op": "place_new_best", "computationCost": 1780000, "storageCost": 54530000, "storageRebate": 50606424, "nonRefundableStorageFee": 511176}
+{"phase": "construction", "i": 57, "depth_before": 57, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34481200, "storageRebate": 33188364, "nonRefundableStorageFee": 335236}
+{"phase": "construction", "i": 58, "depth_before": 58, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35438800, "storageRebate": 34136388, "nonRefundableStorageFee": 344812}
+{"phase": "construction", "i": 59, "depth_before": 59, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36396400, "storageRebate": 35084412, "nonRefundableStorageFee": 354388}
+{"phase": "construction", "i": 60, "depth_before": 60, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37354000, "storageRebate": 36032436, "nonRefundableStorageFee": 363964}
+{"phase": "construction", "i": 61, "depth_before": 61, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38311600, "storageRebate": 36980460, "nonRefundableStorageFee": 373540}
+{"phase": "construction", "i": 62, "depth_before": 62, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39269200, "storageRebate": 37928484, "nonRefundableStorageFee": 383116}
+{"phase": "construction", "i": 63, "depth_before": 63, "op": "place_new_best", "computationCost": 1770000, "storageCost": 40226800, "storageRebate": 38876508, "nonRefundableStorageFee": 392692}
+{"phase": "construction", "i": 64, "depth_before": 64, "op": "place_new_best", "computationCost": 1780000, "storageCost": 55685200, "storageRebate": 51750072, "nonRefundableStorageFee": 522728}
+{"phase": "construction", "i": 65, "depth_before": 65, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35454000, "storageRebate": 34151436, "nonRefundableStorageFee": 344964}
+{"phase": "construction", "i": 66, "depth_before": 66, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36411600, "storageRebate": 35099460, "nonRefundableStorageFee": 354540}
+{"phase": "construction", "i": 67, "depth_before": 67, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37369200, "storageRebate": 36047484, "nonRefundableStorageFee": 364116}
+{"phase": "construction", "i": 68, "depth_before": 68, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38326800, "storageRebate": 36995508, "nonRefundableStorageFee": 373692}
+{"phase": "construction", "i": 69, "depth_before": 69, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39284400, "storageRebate": 37943532, "nonRefundableStorageFee": 383268}
+{"phase": "construction", "i": 70, "depth_before": 70, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40242000, "storageRebate": 38891556, "nonRefundableStorageFee": 392844}
+{"phase": "construction", "i": 71, "depth_before": 71, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41199600, "storageRebate": 39839580, "nonRefundableStorageFee": 402420}
+{"phase": "construction", "i": 72, "depth_before": 72, "op": "place_new_best", "computationCost": 1790000, "storageCost": 56840400, "storageRebate": 52893720, "nonRefundableStorageFee": 534280}
+{"phase": "construction", "i": 73, "depth_before": 73, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36426800, "storageRebate": 35114508, "nonRefundableStorageFee": 354692}
+{"phase": "construction", "i": 74, "depth_before": 74, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37384400, "storageRebate": 36062532, "nonRefundableStorageFee": 364268}
+{"phase": "construction", "i": 75, "depth_before": 75, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38342000, "storageRebate": 37010556, "nonRefundableStorageFee": 373844}
+{"phase": "construction", "i": 76, "depth_before": 76, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39299600, "storageRebate": 37958580, "nonRefundableStorageFee": 383420}
+{"phase": "construction", "i": 77, "depth_before": 77, "op": "place_new_best", "computationCost": 1780000, "storageCost": 45166800, "storageRebate": 43767108, "nonRefundableStorageFee": 442092}
+{"phase": "construction", "i": 78, "depth_before": 78, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41214800, "storageRebate": 39854628, "nonRefundableStorageFee": 402572}
+{"phase": "construction", "i": 79, "depth_before": 79, "op": "place_new_best", "computationCost": 1780000, "storageCost": 42172400, "storageRebate": 40802652, "nonRefundableStorageFee": 412148}
+{"phase": "construction", "i": 80, "depth_before": 80, "op": "place_new_best", "computationCost": 1790000, "storageCost": 57995600, "storageRebate": 54037368, "nonRefundableStorageFee": 545832}
+{"phase": "construction", "i": 81, "depth_before": 81, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37399600, "storageRebate": 36077580, "nonRefundableStorageFee": 364420}
+{"phase": "construction", "i": 82, "depth_before": 82, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38357200, "storageRebate": 37025604, "nonRefundableStorageFee": 373996}
+{"phase": "construction", "i": 83, "depth_before": 83, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39314800, "storageRebate": 37973628, "nonRefundableStorageFee": 383572}
+{"phase": "construction", "i": 84, "depth_before": 84, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40272400, "storageRebate": 38921652, "nonRefundableStorageFee": 393148}
+{"phase": "construction", "i": 85, "depth_before": 85, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41230000, "storageRebate": 39869676, "nonRefundableStorageFee": 402724}
+{"phase": "construction", "i": 86, "depth_before": 86, "op": "place_new_best", "computationCost": 1780000, "storageCost": 42187600, "storageRebate": 40817700, "nonRefundableStorageFee": 412300}
+{"phase": "construction", "i": 87, "depth_before": 87, "op": "place_new_best", "computationCost": 1780000, "storageCost": 43145200, "storageRebate": 41765724, "nonRefundableStorageFee": 421876}
+{"phase": "construction", "i": 88, "depth_before": 88, "op": "place_new_best", "computationCost": 1790000, "storageCost": 59150800, "storageRebate": 55181016, "nonRefundableStorageFee": 557384}
+{"phase": "construction", "i": 89, "depth_before": 89, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38372400, "storageRebate": 37040652, "nonRefundableStorageFee": 374148}
+{"phase": "construction", "i": 90, "depth_before": 90, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33295600, "storageRebate": 24272424, "nonRefundableStorageFee": 245176}
+{"phase": "construction", "i": 91, "depth_before": 91, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29343600, "storageRebate": 28102140, "nonRefundableStorageFee": 283860}
+{"phase": "construction", "i": 92, "depth_before": 92, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30301200, "storageRebate": 29050164, "nonRefundableStorageFee": 293436}
+{"phase": "construction", "i": 93, "depth_before": 93, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31258800, "storageRebate": 29998188, "nonRefundableStorageFee": 303012}
+{"phase": "construction", "i": 94, "depth_before": 94, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32216400, "storageRebate": 30946212, "nonRefundableStorageFee": 312588}
+{"phase": "construction", "i": 95, "depth_before": 95, "op": "place_new_best", "computationCost": 1760000, "storageCost": 33174000, "storageRebate": 31894236, "nonRefundableStorageFee": 322164}
+{"phase": "construction", "i": 96, "depth_before": 96, "op": "place_new_best", "computationCost": 1770000, "storageCost": 49362000, "storageRebate": 45490104, "nonRefundableStorageFee": 459496}
+{"phase": "construction", "i": 97, "depth_before": 97, "op": "place_new_best", "computationCost": 1760000, "storageCost": 28401200, "storageRebate": 27169164, "nonRefundableStorageFee": 274436}
+{"phase": "construction", "i": 98, "depth_before": 98, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29358800, "storageRebate": 28117188, "nonRefundableStorageFee": 284012}
+{"phase": "construction", "i": 99, "depth_before": 99, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30316400, "storageRebate": 29065212, "nonRefundableStorageFee": 293588}
+{"phase": "construction", "i": 100, "depth_before": 100, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31274000, "storageRebate": 30013236, "nonRefundableStorageFee": 303164}
+{"phase": "construction", "i": 101, "depth_before": 101, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32231600, "storageRebate": 30961260, "nonRefundableStorageFee": 312740}
+{"phase": "construction", "i": 102, "depth_before": 102, "op": "place_new_best", "computationCost": 1760000, "storageCost": 33189200, "storageRebate": 31909284, "nonRefundableStorageFee": 322316}
+{"phase": "construction", "i": 103, "depth_before": 103, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34146800, "storageRebate": 32857308, "nonRefundableStorageFee": 331892}
+{"phase": "construction", "i": 104, "depth_before": 104, "op": "place_new_best", "computationCost": 1780000, "storageCost": 50517200, "storageRebate": 46633752, "nonRefundableStorageFee": 471048}
+{"phase": "construction", "i": 105, "depth_before": 105, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29374000, "storageRebate": 28132236, "nonRefundableStorageFee": 284164}
+{"phase": "construction", "i": 106, "depth_before": 106, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30331600, "storageRebate": 29080260, "nonRefundableStorageFee": 293740}
+{"phase": "construction", "i": 107, "depth_before": 107, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31289200, "storageRebate": 30028284, "nonRefundableStorageFee": 303316}
+{"phase": "construction", "i": 108, "depth_before": 108, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32246800, "storageRebate": 30976308, "nonRefundableStorageFee": 312892}
+{"phase": "construction", "i": 109, "depth_before": 109, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33204400, "storageRebate": 31924332, "nonRefundableStorageFee": 322468}
+{"phase": "construction", "i": 110, "depth_before": 110, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34162000, "storageRebate": 32872356, "nonRefundableStorageFee": 332044}
+{"phase": "construction", "i": 111, "depth_before": 111, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35119600, "storageRebate": 33820380, "nonRefundableStorageFee": 341620}
+{"phase": "construction", "i": 112, "depth_before": 112, "op": "place_new_best", "computationCost": 1780000, "storageCost": 51672400, "storageRebate": 47777400, "nonRefundableStorageFee": 482600}
+{"phase": "construction", "i": 113, "depth_before": 113, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30346800, "storageRebate": 29095308, "nonRefundableStorageFee": 293892}
+{"phase": "construction", "i": 114, "depth_before": 114, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31304400, "storageRebate": 30043332, "nonRefundableStorageFee": 303468}
+{"phase": "construction", "i": 115, "depth_before": 115, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32262000, "storageRebate": 30991356, "nonRefundableStorageFee": 313044}
+{"phase": "construction", "i": 116, "depth_before": 116, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33219600, "storageRebate": 31939380, "nonRefundableStorageFee": 322620}
+{"phase": "construction", "i": 117, "depth_before": 117, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34177200, "storageRebate": 32887404, "nonRefundableStorageFee": 332196}
+{"phase": "construction", "i": 118, "depth_before": 118, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35134800, "storageRebate": 33835428, "nonRefundableStorageFee": 341772}
+{"phase": "construction", "i": 119, "depth_before": 119, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36092400, "storageRebate": 34783452, "nonRefundableStorageFee": 351348}
+{"phase": "construction", "i": 120, "depth_before": 120, "op": "place_new_best", "computationCost": 1780000, "storageCost": 52827600, "storageRebate": 48921048, "nonRefundableStorageFee": 494152}
+{"phase": "construction", "i": 121, "depth_before": 121, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31319600, "storageRebate": 30058380, "nonRefundableStorageFee": 303620}
+{"phase": "construction", "i": 122, "depth_before": 122, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32277200, "storageRebate": 31006404, "nonRefundableStorageFee": 313196}
+{"phase": "construction", "i": 123, "depth_before": 123, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33234800, "storageRebate": 31954428, "nonRefundableStorageFee": 322772}
+{"phase": "construction", "i": 124, "depth_before": 124, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34192400, "storageRebate": 32902452, "nonRefundableStorageFee": 332348}
+{"phase": "construction", "i": 125, "depth_before": 125, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35150000, "storageRebate": 33850476, "nonRefundableStorageFee": 341924}
+{"phase": "construction", "i": 126, "depth_before": 126, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36107600, "storageRebate": 34798500, "nonRefundableStorageFee": 351500}
+{"phase": "construction", "i": 127, "depth_before": 127, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37065200, "storageRebate": 35746524, "nonRefundableStorageFee": 361076}
+{"phase": "construction", "i": 128, "depth_before": 128, "op": "place_new_best", "computationCost": 1780000, "storageCost": 53982800, "storageRebate": 50064696, "nonRefundableStorageFee": 505704}
+{"phase": "construction", "i": 129, "depth_before": 129, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32292400, "storageRebate": 31021452, "nonRefundableStorageFee": 313348}
+{"phase": "construction", "i": 130, "depth_before": 130, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33250000, "storageRebate": 31969476, "nonRefundableStorageFee": 322924}
+{"phase": "construction", "i": 131, "depth_before": 131, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34207600, "storageRebate": 32917500, "nonRefundableStorageFee": 332500}
+{"phase": "construction", "i": 132, "depth_before": 132, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35165200, "storageRebate": 33865524, "nonRefundableStorageFee": 342076}
+{"phase": "construction", "i": 133, "depth_before": 133, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36122800, "storageRebate": 34813548, "nonRefundableStorageFee": 351652}
+{"phase": "construction", "i": 134, "depth_before": 134, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37080400, "storageRebate": 35761572, "nonRefundableStorageFee": 361228}
+{"phase": "construction", "i": 135, "depth_before": 135, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38038000, "storageRebate": 36709596, "nonRefundableStorageFee": 370804}
+{"phase": "construction", "i": 136, "depth_before": 136, "op": "place_new_best", "computationCost": 1780000, "storageCost": 55138000, "storageRebate": 51208344, "nonRefundableStorageFee": 517256}
+{"phase": "construction", "i": 137, "depth_before": 137, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33265200, "storageRebate": 31984524, "nonRefundableStorageFee": 323076}
+{"phase": "construction", "i": 138, "depth_before": 138, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34222800, "storageRebate": 32932548, "nonRefundableStorageFee": 332652}
+{"phase": "construction", "i": 139, "depth_before": 139, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35180400, "storageRebate": 33880572, "nonRefundableStorageFee": 342228}
+{"phase": "construction", "i": 140, "depth_before": 140, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36138000, "storageRebate": 34828596, "nonRefundableStorageFee": 351804}
+{"phase": "construction", "i": 141, "depth_before": 141, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37095600, "storageRebate": 35776620, "nonRefundableStorageFee": 361380}
+{"phase": "construction", "i": 142, "depth_before": 142, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38053200, "storageRebate": 36724644, "nonRefundableStorageFee": 370956}
+{"phase": "construction", "i": 143, "depth_before": 143, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39010800, "storageRebate": 37672668, "nonRefundableStorageFee": 380532}
+{"phase": "construction", "i": 144, "depth_before": 144, "op": "place_new_best", "computationCost": 1780000, "storageCost": 56293200, "storageRebate": 52351992, "nonRefundableStorageFee": 528808}
+{"phase": "construction", "i": 145, "depth_before": 145, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34238000, "storageRebate": 32947596, "nonRefundableStorageFee": 332804}
+{"phase": "construction", "i": 146, "depth_before": 146, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35195600, "storageRebate": 33895620, "nonRefundableStorageFee": 342380}
+{"phase": "construction", "i": 147, "depth_before": 147, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36153200, "storageRebate": 34843644, "nonRefundableStorageFee": 351956}
+{"phase": "construction", "i": 148, "depth_before": 148, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37110800, "storageRebate": 35791668, "nonRefundableStorageFee": 361532}
+{"phase": "construction", "i": 149, "depth_before": 149, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38068400, "storageRebate": 36739692, "nonRefundableStorageFee": 371108}
+{"phase": "construction", "i": 150, "depth_before": 150, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39026000, "storageRebate": 37687716, "nonRefundableStorageFee": 380684}
+{"phase": "construction", "i": 151, "depth_before": 151, "op": "place_new_best", "computationCost": 1770000, "storageCost": 39983600, "storageRebate": 38635740, "nonRefundableStorageFee": 390260}
+{"phase": "construction", "i": 152, "depth_before": 152, "op": "place_new_best", "computationCost": 1790000, "storageCost": 57448400, "storageRebate": 53495640, "nonRefundableStorageFee": 540360}
+{"phase": "construction", "i": 153, "depth_before": 153, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35210800, "storageRebate": 33910668, "nonRefundableStorageFee": 342532}
+{"phase": "construction", "i": 154, "depth_before": 154, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36168400, "storageRebate": 34858692, "nonRefundableStorageFee": 352108}
+{"phase": "construction", "i": 155, "depth_before": 155, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37126000, "storageRebate": 35806716, "nonRefundableStorageFee": 361684}
+{"phase": "construction", "i": 156, "depth_before": 156, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38083600, "storageRebate": 36754740, "nonRefundableStorageFee": 371260}
+{"phase": "construction", "i": 157, "depth_before": 157, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39041200, "storageRebate": 37702764, "nonRefundableStorageFee": 380836}
+{"phase": "construction", "i": 158, "depth_before": 158, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39998800, "storageRebate": 38650788, "nonRefundableStorageFee": 390412}
+{"phase": "construction", "i": 159, "depth_before": 159, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40956400, "storageRebate": 39598812, "nonRefundableStorageFee": 399988}
+{"phase": "construction", "i": 160, "depth_before": 160, "op": "place_new_best", "computationCost": 1790000, "storageCost": 58603600, "storageRebate": 54639288, "nonRefundableStorageFee": 551912}
+{"phase": "construction", "i": 161, "depth_before": 161, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36183600, "storageRebate": 34873740, "nonRefundableStorageFee": 352260}
+{"phase": "construction", "i": 162, "depth_before": 162, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37141200, "storageRebate": 35821764, "nonRefundableStorageFee": 361836}
+{"phase": "construction", "i": 163, "depth_before": 163, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38098800, "storageRebate": 36769788, "nonRefundableStorageFee": 371412}
+{"phase": "construction", "i": 164, "depth_before": 164, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39056400, "storageRebate": 37717812, "nonRefundableStorageFee": 380988}
+{"phase": "construction", "i": 165, "depth_before": 165, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40014000, "storageRebate": 38665836, "nonRefundableStorageFee": 390564}
+{"phase": "construction", "i": 166, "depth_before": 166, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40971600, "storageRebate": 39613860, "nonRefundableStorageFee": 400140}
+{"phase": "construction", "i": 167, "depth_before": 167, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41929200, "storageRebate": 40561884, "nonRefundableStorageFee": 409716}
+{"phase": "construction", "i": 168, "depth_before": 168, "op": "place_new_best", "computationCost": 1790000, "storageCost": 59758800, "storageRebate": 55782936, "nonRefundableStorageFee": 563464}
+{"phase": "construction", "i": 169, "depth_before": 169, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37156400, "storageRebate": 35836812, "nonRefundableStorageFee": 361988}
+{"phase": "construction", "i": 170, "depth_before": 170, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38114000, "storageRebate": 36784836, "nonRefundableStorageFee": 371564}
+{"phase": "construction", "i": 171, "depth_before": 171, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39071600, "storageRebate": 37732860, "nonRefundableStorageFee": 381140}
+{"phase": "construction", "i": 172, "depth_before": 172, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40029200, "storageRebate": 38680884, "nonRefundableStorageFee": 390716}
+{"phase": "construction", "i": 173, "depth_before": 173, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40986800, "storageRebate": 39628908, "nonRefundableStorageFee": 400292}
+{"phase": "construction", "i": 174, "depth_before": 174, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41944400, "storageRebate": 40576932, "nonRefundableStorageFee": 409868}
+{"phase": "construction", "i": 175, "depth_before": 175, "op": "place_new_best", "computationCost": 1780000, "storageCost": 42902000, "storageRebate": 41524956, "nonRefundableStorageFee": 419444}
+{"phase": "construction", "i": 176, "depth_before": 176, "op": "place_new_best", "computationCost": 1790000, "storageCost": 60914000, "storageRebate": 56926584, "nonRefundableStorageFee": 575016}
+{"phase": "construction", "i": 177, "depth_before": 177, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38129200, "storageRebate": 36799884, "nonRefundableStorageFee": 371716}
+{"phase": "construction", "i": 178, "depth_before": 178, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39086800, "storageRebate": 37747908, "nonRefundableStorageFee": 381292}
+{"phase": "construction", "i": 179, "depth_before": 179, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40044400, "storageRebate": 38695932, "nonRefundableStorageFee": 390868}
+{"phase": "construction", "i": 180, "depth_before": 180, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34967600, "storageRebate": 25927704, "nonRefundableStorageFee": 261896}
+{"phase": "construction", "i": 181, "depth_before": 181, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31015600, "storageRebate": 29757420, "nonRefundableStorageFee": 300580}
+{"phase": "construction", "i": 182, "depth_before": 182, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31973200, "storageRebate": 30705444, "nonRefundableStorageFee": 310156}
+{"phase": "construction", "i": 183, "depth_before": 183, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32930800, "storageRebate": 31653468, "nonRefundableStorageFee": 319732}
+{"phase": "construction", "i": 184, "depth_before": 184, "op": "place_new_best", "computationCost": 1780000, "storageCost": 51125200, "storageRebate": 47235672, "nonRefundableStorageFee": 477128}
+{"phase": "construction", "i": 185, "depth_before": 185, "op": "place_new_best", "computationCost": 1760000, "storageCost": 28158000, "storageRebate": 26928396, "nonRefundableStorageFee": 272004}
+{"phase": "construction", "i": 186, "depth_before": 186, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29115600, "storageRebate": 27876420, "nonRefundableStorageFee": 281580}
+{"phase": "construction", "i": 187, "depth_before": 187, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30073200, "storageRebate": 28824444, "nonRefundableStorageFee": 291156}
+{"phase": "construction", "i": 188, "depth_before": 188, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31030800, "storageRebate": 29772468, "nonRefundableStorageFee": 300732}
+{"phase": "construction", "i": 189, "depth_before": 189, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31988400, "storageRebate": 30720492, "nonRefundableStorageFee": 310308}
+{"phase": "construction", "i": 190, "depth_before": 190, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32946000, "storageRebate": 31668516, "nonRefundableStorageFee": 319884}
+{"phase": "construction", "i": 191, "depth_before": 191, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33903600, "storageRebate": 32616540, "nonRefundableStorageFee": 329460}
+{"phase": "construction", "i": 192, "depth_before": 192, "op": "place_new_best", "computationCost": 1780000, "storageCost": 52280400, "storageRebate": 48379320, "nonRefundableStorageFee": 488680}
+{"phase": "construction", "i": 193, "depth_before": 193, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29130800, "storageRebate": 27891468, "nonRefundableStorageFee": 281732}
+{"phase": "construction", "i": 194, "depth_before": 194, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30088400, "storageRebate": 28839492, "nonRefundableStorageFee": 291308}
+{"phase": "construction", "i": 195, "depth_before": 195, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31046000, "storageRebate": 29787516, "nonRefundableStorageFee": 300884}
+{"phase": "construction", "i": 196, "depth_before": 196, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32003600, "storageRebate": 30735540, "nonRefundableStorageFee": 310460}
+{"phase": "construction", "i": 197, "depth_before": 197, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32961200, "storageRebate": 31683564, "nonRefundableStorageFee": 320036}
+{"phase": "construction", "i": 198, "depth_before": 198, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33918800, "storageRebate": 32631588, "nonRefundableStorageFee": 329612}
+{"phase": "construction", "i": 199, "depth_before": 199, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34876400, "storageRebate": 33579612, "nonRefundableStorageFee": 339188}
+{"phase": "construction", "i": 200, "depth_before": 200, "op": "place_new_best", "computationCost": 1780000, "storageCost": 53435600, "storageRebate": 49522968, "nonRefundableStorageFee": 500232}
+{"phase": "construction", "i": 201, "depth_before": 201, "op": "place_new_best", "computationCost": 1770000, "storageCost": 30103600, "storageRebate": 28854540, "nonRefundableStorageFee": 291460}
+{"phase": "construction", "i": 202, "depth_before": 202, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31061200, "storageRebate": 29802564, "nonRefundableStorageFee": 301036}
+{"phase": "construction", "i": 203, "depth_before": 203, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32018800, "storageRebate": 30750588, "nonRefundableStorageFee": 310612}
+{"phase": "construction", "i": 204, "depth_before": 204, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32976400, "storageRebate": 31698612, "nonRefundableStorageFee": 320188}
+{"phase": "construction", "i": 205, "depth_before": 205, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33934000, "storageRebate": 32646636, "nonRefundableStorageFee": 329764}
+{"phase": "construction", "i": 206, "depth_before": 206, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34891600, "storageRebate": 33594660, "nonRefundableStorageFee": 339340}
+{"phase": "construction", "i": 207, "depth_before": 207, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35849200, "storageRebate": 34542684, "nonRefundableStorageFee": 348916}
+{"phase": "construction", "i": 208, "depth_before": 208, "op": "place_new_best", "computationCost": 1780000, "storageCost": 54590800, "storageRebate": 50666616, "nonRefundableStorageFee": 511784}
+{"phase": "construction", "i": 209, "depth_before": 209, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31076400, "storageRebate": 29817612, "nonRefundableStorageFee": 301188}
+{"phase": "construction", "i": 210, "depth_before": 210, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32034000, "storageRebate": 30765636, "nonRefundableStorageFee": 310764}
+{"phase": "construction", "i": 211, "depth_before": 211, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32991600, "storageRebate": 31713660, "nonRefundableStorageFee": 320340}
+{"phase": "construction", "i": 212, "depth_before": 212, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33949200, "storageRebate": 32661684, "nonRefundableStorageFee": 329916}
+{"phase": "construction", "i": 213, "depth_before": 213, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34906800, "storageRebate": 33609708, "nonRefundableStorageFee": 339492}
+{"phase": "construction", "i": 214, "depth_before": 214, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35864400, "storageRebate": 34557732, "nonRefundableStorageFee": 349068}
+{"phase": "construction", "i": 215, "depth_before": 215, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36822000, "storageRebate": 35505756, "nonRefundableStorageFee": 358644}
+{"phase": "construction", "i": 216, "depth_before": 216, "op": "place_new_best", "computationCost": 1780000, "storageCost": 60655600, "storageRebate": 56670768, "nonRefundableStorageFee": 572432}
+{"phase": "construction", "i": 217, "depth_before": 217, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32049200, "storageRebate": 30780684, "nonRefundableStorageFee": 310916}
+{"phase": "construction", "i": 218, "depth_before": 218, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33006800, "storageRebate": 31728708, "nonRefundableStorageFee": 320492}
+{"phase": "construction", "i": 219, "depth_before": 219, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33964400, "storageRebate": 32676732, "nonRefundableStorageFee": 330068}
+{"phase": "construction", "i": 220, "depth_before": 220, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34922000, "storageRebate": 33624756, "nonRefundableStorageFee": 339644}
+{"phase": "construction", "i": 221, "depth_before": 221, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35879600, "storageRebate": 34572780, "nonRefundableStorageFee": 349220}
+{"phase": "construction", "i": 222, "depth_before": 222, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36837200, "storageRebate": 35520804, "nonRefundableStorageFee": 358796}
+{"phase": "construction", "i": 223, "depth_before": 223, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37794800, "storageRebate": 36468828, "nonRefundableStorageFee": 368372}
+{"phase": "construction", "i": 224, "depth_before": 224, "op": "place_new_best", "computationCost": 1780000, "storageCost": 56901200, "storageRebate": 52953912, "nonRefundableStorageFee": 534888}
+{"phase": "construction", "i": 225, "depth_before": 225, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33022000, "storageRebate": 31743756, "nonRefundableStorageFee": 320644}
+{"phase": "construction", "i": 226, "depth_before": 226, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33979600, "storageRebate": 32691780, "nonRefundableStorageFee": 330220}
+{"phase": "construction", "i": 227, "depth_before": 227, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34937200, "storageRebate": 33639804, "nonRefundableStorageFee": 339796}
+{"phase": "construction", "i": 228, "depth_before": 228, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35894800, "storageRebate": 34587828, "nonRefundableStorageFee": 349372}
+{"phase": "construction", "i": 229, "depth_before": 229, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36852400, "storageRebate": 35535852, "nonRefundableStorageFee": 358948}
+{"phase": "construction", "i": 230, "depth_before": 230, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37810000, "storageRebate": 36483876, "nonRefundableStorageFee": 368524}
+{"phase": "construction", "i": 231, "depth_before": 231, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38767600, "storageRebate": 37431900, "nonRefundableStorageFee": 378100}
+{"phase": "construction", "i": 232, "depth_before": 232, "op": "place_new_best", "computationCost": 1790000, "storageCost": 58056400, "storageRebate": 54097560, "nonRefundableStorageFee": 546440}
+{"phase": "construction", "i": 233, "depth_before": 233, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33994800, "storageRebate": 32706828, "nonRefundableStorageFee": 330372}
+{"phase": "construction", "i": 234, "depth_before": 234, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34952400, "storageRebate": 33654852, "nonRefundableStorageFee": 339948}
+{"phase": "construction", "i": 235, "depth_before": 235, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35910000, "storageRebate": 34602876, "nonRefundableStorageFee": 349524}
+{"phase": "construction", "i": 236, "depth_before": 236, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36867600, "storageRebate": 35550900, "nonRefundableStorageFee": 359100}
+{"phase": "construction", "i": 237, "depth_before": 237, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37825200, "storageRebate": 36498924, "nonRefundableStorageFee": 368676}
+{"phase": "construction", "i": 238, "depth_before": 238, "op": "place_new_best", "computationCost": 1770000, "storageCost": 38782800, "storageRebate": 37446948, "nonRefundableStorageFee": 378252}
+{"phase": "construction", "i": 239, "depth_before": 239, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39740400, "storageRebate": 38394972, "nonRefundableStorageFee": 387828}
+{"phase": "construction", "i": 240, "depth_before": 240, "op": "place_new_best", "computationCost": 1790000, "storageCost": 59211600, "storageRebate": 55241208, "nonRefundableStorageFee": 557992}
+{"phase": "construction", "i": 241, "depth_before": 241, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34967600, "storageRebate": 33669900, "nonRefundableStorageFee": 340100}
+{"phase": "construction", "i": 242, "depth_before": 242, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35925200, "storageRebate": 34617924, "nonRefundableStorageFee": 349676}
+{"phase": "construction", "i": 243, "depth_before": 243, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36882800, "storageRebate": 35565948, "nonRefundableStorageFee": 359252}
+{"phase": "construction", "i": 244, "depth_before": 244, "op": "place_new_best", "computationCost": 1770000, "storageCost": 37840400, "storageRebate": 36513972, "nonRefundableStorageFee": 368828}
+{"phase": "construction", "i": 245, "depth_before": 245, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38798000, "storageRebate": 37461996, "nonRefundableStorageFee": 378404}
+{"phase": "construction", "i": 246, "depth_before": 246, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39755600, "storageRebate": 38410020, "nonRefundableStorageFee": 387980}
+{"phase": "construction", "i": 247, "depth_before": 247, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40713200, "storageRebate": 39358044, "nonRefundableStorageFee": 397556}
+{"phase": "construction", "i": 248, "depth_before": 248, "op": "place_new_best", "computationCost": 1790000, "storageCost": 60366800, "storageRebate": 56384856, "nonRefundableStorageFee": 569544}
+{"phase": "construction", "i": 249, "depth_before": 249, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35940400, "storageRebate": 34632972, "nonRefundableStorageFee": 349828}
+{"phase": "construction", "i": 250, "depth_before": 250, "op": "place_new_best", "computationCost": 1780000, "storageCost": 36898000, "storageRebate": 35580996, "nonRefundableStorageFee": 359404}
+{"phase": "construction", "i": 251, "depth_before": 251, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37855600, "storageRebate": 36529020, "nonRefundableStorageFee": 368980}
+{"phase": "construction", "i": 252, "depth_before": 252, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38813200, "storageRebate": 37477044, "nonRefundableStorageFee": 378556}
+{"phase": "construction", "i": 253, "depth_before": 253, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39770800, "storageRebate": 38425068, "nonRefundableStorageFee": 388132}
+{"phase": "construction", "i": 254, "depth_before": 254, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40728400, "storageRebate": 39373092, "nonRefundableStorageFee": 397708}
+{"phase": "construction", "i": 255, "depth_before": 255, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41686000, "storageRebate": 40321116, "nonRefundableStorageFee": 407284}
+{"phase": "construction", "i": 256, "depth_before": 256, "op": "place_new_best", "computationCost": 1790000, "storageCost": 61522000, "storageRebate": 57528504, "nonRefundableStorageFee": 581096}
+{"phase": "construction", "i": 257, "depth_before": 257, "op": "place_new_best", "computationCost": 1780000, "storageCost": 36913200, "storageRebate": 35596044, "nonRefundableStorageFee": 359556}
+{"phase": "construction", "i": 258, "depth_before": 258, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37870800, "storageRebate": 36544068, "nonRefundableStorageFee": 369132}
+{"phase": "construction", "i": 259, "depth_before": 259, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38828400, "storageRebate": 37492092, "nonRefundableStorageFee": 378708}
+{"phase": "construction", "i": 260, "depth_before": 260, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39786000, "storageRebate": 38440116, "nonRefundableStorageFee": 388284}
+{"phase": "construction", "i": 261, "depth_before": 261, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40743600, "storageRebate": 39388140, "nonRefundableStorageFee": 397860}
+{"phase": "construction", "i": 262, "depth_before": 262, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41701200, "storageRebate": 40336164, "nonRefundableStorageFee": 407436}
+{"phase": "construction", "i": 263, "depth_before": 263, "op": "place_new_best", "computationCost": 1780000, "storageCost": 42658800, "storageRebate": 41284188, "nonRefundableStorageFee": 417012}
+{"phase": "construction", "i": 264, "depth_before": 264, "op": "place_new_best", "computationCost": 1790000, "storageCost": 62677200, "storageRebate": 58672152, "nonRefundableStorageFee": 592648}
+{"phase": "construction", "i": 265, "depth_before": 265, "op": "place_new_best", "computationCost": 1780000, "storageCost": 37886000, "storageRebate": 36559116, "nonRefundableStorageFee": 369284}
+{"phase": "construction", "i": 266, "depth_before": 266, "op": "place_new_best", "computationCost": 1780000, "storageCost": 38843600, "storageRebate": 37507140, "nonRefundableStorageFee": 378860}
+{"phase": "construction", "i": 267, "depth_before": 267, "op": "place_new_best", "computationCost": 1780000, "storageCost": 39801200, "storageRebate": 38455164, "nonRefundableStorageFee": 388436}
+{"phase": "construction", "i": 268, "depth_before": 268, "op": "place_new_best", "computationCost": 1780000, "storageCost": 40758800, "storageRebate": 39403188, "nonRefundableStorageFee": 398012}
+{"phase": "construction", "i": 269, "depth_before": 269, "op": "place_new_best", "computationCost": 1780000, "storageCost": 41716400, "storageRebate": 40351212, "nonRefundableStorageFee": 407588}
+{"phase": "construction", "i": 270, "depth_before": 270, "op": "place_new_best", "computationCost": 1770000, "storageCost": 36639600, "storageRebate": 27582984, "nonRefundableStorageFee": 278616}
+{"phase": "construction", "i": 271, "depth_before": 271, "op": "place_new_best", "computationCost": 1760000, "storageCost": 32687600, "storageRebate": 31412700, "nonRefundableStorageFee": 317300}
+{"phase": "construction", "i": 272, "depth_before": 272, "op": "place_new_best", "computationCost": 1780000, "storageCost": 52888400, "storageRebate": 48981240, "nonRefundableStorageFee": 494760}
+{"phase": "construction", "i": 273, "depth_before": 273, "op": "place_new_best", "computationCost": 1760000, "storageCost": 27914800, "storageRebate": 26687628, "nonRefundableStorageFee": 269572}
+{"phase": "construction", "i": 274, "depth_before": 274, "op": "place_new_best", "computationCost": 1760000, "storageCost": 28872400, "storageRebate": 27635652, "nonRefundableStorageFee": 279148}
+{"phase": "construction", "i": 275, "depth_before": 275, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29830000, "storageRebate": 28583676, "nonRefundableStorageFee": 288724}
+{"phase": "construction", "i": 276, "depth_before": 276, "op": "place_new_best", "computationCost": 1760000, "storageCost": 30787600, "storageRebate": 29531700, "nonRefundableStorageFee": 298300}
+{"phase": "construction", "i": 277, "depth_before": 277, "op": "place_new_best", "computationCost": 1760000, "storageCost": 31745200, "storageRebate": 30479724, "nonRefundableStorageFee": 307876}
+{"phase": "construction", "i": 278, "depth_before": 278, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32702800, "storageRebate": 31427748, "nonRefundableStorageFee": 317452}
+{"phase": "construction", "i": 279, "depth_before": 279, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33660400, "storageRebate": 32375772, "nonRefundableStorageFee": 327028}
+{"phase": "construction", "i": 280, "depth_before": 280, "op": "place_new_best", "computationCost": 1780000, "storageCost": 54043600, "storageRebate": 50124888, "nonRefundableStorageFee": 506312}
+{"phase": "construction", "i": 281, "depth_before": 281, "op": "place_new_best", "computationCost": 1760000, "storageCost": 28887600, "storageRebate": 27650700, "nonRefundableStorageFee": 279300}
+{"phase": "construction", "i": 282, "depth_before": 282, "op": "place_new_best", "computationCost": 1760000, "storageCost": 29845200, "storageRebate": 28598724, "nonRefundableStorageFee": 288876}
+{"phase": "construction", "i": 283, "depth_before": 283, "op": "place_new_best", "computationCost": 1770000, "storageCost": 30802800, "storageRebate": 29546748, "nonRefundableStorageFee": 298452}
+{"phase": "construction", "i": 284, "depth_before": 284, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31760400, "storageRebate": 30494772, "nonRefundableStorageFee": 308028}
+{"phase": "construction", "i": 285, "depth_before": 285, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32718000, "storageRebate": 31442796, "nonRefundableStorageFee": 317604}
+{"phase": "construction", "i": 286, "depth_before": 286, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33675600, "storageRebate": 32390820, "nonRefundableStorageFee": 327180}
+{"phase": "construction", "i": 287, "depth_before": 287, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34633200, "storageRebate": 33338844, "nonRefundableStorageFee": 336756}
+{"phase": "construction", "i": 288, "depth_before": 288, "op": "place_new_best", "computationCost": 1780000, "storageCost": 55198800, "storageRebate": 51268536, "nonRefundableStorageFee": 517864}
+{"phase": "construction", "i": 289, "depth_before": 289, "op": "place_new_best", "computationCost": 1770000, "storageCost": 29860400, "storageRebate": 28613772, "nonRefundableStorageFee": 289028}
+{"phase": "construction", "i": 290, "depth_before": 290, "op": "place_new_best", "computationCost": 1770000, "storageCost": 30818000, "storageRebate": 29561796, "nonRefundableStorageFee": 298604}
+{"phase": "construction", "i": 291, "depth_before": 291, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31775600, "storageRebate": 30509820, "nonRefundableStorageFee": 308180}
+{"phase": "construction", "i": 292, "depth_before": 292, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32733200, "storageRebate": 31457844, "nonRefundableStorageFee": 317756}
+{"phase": "construction", "i": 293, "depth_before": 293, "op": "place_new_best", "computationCost": 1770000, "storageCost": 33690800, "storageRebate": 32405868, "nonRefundableStorageFee": 327332}
+{"phase": "construction", "i": 294, "depth_before": 294, "op": "place_new_best", "computationCost": 1770000, "storageCost": 34648400, "storageRebate": 33353892, "nonRefundableStorageFee": 336908}
+{"phase": "construction", "i": 295, "depth_before": 295, "op": "place_new_best", "computationCost": 1770000, "storageCost": 35606000, "storageRebate": 34301916, "nonRefundableStorageFee": 346484}
+{"phase": "construction", "i": 296, "depth_before": 296, "op": "place_new_best", "computationCost": 1780000, "storageCost": 56354000, "storageRebate": 52412184, "nonRefundableStorageFee": 529416}
+{"phase": "construction", "i": 297, "depth_before": 297, "op": "place_new_best", "computationCost": 1770000, "storageCost": 30833200, "storageRebate": 29576844, "nonRefundableStorageFee": 298756}
+{"phase": "construction", "i": 298, "depth_before": 298, "op": "place_new_best", "computationCost": 1770000, "storageCost": 31790800, "storageRebate": 30524868, "nonRefundableStorageFee": 308332}
+{"phase": "construction", "i": 299, "depth_before": 299, "op": "place_new_best", "computationCost": 1770000, "storageCost": 32748400, "storageRebate": 31472892, "nonRefundableStorageFee": 317908}
+{"phase": "steady", "depth": 0, "op": "place_top", "computationCost": 1760000, "storageCost": 24935600, "storageRebate": 18606852, "nonRefundableStorageFee": 187948, "cycle": 0}
+{"phase": "steady", "depth": 0, "op": "cancel_top", "computationCost": 1740000, "storageCost": 16796000, "storageRebate": 19825740, "nonRefundableStorageFee": 200260, "cycle": 0}
+{"phase": "steady", "depth": 0, "op": "place_top", "computationCost": 1760000, "storageCost": 20026000, "storageRebate": 16628040, "nonRefundableStorageFee": 167960, "cycle": 1}
+{"phase": "steady", "depth": 0, "op": "cancel_top", "computationCost": 1740000, "storageCost": 16796000, "storageRebate": 19825740, "nonRefundableStorageFee": 200260, "cycle": 1}
+{"phase": "steady", "depth": 0, "op": "place_top", "computationCost": 1760000, "storageCost": 20026000, "storageRebate": 16628040, "nonRefundableStorageFee": 167960, "cycle": 2}
+{"phase": "steady", "depth": 0, "op": "cancel_top", "computationCost": 1740000, "storageCost": 16796000, "storageRebate": 19825740, "nonRefundableStorageFee": 200260, "cycle": 2}
+{"phase": "steady", "depth": 0, "op": "place_28", "computationCost": 1760000, "storageCost": 20026000, "storageRebate": 16628040, "nonRefundableStorageFee": 167960, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 0, "op": "cancel_28", "computationCost": 1740000, "storageCost": 16796000, "storageRebate": 19825740, "nonRefundableStorageFee": 200260, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 0, "op": "place_28", "computationCost": 1760000, "storageCost": 20026000, "storageRebate": 16628040, "nonRefundableStorageFee": 167960, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 0, "op": "cancel_28", "computationCost": 1740000, "storageCost": 16796000, "storageRebate": 19825740, "nonRefundableStorageFee": 200260, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 5, "op": "place_top", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564, "cycle": 0}
+{"phase": "steady", "depth": 5, "op": "cancel_top", "computationCost": 1740000, "storageCost": 23856400, "storageRebate": 24565860, "nonRefundableStorageFee": 248140, "cycle": 0}
+{"phase": "steady", "depth": 5, "op": "place_top", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564, "cycle": 1}
+{"phase": "steady", "depth": 5, "op": "cancel_top", "computationCost": 1740000, "storageCost": 23856400, "storageRebate": 24565860, "nonRefundableStorageFee": 248140, "cycle": 1}
+{"phase": "steady", "depth": 5, "op": "place_top", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564, "cycle": 2}
+{"phase": "steady", "depth": 5, "op": "cancel_top", "computationCost": 1740000, "storageCost": 23856400, "storageRebate": 24565860, "nonRefundableStorageFee": 248140, "cycle": 2}
+{"phase": "steady", "depth": 5, "op": "place_28", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564, "cycle": 0, "offset": 5}
+{"phase": "steady", "depth": 5, "op": "cancel_28", "computationCost": 1740000, "storageCost": 23856400, "storageRebate": 24565860, "nonRefundableStorageFee": 248140, "cycle": 0, "offset": 5}
+{"phase": "steady", "depth": 5, "op": "place_28", "computationCost": 1760000, "storageCost": 24814000, "storageRebate": 23617836, "nonRefundableStorageFee": 238564, "cycle": 1, "offset": 5}
+{"phase": "steady", "depth": 5, "op": "cancel_28", "computationCost": 1740000, "storageCost": 23856400, "storageRebate": 24565860, "nonRefundableStorageFee": 248140, "cycle": 1, "offset": 5}
+{"phase": "steady", "depth": 5, "op": "modify_down", "computationCost": 1740000, "storageCost": 14804800, "storageRebate": 14656752, "nonRefundableStorageFee": 148048}
+{"phase": "steady", "depth": 5, "op": "cancel_resting", "computationCost": 1740000, "storageCost": 22898800, "storageRebate": 23617836, "nonRefundableStorageFee": 238564}
+{"phase": "steady", "depth": 5, "op": "place_restore", "computationCost": 1760000, "storageCost": 23856400, "storageRebate": 22669812, "nonRefundableStorageFee": 228988}
+{"phase": "steady", "depth": 5, "op": "taker_1", "computationCost": 1790000, "storageCost": 33751600, "storageRebate": 31360032, "nonRefundableStorageFee": 316768}
+{"phase": "steady", "depth": 10, "op": "place_top", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444, "cycle": 0}
+{"phase": "steady", "depth": 10, "op": "cancel_top", "computationCost": 1740000, "storageCost": 28644400, "storageRebate": 29305980, "nonRefundableStorageFee": 296020, "cycle": 0}
+{"phase": "steady", "depth": 10, "op": "place_top", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444, "cycle": 1}
+{"phase": "steady", "depth": 10, "op": "cancel_top", "computationCost": 1740000, "storageCost": 28644400, "storageRebate": 29305980, "nonRefundableStorageFee": 296020, "cycle": 1}
+{"phase": "steady", "depth": 10, "op": "place_top", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444, "cycle": 2}
+{"phase": "steady", "depth": 10, "op": "cancel_top", "computationCost": 1740000, "storageCost": 28644400, "storageRebate": 29305980, "nonRefundableStorageFee": 296020, "cycle": 2}
+{"phase": "steady", "depth": 10, "op": "place_28", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444, "cycle": 0, "offset": 10}
+{"phase": "steady", "depth": 10, "op": "cancel_28", "computationCost": 1740000, "storageCost": 28644400, "storageRebate": 29305980, "nonRefundableStorageFee": 296020, "cycle": 0, "offset": 10}
+{"phase": "steady", "depth": 10, "op": "place_28", "computationCost": 1760000, "storageCost": 29602000, "storageRebate": 28357956, "nonRefundableStorageFee": 286444, "cycle": 1, "offset": 10}
+{"phase": "steady", "depth": 10, "op": "cancel_28", "computationCost": 1740000, "storageCost": 28644400, "storageRebate": 29305980, "nonRefundableStorageFee": 296020, "cycle": 1, "offset": 10}
+{"phase": "steady", "depth": 10, "op": "modify_down", "computationCost": 1740000, "storageCost": 18984800, "storageRebate": 18794952, "nonRefundableStorageFee": 189848}
+{"phase": "steady", "depth": 10, "op": "cancel_resting", "computationCost": 1740000, "storageCost": 27686800, "storageRebate": 28357956, "nonRefundableStorageFee": 286444}
+{"phase": "steady", "depth": 10, "op": "place_restore", "computationCost": 1760000, "storageCost": 28644400, "storageRebate": 27409932, "nonRefundableStorageFee": 276868}
+{"phase": "steady", "depth": 10, "op": "taker_1", "computationCost": 1800000, "storageCost": 38539600, "storageRebate": 36100152, "nonRefundableStorageFee": 364648}
+{"phase": "steady", "depth": 10, "op": "taker_10", "computationCost": 2030000, "storageCost": 30681200, "storageRebate": 41983920, "nonRefundableStorageFee": 424080}
+{"phase": "steady", "depth": 15, "op": "place_top", "computationCost": 1760000, "storageCost": 34390000, "storageRebate": 33098076, "nonRefundableStorageFee": 334324, "cycle": 0}
+{"phase": "steady", "depth": 15, "op": "cancel_top", "computationCost": 1740000, "storageCost": 33432400, "storageRebate": 34046100, "nonRefundableStorageFee": 343900, "cycle": 0}
+{"phase": "steady", "depth": 15, "op": "place_top", "computationCost": 1760000, "storageCost": 39299600, "storageRebate": 37958580, "nonRefundableStorageFee": 383420, "cycle": 1}
+{"phase": "steady", "depth": 15, "op": "cancel_top", "computationCost": 1740000, "storageCost": 33432400, "storageRebate": 34046100, "nonRefundableStorageFee": 343900, "cycle": 1}
+{"phase": "steady", "depth": 15, "op": "place_top", "computationCost": 1760000, "storageCost": 34390000, "storageRebate": 33098076, "nonRefundableStorageFee": 334324, "cycle": 2}
+{"phase": "steady", "depth": 15, "op": "cancel_top", "computationCost": 1740000, "storageCost": 33432400, "storageRebate": 34046100, "nonRefundableStorageFee": 343900, "cycle": 2}
+{"phase": "steady", "depth": 15, "op": "place_28", "computationCost": 1760000, "storageCost": 34390000, "storageRebate": 33098076, "nonRefundableStorageFee": 334324, "cycle": 0, "offset": 15}
+{"phase": "steady", "depth": 15, "op": "cancel_28", "computationCost": 1740000, "storageCost": 33432400, "storageRebate": 34046100, "nonRefundableStorageFee": 343900, "cycle": 0, "offset": 15}
+{"phase": "steady", "depth": 15, "op": "place_28", "computationCost": 1760000, "storageCost": 34390000, "storageRebate": 33098076, "nonRefundableStorageFee": 334324, "cycle": 1, "offset": 15}
+{"phase": "steady", "depth": 15, "op": "cancel_28", "computationCost": 1740000, "storageCost": 33432400, "storageRebate": 34046100, "nonRefundableStorageFee": 343900, "cycle": 1, "offset": 15}
+{"phase": "steady", "depth": 15, "op": "modify_down", "computationCost": 1740000, "storageCost": 23164800, "storageRebate": 22933152, "nonRefundableStorageFee": 231648}
+{"phase": "steady", "depth": 15, "op": "cancel_resting", "computationCost": 1740000, "storageCost": 32474800, "storageRebate": 33098076, "nonRefundableStorageFee": 334324}
+{"phase": "steady", "depth": 15, "op": "place_restore", "computationCost": 1760000, "storageCost": 33432400, "storageRebate": 32150052, "nonRefundableStorageFee": 324748}
+{"phase": "steady", "depth": 15, "op": "taker_1", "computationCost": 1800000, "storageCost": 43327600, "storageRebate": 40840272, "nonRefundableStorageFee": 412528}
+{"phase": "steady", "depth": 15, "op": "taker_10", "computationCost": 2070000, "storageCost": 37741600, "storageRebate": 46724040, "nonRefundableStorageFee": 471960}
+{"phase": "steady", "depth": 20, "op": "place_top", "computationCost": 1760000, "storageCost": 32490000, "storageRebate": 31217076, "nonRefundableStorageFee": 315324, "cycle": 0}
+{"phase": "steady", "depth": 20, "op": "cancel_top", "computationCost": 1750000, "storageCost": 31532400, "storageRebate": 32165100, "nonRefundableStorageFee": 324900, "cycle": 0}
+{"phase": "steady", "depth": 20, "op": "place_top", "computationCost": 1760000, "storageCost": 32490000, "storageRebate": 31217076, "nonRefundableStorageFee": 315324, "cycle": 1}
+{"phase": "steady", "depth": 20, "op": "cancel_top", "computationCost": 1750000, "storageCost": 31532400, "storageRebate": 32165100, "nonRefundableStorageFee": 324900, "cycle": 1}
+{"phase": "steady", "depth": 20, "op": "place_top", "computationCost": 1760000, "storageCost": 32490000, "storageRebate": 31217076, "nonRefundableStorageFee": 315324, "cycle": 2}
+{"phase": "steady", "depth": 20, "op": "cancel_top", "computationCost": 1750000, "storageCost": 31532400, "storageRebate": 32165100, "nonRefundableStorageFee": 324900, "cycle": 2}
+{"phase": "steady", "depth": 20, "op": "place_28", "computationCost": 1760000, "storageCost": 29146000, "storageRebate": 27906516, "nonRefundableStorageFee": 281884, "cycle": 0, "offset": 20}
+{"phase": "steady", "depth": 20, "op": "cancel_28", "computationCost": 1740000, "storageCost": 28188400, "storageRebate": 28854540, "nonRefundableStorageFee": 291460, "cycle": 0, "offset": 20}
+{"phase": "steady", "depth": 20, "op": "place_28", "computationCost": 1760000, "storageCost": 29146000, "storageRebate": 27906516, "nonRefundableStorageFee": 281884, "cycle": 1, "offset": 20}
+{"phase": "steady", "depth": 20, "op": "cancel_28", "computationCost": 1740000, "storageCost": 28188400, "storageRebate": 28854540, "nonRefundableStorageFee": 291460, "cycle": 1, "offset": 20}
+{"phase": "steady", "depth": 20, "op": "modify_down", "computationCost": 1740000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 20, "op": "cancel_resting", "computationCost": 1760000, "storageCost": 41708800, "storageRebate": 42239736, "nonRefundableStorageFee": 426664}
+{"phase": "steady", "depth": 20, "op": "place_restore", "computationCost": 1760000, "storageCost": 30696400, "storageRebate": 29441412, "nonRefundableStorageFee": 297388}
+{"phase": "steady", "depth": 20, "op": "taker_1", "computationCost": 1800000, "storageCost": 38919600, "storageRebate": 36476352, "nonRefundableStorageFee": 368448}
+{"phase": "steady", "depth": 20, "op": "taker_10", "computationCost": 2150000, "storageCost": 42529600, "storageRebate": 55865700, "nonRefundableStorageFee": 564300}
+{"phase": "steady", "depth": 30, "op": "place_top", "computationCost": 1770000, "storageCost": 35378000, "storageRebate": 34076196, "nonRefundableStorageFee": 344204, "cycle": 0}
+{"phase": "steady", "depth": 30, "op": "cancel_top", "computationCost": 1750000, "storageCost": 34420400, "storageRebate": 35024220, "nonRefundableStorageFee": 353780, "cycle": 0}
+{"phase": "steady", "depth": 30, "op": "place_top", "computationCost": 1770000, "storageCost": 35378000, "storageRebate": 34076196, "nonRefundableStorageFee": 344204, "cycle": 1}
+{"phase": "steady", "depth": 30, "op": "cancel_top", "computationCost": 1750000, "storageCost": 34420400, "storageRebate": 35024220, "nonRefundableStorageFee": 353780, "cycle": 1}
+{"phase": "steady", "depth": 30, "op": "place_top", "computationCost": 1770000, "storageCost": 35378000, "storageRebate": 34076196, "nonRefundableStorageFee": 344204, "cycle": 2}
+{"phase": "steady", "depth": 30, "op": "cancel_top", "computationCost": 1750000, "storageCost": 34420400, "storageRebate": 35024220, "nonRefundableStorageFee": 353780, "cycle": 2}
+{"phase": "steady", "depth": 30, "op": "place_28", "computationCost": 1760000, "storageCost": 30362000, "storageRebate": 29110356, "nonRefundableStorageFee": 294044, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 30, "op": "cancel_28", "computationCost": 1740000, "storageCost": 29404400, "storageRebate": 30058380, "nonRefundableStorageFee": 303620, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 30, "op": "place_28", "computationCost": 1760000, "storageCost": 30362000, "storageRebate": 29110356, "nonRefundableStorageFee": 294044, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 30, "op": "cancel_28", "computationCost": 1740000, "storageCost": 29404400, "storageRebate": 30058380, "nonRefundableStorageFee": 303620, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 30, "op": "modify_down", "computationCost": 1740000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 30, "op": "cancel_resting", "computationCost": 1750000, "storageCost": 37308400, "storageRebate": 40313592, "nonRefundableStorageFee": 407208}
+{"phase": "steady", "depth": 30, "op": "place_restore", "computationCost": 1770000, "storageCost": 36092400, "storageRebate": 34783452, "nonRefundableStorageFee": 351348}
+{"phase": "steady", "depth": 30, "op": "taker_1", "computationCost": 1800000, "storageCost": 44315600, "storageRebate": 41818392, "nonRefundableStorageFee": 422408}
+{"phase": "steady", "depth": 30, "op": "taker_10", "computationCost": 2160000, "storageCost": 56551600, "storageRebate": 65345940, "nonRefundableStorageFee": 660060}
+{"phase": "steady", "depth": 30, "op": "taker_30", "computationCost": 3180000, "storageCost": 30681200, "storageRebate": 67776192, "nonRefundableStorageFee": 684608}
+{"phase": "steady", "depth": 45, "op": "place_top", "computationCost": 1770000, "storageCost": 36366000, "storageRebate": 35054316, "nonRefundableStorageFee": 354084, "cycle": 0}
+{"phase": "steady", "depth": 45, "op": "cancel_top", "computationCost": 1750000, "storageCost": 35408400, "storageRebate": 36002340, "nonRefundableStorageFee": 363660, "cycle": 0}
+{"phase": "steady", "depth": 45, "op": "place_top", "computationCost": 1770000, "storageCost": 36366000, "storageRebate": 35054316, "nonRefundableStorageFee": 354084, "cycle": 1}
+{"phase": "steady", "depth": 45, "op": "cancel_top", "computationCost": 1750000, "storageCost": 35408400, "storageRebate": 36002340, "nonRefundableStorageFee": 363660, "cycle": 1}
+{"phase": "steady", "depth": 45, "op": "place_top", "computationCost": 1770000, "storageCost": 36366000, "storageRebate": 35054316, "nonRefundableStorageFee": 354084, "cycle": 2}
+{"phase": "steady", "depth": 45, "op": "cancel_top", "computationCost": 1750000, "storageCost": 35408400, "storageRebate": 36002340, "nonRefundableStorageFee": 363660, "cycle": 2}
+{"phase": "steady", "depth": 45, "op": "place_28", "computationCost": 1770000, "storageCost": 32186000, "storageRebate": 30916116, "nonRefundableStorageFee": 312284, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 45, "op": "cancel_28", "computationCost": 1750000, "storageCost": 31228400, "storageRebate": 31864140, "nonRefundableStorageFee": 321860, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 45, "op": "place_28", "computationCost": 1770000, "storageCost": 32186000, "storageRebate": 30916116, "nonRefundableStorageFee": 312284, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 45, "op": "cancel_28", "computationCost": 1750000, "storageCost": 31228400, "storageRebate": 31864140, "nonRefundableStorageFee": 321860, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 45, "op": "modify_down", "computationCost": 1740000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 45, "op": "cancel_resting", "computationCost": 1760000, "storageCost": 48457600, "storageRebate": 51351300, "nonRefundableStorageFee": 518700}
+{"phase": "steady", "depth": 45, "op": "place_restore", "computationCost": 1770000, "storageCost": 37916400, "storageRebate": 36589212, "nonRefundableStorageFee": 369588}
+{"phase": "steady", "depth": 45, "op": "taker_1", "computationCost": 1810000, "storageCost": 45303600, "storageRebate": 42796512, "nonRefundableStorageFee": 432288}
+{"phase": "steady", "depth": 45, "op": "taker_10", "computationCost": 2230000, "storageCost": 57904400, "storageRebate": 66685212, "nonRefundableStorageFee": 673588}
+{"phase": "steady", "depth": 45, "op": "taker_30", "computationCost": 3430000, "storageCost": 47317600, "storageRebate": 86857056, "nonRefundableStorageFee": 877344}
+{"phase": "steady", "depth": 60, "op": "place_top", "computationCost": 1770000, "storageCost": 37354000, "storageRebate": 36032436, "nonRefundableStorageFee": 363964, "cycle": 0}
+{"phase": "steady", "depth": 60, "op": "cancel_top", "computationCost": 1750000, "storageCost": 36396400, "storageRebate": 36980460, "nonRefundableStorageFee": 373540, "cycle": 0}
+{"phase": "steady", "depth": 60, "op": "place_top", "computationCost": 1770000, "storageCost": 37354000, "storageRebate": 36032436, "nonRefundableStorageFee": 363964, "cycle": 1}
+{"phase": "steady", "depth": 60, "op": "cancel_top", "computationCost": 1750000, "storageCost": 36396400, "storageRebate": 36980460, "nonRefundableStorageFee": 373540, "cycle": 1}
+{"phase": "steady", "depth": 60, "op": "place_top", "computationCost": 1770000, "storageCost": 37354000, "storageRebate": 36032436, "nonRefundableStorageFee": 363964, "cycle": 2}
+{"phase": "steady", "depth": 60, "op": "cancel_top", "computationCost": 1750000, "storageCost": 36396400, "storageRebate": 36980460, "nonRefundableStorageFee": 373540, "cycle": 2}
+{"phase": "steady", "depth": 60, "op": "place_28", "computationCost": 1770000, "storageCost": 34010000, "storageRebate": 32721876, "nonRefundableStorageFee": 330524, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 60, "op": "cancel_28", "computationCost": 1750000, "storageCost": 33052400, "storageRebate": 33669900, "nonRefundableStorageFee": 340100, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 60, "op": "place_28", "computationCost": 1770000, "storageCost": 34010000, "storageRebate": 32721876, "nonRefundableStorageFee": 330524, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 60, "op": "cancel_28", "computationCost": 1750000, "storageCost": 33052400, "storageRebate": 33669900, "nonRefundableStorageFee": 340100, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 60, "op": "modify_down", "computationCost": 1750000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 60, "op": "cancel_resting", "computationCost": 1760000, "storageCost": 50646400, "storageRebate": 53518212, "nonRefundableStorageFee": 540588}
+{"phase": "steady", "depth": 60, "op": "place_restore", "computationCost": 1770000, "storageCost": 39740400, "storageRebate": 38394972, "nonRefundableStorageFee": 387828}
+{"phase": "steady", "depth": 60, "op": "taker_1", "computationCost": 1810000, "storageCost": 46291600, "storageRebate": 43774632, "nonRefundableStorageFee": 442168}
+{"phase": "steady", "depth": 60, "op": "taker_10", "computationCost": 2270000, "storageCost": 59257200, "storageRebate": 68024484, "nonRefundableStorageFee": 687116}
+{"phase": "steady", "depth": 60, "op": "taker_30", "computationCost": 3630000, "storageCost": 59622000, "storageRebate": 97067124, "nonRefundableStorageFee": 980476}
+{"phase": "steady", "depth": 100, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 0}
+{"phase": "steady", "depth": 100, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 0}
+{"phase": "steady", "depth": 100, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 1}
+{"phase": "steady", "depth": 100, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 1}
+{"phase": "steady", "depth": 100, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 2}
+{"phase": "steady", "depth": 100, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 2}
+{"phase": "steady", "depth": 100, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 100, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 100, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 100, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 100, "op": "modify_down", "computationCost": 1750000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 100, "op": "cancel_resting", "computationCost": 1770000, "storageCost": 55206400, "storageRebate": 58032612, "nonRefundableStorageFee": 586188}
+{"phase": "steady", "depth": 100, "op": "place_restore", "computationCost": 1780000, "storageCost": 43388400, "storageRebate": 42006492, "nonRefundableStorageFee": 424308}
+{"phase": "steady", "depth": 100, "op": "taker_1", "computationCost": 1800000, "storageCost": 40211600, "storageRebate": 37755432, "nonRefundableStorageFee": 381368}
+{"phase": "steady", "depth": 100, "op": "taker_10", "computationCost": 2140000, "storageCost": 54089200, "storageRebate": 62908164, "nonRefundableStorageFee": 635436}
+{"phase": "steady", "depth": 100, "op": "taker_30", "computationCost": 4670000, "storageCost": 65398000, "storageRebate": 102664980, "nonRefundableStorageFee": 1037020}
+{"phase": "steady", "depth": 150, "op": "place_top", "computationCost": 1780000, "storageCost": 42674000, "storageRebate": 41299236, "nonRefundableStorageFee": 417164, "cycle": 0}
+{"phase": "steady", "depth": 150, "op": "cancel_top", "computationCost": 1760000, "storageCost": 41716400, "storageRebate": 42247260, "nonRefundableStorageFee": 426740, "cycle": 0}
+{"phase": "steady", "depth": 150, "op": "place_top", "computationCost": 1780000, "storageCost": 42674000, "storageRebate": 41299236, "nonRefundableStorageFee": 417164, "cycle": 1}
+{"phase": "steady", "depth": 150, "op": "cancel_top", "computationCost": 1760000, "storageCost": 41716400, "storageRebate": 42247260, "nonRefundableStorageFee": 426740, "cycle": 1}
+{"phase": "steady", "depth": 150, "op": "place_top", "computationCost": 1780000, "storageCost": 42674000, "storageRebate": 41299236, "nonRefundableStorageFee": 417164, "cycle": 2}
+{"phase": "steady", "depth": 150, "op": "cancel_top", "computationCost": 1760000, "storageCost": 41716400, "storageRebate": 42247260, "nonRefundableStorageFee": 426740, "cycle": 2}
+{"phase": "steady", "depth": 150, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 150, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 150, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 150, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 150, "op": "modify_down", "computationCost": 1750000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 150, "op": "cancel_resting", "computationCost": 1760000, "storageCost": 52652800, "storageRebate": 55504548, "nonRefundableStorageFee": 560652}
+{"phase": "steady", "depth": 150, "op": "place_restore", "computationCost": 1770000, "storageCost": 39740400, "storageRebate": 38394972, "nonRefundableStorageFee": 387828}
+{"phase": "steady", "depth": 150, "op": "taker_1", "computationCost": 1810000, "storageCost": 47963600, "storageRebate": 45429912, "nonRefundableStorageFee": 458888}
+{"phase": "steady", "depth": 150, "op": "taker_10", "computationCost": 2250000, "storageCost": 62935600, "storageRebate": 71666100, "nonRefundableStorageFee": 723900}
+{"phase": "steady", "depth": 150, "op": "taker_30", "computationCost": 3720000, "storageCost": 56794800, "storageRebate": 91837944, "nonRefundableStorageFee": 927656}
+{"phase": "steady", "depth": 300, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 0}
+{"phase": "steady", "depth": 300, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 0}
+{"phase": "steady", "depth": 300, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 1}
+{"phase": "steady", "depth": 300, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 1}
+{"phase": "steady", "depth": 300, "op": "place_top", "computationCost": 1780000, "storageCost": 41002000, "storageRebate": 39643956, "nonRefundableStorageFee": 400444, "cycle": 2}
+{"phase": "steady", "depth": 300, "op": "cancel_top", "computationCost": 1760000, "storageCost": 40044400, "storageRebate": 40591980, "nonRefundableStorageFee": 410020, "cycle": 2}
+{"phase": "steady", "depth": 300, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 300, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 0, "offset": 28}
+{"phase": "steady", "depth": 300, "op": "place_28", "computationCost": 1780000, "storageCost": 37658000, "storageRebate": 36333396, "nonRefundableStorageFee": 367004, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 300, "op": "cancel_28", "computationCost": 1760000, "storageCost": 36700400, "storageRebate": 37281420, "nonRefundableStorageFee": 376580, "cycle": 1, "offset": 28}
+{"phase": "steady", "depth": 300, "op": "modify_down", "computationCost": 1750000, "storageCost": 17312800, "storageRebate": 17139672, "nonRefundableStorageFee": 173128}
+{"phase": "steady", "depth": 300, "op": "cancel_resting", "computationCost": 1760000, "storageCost": 52470400, "storageRebate": 55323972, "nonRefundableStorageFee": 558828}
+{"phase": "steady", "depth": 300, "op": "place_restore", "computationCost": 1770000, "storageCost": 36092400, "storageRebate": 34783452, "nonRefundableStorageFee": 351348}
+{"phase": "steady", "depth": 300, "op": "taker_1", "computationCost": 1800000, "storageCost": 42643600, "storageRebate": 40163112, "nonRefundableStorageFee": 405688}
+{"phase": "steady", "depth": 300, "op": "taker_10", "computationCost": 2200000, "storageCost": 61081200, "storageRebate": 69830244, "nonRefundableStorageFee": 705356}
+{"phase": "steady", "depth": 300, "op": "taker_30", "computationCost": 3450000, "storageCost": 61446000, "storageRebate": 98872884, "nonRefundableStorageFee": 998716}

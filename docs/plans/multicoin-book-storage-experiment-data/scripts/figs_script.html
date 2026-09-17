@@ -1,0 +1,631 @@
+<script>
+var LADDER = __LADDER__;
+
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+
+  function tok(n) {
+    return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  }
+  function el(tag, at, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in at) e.setAttribute(k, at[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function fmtN(v) { return v == null ? "" : Math.round(v).toLocaleString("en-US"); }
+  function fmtMIST(v) {
+    var a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+    if (a >= 1e3) return Math.round(v / 1e3) + "k";
+    return String(Math.round(v));
+  }
+
+  /* series definition: fixed hue per design, never reassigned */
+  var SERIES = [
+    { v: "A",    short: "A",    label: "A · flat vector",                 tok: "--l-a", dash: "none" },
+    { v: "B",    short: "B",    label: "B · BigVector, no buffer",        tok: "--l-b", dash: "7,3" },
+    { v: "D64u", short: "D64u", label: "D64u · BigVector + 64/30 buffer", tok: "--l-d", dash: "2,3" },
+    { v: "C16u", short: "C16u", label: "C16u · BigVector + 16/12 buffer", tok: "--l-c", dash: "none" }
+  ];
+
+  var build = "desc";
+  var redraws = [];
+
+  /* =========== log/linear xy line chart =========== */
+  function xyChart(box, legendBox, cfg) {
+    var W = 880, H = cfg.h || 360, L = 74, R = 104, T = 28, B = 48;
+    var iw = W - L - R, ih = H - T - B;
+
+    function render() {
+      box.innerHTML = "";
+      var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+                            "aria-label": cfg.alt(build) }, null);
+      box.appendChild(svg);
+      var tip = document.createElement("div");
+      tip.className = "tipbox";
+      box.appendChild(tip);
+
+      var ink2 = tok("--ink-2"), ink3 = tok("--ink-3"),
+          rule = tok("--rule"), rule2 = tok("--rule-2"), surf = tok("--surface");
+
+      var xs = cfg.xs(build);
+      var series = SERIES.map(function (s) {
+        return { s: s, v: cfg.values(build, s.v) };
+      }).filter(function (o) { return o.v && o.v.some(function (y) { return y != null; }); });
+
+      var lx = Math.log(xs[0]), hx = Math.log(xs[xs.length - 1]);
+      function X(x) { return L + iw * (Math.log(x) - lx) / (hx - lx); }
+
+      var lo = Infinity, hi = -Infinity;
+      series.forEach(function (o) {
+        o.v.forEach(function (y) {
+          if (y == null) return;
+          if (y < lo) lo = y;
+          if (y > hi) hi = y;
+        });
+      });
+      var yt = cfg.yticks(lo, hi);          // {ticks:[...], min, max, log}
+      function Y(y) {
+        return yt.log
+          ? T + ih * (1 - (Math.log(y) - Math.log(yt.min)) /
+                          (Math.log(yt.max) - Math.log(yt.min)))
+          : T + ih * (1 - (y - yt.min) / (yt.max - yt.min));
+      }
+
+      /* one label format for the whole axis, so 2M and 2.1M never mix */
+      var dec = yt.ticks.some(function (t) {
+        return Math.abs(t) >= 1e6 && Math.abs(t / 1e6 % 1) > 1e-9;
+      }) ? 1 : 0;
+      function ylab(t) {
+        var a = Math.abs(t);
+        if (a >= 1e6 || t === 0 && dec) return (t / 1e6).toFixed(dec) + "M";
+        return fmtMIST(t);
+      }
+
+      /* gridlines + y labels */
+      yt.ticks.forEach(function (t) {
+        var y = Y(t);
+        el("line", { x1: L, x2: L + iw, y1: y, y2: y, stroke: rule,
+                     "stroke-width": 1 }, svg);
+        el("text", { x: L - 10, y: y + 4, "text-anchor": "end", "font-size": 11,
+                     fill: ink3 }, svg).textContent = ylab(t);
+      });
+      /* zero rule, when the scale spans it */
+      if (!yt.log && yt.min < 0 && yt.max > 0) {
+        var zy = Y(0);
+        el("line", { x1: L, x2: L + iw, y1: zy, y2: zy, stroke: rule2,
+                     "stroke-width": 1.5 }, svg);
+        el("text", { x: L + 4, y: zy - 7, "font-size": 10, fill: ink3 }, svg)
+          .textContent = "above the rule: deposit charged · below: returned";
+      }
+      /* x ticks — every measured point gets a tick, only some get a label,
+         so an 18-point log axis does not run its labels together */
+      var lab = cfg.xlabels ? cfg.xlabels(build) : xs;
+      xs.forEach(function (x) {
+        var on = lab.indexOf(x) >= 0;
+        el("line", { x1: X(x), x2: X(x), y1: T + ih,
+                     y2: T + ih + (on ? 5 : 3), stroke: rule2,
+                     "stroke-width": 1 }, svg);
+        if (on) {
+          el("text", { x: X(x), y: T + ih + 20, "text-anchor": "middle",
+                       "font-size": 11, fill: ink3 }, svg)
+            .textContent = x.toLocaleString("en-US");
+        }
+      });
+      el("text", { x: L + iw / 2, y: H - 6, "text-anchor": "middle",
+                   "font-size": 11, fill: ink2 }, svg).textContent = cfg.xlabel;
+      el("text", { x: L - 10, y: T - 10, "text-anchor": "end", "font-size": 10,
+                   fill: ink3 }, svg).textContent = "MIST";
+      if (cfg.note) {
+        el("text", { x: L + iw, y: T - 10, "text-anchor": "end",
+                     "font-size": 9.5, fill: ink3 }, svg).textContent = cfg.note;
+      }
+
+      /* lines */
+      var ends = [];
+      series.forEach(function (o) {
+        var col = tok(o.s.tok), pts = [];
+        o.v.forEach(function (y, i) {
+          if (y != null) pts.push(X(xs[i]) + "," + Y(y));
+        });
+        el("polyline", { points: pts.join(" "), fill: "none", stroke: col,
+                         "stroke-width": 2, "stroke-linejoin": "round",
+                         "stroke-linecap": "round",
+                         "stroke-dasharray": o.s.dash }, svg);
+        var li = o.v.length - 1;
+        while (li >= 0 && o.v[li] == null) li--;
+        if (li >= 0) {
+          el("circle", { cx: X(xs[li]), cy: Y(o.v[li]), r: 3.5, fill: col,
+                         stroke: surf, "stroke-width": 1.5 }, svg);
+          ends.push({ col: col, short: o.s.short, x: X(xs[li]) + 9,
+                      y: Y(o.v[li]) });
+        }
+      });
+      ends.sort(function (a, b) { return a.y - b.y; });
+      for (var e = 1; e < ends.length; e++) {
+        if (ends[e].y - ends[e - 1].y < 14) ends[e].y = ends[e - 1].y + 14;
+      }
+      ends.forEach(function (p) {
+        el("text", { x: p.x, y: p.y + 4, "font-size": 11.5, "font-weight": 700,
+                     fill: p.col }, svg).textContent = p.short;
+      });
+
+      /* hover crosshair */
+      var hov = el("g", {}, svg);
+      var vl = el("line", { y1: T, y2: T + ih, stroke: ink3, "stroke-width": 1,
+                            "stroke-dasharray": "3,3", visibility: "hidden" }, hov);
+      var dots = series.map(function (o) {
+        return el("circle", { r: 4.5, fill: tok(o.s.tok), stroke: surf,
+                              "stroke-width": 2, visibility: "hidden" }, hov);
+      });
+      function move(ev) {
+        var r = svg.getBoundingClientRect();
+        var px = (ev.clientX - r.left) * W / r.width;
+        var best = 0, bd = Infinity;
+        xs.forEach(function (x, i) {
+          var d = Math.abs(X(x) - px);
+          if (d < bd) { bd = d; best = i; }
+        });
+        var x = X(xs[best]);
+        vl.setAttribute("x1", x); vl.setAttribute("x2", x);
+        vl.setAttribute("visibility", "visible");
+        var html = "<b>" + cfg.xname + " " + xs[best].toLocaleString("en-US") + "</b>";
+        series.forEach(function (o, k) {
+          var y = o.v[best];
+          if (y == null) { dots[k].setAttribute("visibility", "hidden"); return; }
+          dots[k].setAttribute("cx", x);
+          dots[k].setAttribute("cy", Y(y));
+          dots[k].setAttribute("visibility", "visible");
+          html += "<br><i style='background:" + tok(o.s.tok) + "'></i>" +
+                  o.s.short + " " + fmtN(y);
+        });
+        tip.innerHTML = html;
+        tip.style.opacity = 1;
+        var bw = box.clientWidth;
+        var tx = (x / W) * bw + 14;
+        if (tx + tip.offsetWidth + 8 > bw) tx = (x / W) * bw - tip.offsetWidth - 14;
+        if (tx < 0) tx = 4;
+        tip.style.left = tx + "px";
+        tip.style.top = "10px";
+      }
+      function leave() {
+        vl.setAttribute("visibility", "hidden");
+        dots.forEach(function (d) { d.setAttribute("visibility", "hidden"); });
+        tip.style.opacity = 0;
+      }
+      svg.addEventListener("pointermove", move);
+      svg.addEventListener("pointerleave", leave);
+
+      legendBox.innerHTML = series.map(function (o) {
+        return "<span><i style='border-top-color:" + tok(o.s.tok) +
+               (o.s.dash !== "none" ? ";border-top-style:dashed" : "") + "'></i>" +
+               o.s.label + "</span>";
+      }).join("");
+    }
+    render();
+    return render;
+  }
+
+  /* ---- tick helpers ---- */
+  /* A 1–1.5–2–3–5–7 ladder: the ranges here span barely one decade, so a
+     1–2–5 ladder leaves the flat series stacked on the bottom gridline. */
+  var MANT = [1, 1.5, 2, 3, 5, 7];
+  function logTicks(lo, hi) {
+    var all = [], d = Math.floor(Math.log10(lo)) - 1;
+    for (var k = 0; k < 5; k++, d++) {
+      var v = Math.pow(10, d);
+      MANT.forEach(function (m) { all.push(v * m); });
+    }
+    all.sort(function (a, b) { return a - b; });
+    /* widest bracket that still contains the data, inclusive on both ends */
+    var i0 = 0, i1 = all.length - 1;
+    for (var i = 0; i < all.length; i++) if (all[i] <= lo) i0 = i;
+    for (var j = all.length - 1; j >= 0; j--) if (all[j] >= hi) i1 = j;
+    var ticks = all.slice(i0, i1 + 1);
+    return { ticks: ticks, min: ticks[0], max: ticks[ticks.length - 1],
+             log: true };
+  }
+  function linTicks(step, pad) {
+    return function (lo, hi) {
+      var min = Math.floor((lo - (pad || 0)) / step) * step;
+      var max = Math.ceil((hi + (pad || 0)) / step) * step;
+      var ticks = [];
+      for (var t = min; t <= max + 1e-6; t += step) ticks.push(t);
+      return { ticks: ticks, min: min, max: max, log: false };
+    };
+  }
+
+  var DEPTHS = LADDER.depths;
+  function depthXs() { return DEPTHS; }
+  function rankXs(b) { return LADDER[b].byRank["2048"].ranks; }
+
+  /* =========== Figure 6 — insert, net storage vs depth =========== */
+  redraws.push(xyChart(
+    document.getElementById("cb6"), document.getElementById("lg6"),
+    {
+      h: 380,
+      xs: depthXs,
+      xname: "depth",
+      xlabel: "standing orders on the side (log scale)",
+      values: function (b, v) { return LADDER[b].byDepth.insert.net[v]; },
+      yticks: logTicks,
+      alt: function (b) {
+        return "Log-log line chart of net storage cost for a top-of-book insert " +
+               "against book depth, " + b + " build. The flat vector rises as a " +
+               "straight line of slope one from about 0.9 million to 14 million " +
+               "MIST; the three keyed designs are horizontal.";
+      }
+    }
+  ));
+
+  /* =========== Figure 7 — insert, computation vs depth =========== */
+  redraws.push(xyChart(
+    document.getElementById("cb7"), document.getElementById("lg7"),
+    {
+      h: 350,
+      xs: depthXs,
+      xname: "depth",
+      xlabel: "standing orders on the side (log scale)",
+      values: function (b, v) { return LADDER[b].byDepth.insert.comp[v]; },
+      yticks: linTicks(100000, 40000),
+      note: "quantisation bucket 10,000 MIST · axis does not start at zero",
+      alt: function (b) {
+        return "Line chart of computation cost for a top-of-book insert against " +
+               "book depth, " + b + " build. The keyed designs are flat near 1.75 " +
+               "million MIST; the flat vector rises from 1.72 to 2.13 million.";
+      }
+    }
+  ));
+
+  /* =========== Figure 8 — cancel, net storage vs depth =========== */
+  redraws.push(xyChart(
+    document.getElementById("cb8"), document.getElementById("lg8"),
+    {
+      h: 360,
+      xs: depthXs,
+      xname: "depth",
+      xlabel: "standing orders on the side (log scale)",
+      values: function (b, v) { return LADDER[b].byDepth.cancel.net[v]; },
+      yticks: linTicks(2000000, 400000),
+      alt: function (b) {
+        return "Line chart of net storage for a top-of-book cancel against book " +
+               "depth, " + b + " build. The keyed designs stay below zero at every " +
+               "depth; the flat vector crosses zero near depth 85 and reaches about " +
+               "plus 12.8 million MIST at depth 2048.";
+      }
+    }
+  ));
+
+  /* =========== Figure 9 — rank sweep in the xl book =========== */
+  redraws.push(xyChart(
+    document.getElementById("cb9"), document.getElementById("lg9"),
+    {
+      h: 380,
+      xs: rankXs,
+      xlabels: function () { return [1, 4, 16, 48, 128, 300, 1024, 2048]; },
+      xname: "rank",
+      xlabel: "rank of the inserted order within the 2,048-deep book (log scale)",
+      values: function (b, v) {
+        return LADDER[b].byRank["2048"].insert.net[v];
+      },
+      yticks: logTicks,
+      alt: function (b) {
+        return "Log-log line chart of net storage for an insert at each rank of a " +
+               "2048-deep book, " + b + " build. The flat vector is flat and high; " +
+               "the keyed designs are flat and low with a step where the order stops " +
+               "landing in the inline buffer.";
+      }
+    }
+  ));
+
+  /* =========== small-multiples matrix: design × book size =========== */
+  /* Twenty panels, insert and cancel in each, rank on x. Scales are shared
+     ALONG A ROW so the five sizes of one design are directly comparable and
+     the growth (or flatness) of that design reads across the row; rows differ
+     by up to 50x, so each row prints its own full-scale value. */
+  var MET = {
+    net:  { key: "net",  label: "net storage (cost − rebate)" },
+    burn: { key: "burn", label: "burned fee" },
+    comp: { key: "comp", label: "computation" }
+  };
+  var metric = "net";
+
+  function matrixChart(box, legendBox, cfg) {
+    var ROWS = ["A", "B", "C16u", "D64u"];
+    var RLAB = { A: "A · flat vector", B: "B · bare BigVector",
+                 C16u: "C16u · BigVector + 16/12 buffer",
+                 D64u: "D64u · BigVector + 64/30 buffer" };
+    var W = 880, GX = 10, GT = 42, GB = 42, PADX = 14, PADY = 40;
+    var COLS = LADDER.depths;
+    var pw = (W - GX * 2 - (COLS.length - 1) * PADX) / COLS.length;
+    var ph = 112;
+    var H = GT + ROWS.length * ph + (ROWS.length - 1) * PADY + GB;
+
+    function render() {
+      box.innerHTML = "";
+      var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+                            "aria-label": cfg.alt(build, metric) }, null);
+      box.appendChild(svg);
+      var tip = document.createElement("div");
+      tip.className = "tipbox";
+      box.appendChild(tip);
+
+      var ink = tok("--ink"), ink2 = tok("--ink-2"), ink3 = tok("--ink-3"),
+          rule2 = tok("--rule-2"), surf = tok("--surface"),
+          ci = tok("--op-i"), cc = tok("--op-c");
+      var m = MET[metric].key;
+
+      function series(v, D, op) {
+        return LADDER[build].byRank[String(D)][op][m][v];
+      }
+
+      COLS.forEach(function (D, k) {
+        el("text", { x: GX + k * (pw + PADX) + pw / 2, y: 13,
+                     "text-anchor": "middle", "font-size": 11, fill: ink2 }, svg)
+          .textContent = D.toLocaleString("en-US") + " deep";
+      });
+
+      var panels = [];
+      ROWS.forEach(function (v, ri) {
+        var top = GT + ri * (ph + PADY);
+        el("text", { x: GX, y: top - 10, "font-size": 11.5, "font-weight": 700,
+                     fill: ink }, svg).textContent = RLAB[v];
+
+        COLS.forEach(function (D, k) {
+          var px = GX + k * (pw + PADX);
+          var ranks = LADDER[build].byRank[String(D)].ranks;
+          /* scale is tight to THIS panel and printed inside it, so all twenty
+             panels are readable; magnitudes across panels come from the number,
+             not the geometry */
+          var lo = Infinity, hi = -Infinity;
+          ["insert", "cancel"].forEach(function (op) {
+            series(v, D, op).forEach(function (y) {
+              if (y == null) return;
+              if (y < lo) lo = y;
+              if (y > hi) hi = y;
+            });
+          });
+          /* Floor the visible span at 10% of the magnitude. Computation is
+             quantised to 10,000-MIST buckets, so without this a single bucket
+             of wobble fills a panel and reads as loudly as the flat vector's
+             real 24% climb. */
+          var span = hi - lo;
+          var minSpan = Math.max(Math.abs(hi), Math.abs(lo)) * 0.10;
+          if (span < minSpan) {
+            var mid = (hi + lo) / 2;
+            lo = mid - minSpan / 2;
+            hi = mid + minSpan / 2;
+            span = minSpan;
+          }
+          var pad = span * 0.15;
+          var ymin = lo - pad, ymax = hi + pad;
+
+          var lx = Math.log(ranks[0]),
+              hx = Math.log(ranks[ranks.length - 1]);
+          function X(r) {
+            return hx === lx ? px + pw / 2
+              : px + pw * (Math.log(r) - lx) / (hx - lx);
+          }
+          function Y(y) { return top + ph * (1 - (y - ymin) / (ymax - ymin)); }
+
+          el("rect", { x: px, y: top, width: pw, height: ph, fill: "none",
+                       stroke: rule2, "stroke-width": 1, opacity: 0.55 }, svg);
+          if (ymin < 0 && ymax > 0) {
+            el("line", { x1: px, x2: px + pw, y1: Y(0), y2: Y(0), stroke: rule2,
+                         "stroke-width": 1, "stroke-dasharray": "2,3" }, svg);
+            el("text", { x: px + 3, y: Y(0) - 3, "font-size": 8.5, fill: ink3 },
+               svg).textContent = "0";
+          }
+          el("text", { x: px + pw - 3, y: top + 11, "text-anchor": "end",
+                       "font-size": 9, fill: ink3 }, svg)
+            .textContent = fmtMIST(ymax);
+          el("text", { x: px + pw - 3, y: top + ph - 4, "text-anchor": "end",
+                       "font-size": 9, fill: ink3 }, svg)
+            .textContent = fmtMIST(ymin);
+
+          [["insert", ci, "none"], ["cancel", cc, "4,3"]].forEach(function (o) {
+            var vals = series(v, D, o[0]), pts = [];
+            vals.forEach(function (y, i) {
+              if (y != null) pts.push(X(ranks[i]) + "," + Y(y));
+            });
+            if (!pts.length) return;
+            el("polyline", { points: pts.join(" "), fill: "none", stroke: o[1],
+                             "stroke-width": 1.8, "stroke-linejoin": "round",
+                             "stroke-linecap": "round",
+                             "stroke-dasharray": o[2] }, svg);
+            vals.forEach(function (y, i) {
+              if (y == null) return;
+              el("circle", { cx: X(ranks[i]), cy: Y(y), r: 1.6, fill: o[1] }, svg);
+            });
+          });
+
+          var last = ranks[ranks.length - 1];
+          var labs = [1, 16, 256, 2048].filter(function (r) {
+            return ranks.indexOf(r) >= 0;
+          });
+          if (labs.indexOf(last) < 0) labs.push(last);
+          /* the first and last labels are anchored inward and therefore
+             occupy real width; drop any middle label that would collide */
+          labs = labs.filter(function (r) {
+            if (r === ranks[0] || r === last) return true;
+            return Math.abs(X(r) - X(last)) > 30 &&
+                   Math.abs(X(r) - X(ranks[0])) > 30;
+          });
+          if (ri === ROWS.length - 1) {
+            labs.forEach(function (r) {
+              el("line", { x1: X(r), x2: X(r), y1: top + ph, y2: top + ph + 4,
+                           stroke: rule2, "stroke-width": 1 }, svg);
+              /* anchor the end labels inward so neighbouring panels' first and
+                 last labels cannot run into each other */
+              var anc = r === ranks[0] ? "start"
+                      : (r === last ? "end" : "middle");
+              el("text", { x: X(r), y: top + ph + 16, "text-anchor": anc,
+                           "font-size": 9.5, fill: ink3 }, svg)
+                .textContent = r.toLocaleString("en-US");
+            });
+          }
+          panels.push({ v: v, D: D, px: px, pw: pw, top: top, ph: ph,
+                        ranks: ranks, X: X, Y: Y });
+        });
+      });
+
+      el("text", { x: W / 2, y: H - 6, "text-anchor": "middle", "font-size": 11,
+                   fill: ink2 }, svg)
+        .textContent = "rank of the operated order within its own book (log scale) · " +
+                       "each panel scaled to its own data, range printed at its right";
+
+      var hv = el("g", {}, svg);
+      var hl = el("line", { stroke: ink3, "stroke-width": 1,
+                            "stroke-dasharray": "3,3", visibility: "hidden" }, hv);
+      var d1 = el("circle", { r: 3.5, fill: ci, stroke: surf,
+                              "stroke-width": 1.5, visibility: "hidden" }, hv);
+      var d2 = el("circle", { r: 3.5, fill: cc, stroke: surf,
+                              "stroke-width": 1.5, visibility: "hidden" }, hv);
+      function hide() {
+        hl.setAttribute("visibility", "hidden");
+        d1.setAttribute("visibility", "hidden");
+        d2.setAttribute("visibility", "hidden");
+        tip.style.opacity = 0;
+      }
+      svg.addEventListener("pointermove", function (ev) {
+        var r = svg.getBoundingClientRect();
+        var mx = (ev.clientX - r.left) * W / r.width;
+        var my = (ev.clientY - r.top) * H / r.height;
+        var p = null;
+        panels.forEach(function (q) {
+          if (mx >= q.px - 4 && mx <= q.px + q.pw + 4 &&
+              my >= q.top - 4 && my <= q.top + q.ph + 4) p = q;
+        });
+        if (!p) { hide(); return; }
+        var best = p.ranks[0], bd = Infinity;
+        p.ranks.forEach(function (rk) {
+          var d = Math.abs(p.X(rk) - mx);
+          if (d < bd) { bd = d; best = rk; }
+        });
+        var i = p.ranks.indexOf(best);
+        var vi = series(p.v, p.D, "insert")[i];
+        var vc = series(p.v, p.D, "cancel")[i];
+        hl.setAttribute("x1", p.X(best)); hl.setAttribute("x2", p.X(best));
+        hl.setAttribute("y1", p.top); hl.setAttribute("y2", p.top + p.ph);
+        hl.setAttribute("visibility", "visible");
+        [[d1, vi], [d2, vc]].forEach(function (o) {
+          if (o[1] == null) { o[0].setAttribute("visibility", "hidden"); return; }
+          o[0].setAttribute("cx", p.X(best));
+          o[0].setAttribute("cy", p.Y(o[1]));
+          o[0].setAttribute("visibility", "visible");
+        });
+        tip.innerHTML = "<b>" + p.v + " · " + p.D.toLocaleString("en-US") +
+          " deep · rank " + best.toLocaleString("en-US") + "</b>" +
+          "<br><i style='background:" + ci + "'></i>insert " + fmtN(vi) +
+          "<br><i style='background:" + cc + "'></i>cancel " + fmtN(vc);
+        tip.style.opacity = 1;
+        var bw = box.clientWidth;
+        var tx = (p.X(best) / W) * bw + 14;
+        if (tx + tip.offsetWidth + 8 > bw) {
+          tx = (p.X(best) / W) * bw - tip.offsetWidth - 14;
+        }
+        if (tx < 0) tx = 4;
+        tip.style.left = tx + "px";
+        tip.style.top = Math.max(4, (p.top / H) * box.clientHeight + 4) + "px";
+      });
+      svg.addEventListener("pointerleave", hide);
+
+      legendBox.innerHTML =
+        "<span><i style='border-top-color:" + ci + "'></i>insert · " +
+        MET[metric].label + "</span>" +
+        "<span><i style='border-top-color:" + cc +
+        ";border-top-style:dashed'></i>cancel · " + MET[metric].label + "</span>";
+    }
+    render();
+    return render;
+  }
+
+  redraws.push(matrixChart(
+    document.getElementById("cb10"), document.getElementById("lg10"),
+    {
+      alt: function (b, mt) {
+        return "Small-multiples matrix of " + MET[mt].label + " for insert and " +
+               "cancel at each rank, one panel per design and book size, " +
+               b + " build. The flat-vector row grows across the five sizes " +
+               "while the three keyed rows are flat.";
+      }
+    }
+  ));
+
+  /* =========== Table B1 — round-trip permanent cost =========== */
+  (function () {
+    var tbl = document.getElementById("t-ladder-rt");
+    if (!tbl) return;
+    var CLS = ["tiny", "small", "medium", "large", "xl"];
+    var BL = { desc: "best-price-last", asc: "worst-price-last" };
+    var cols = ["A", "B", "C16u", "D64u"];
+    var h = "<thead><tr><th class='label'>Build</th><th>Depth</th>" +
+            cols.map(function (c) { return "<th>" + c + "</th>"; }).join("") +
+            "<th>A ÷ C16u</th></tr></thead><tbody>";
+    ["desc", "asc"].forEach(function (b) {
+      LADDER.depths.forEach(function (d, i) {
+        var vals = cols.map(function (c) { return LADDER[b].roundTrip[c][i]; });
+        var present = vals.filter(function (v) { return v != null; });
+        var lo = Math.min.apply(null, present);
+        h += "<tr><td class='label'>" + (i === 0 ? BL[b] : "") + "</td>" +
+             "<td>" + d.toLocaleString("en-US") + " (" + CLS[i] + ")</td>" +
+             vals.map(function (v) {
+               if (v == null) return "<td>—</td>";
+               return "<td" + (v === lo ? " class='best'" : "") + ">" +
+                      fmtN(v) + "</td>";
+             }).join("") +
+             "<td>" + (vals[0] && vals[2]
+                        ? (vals[0] / vals[2]).toFixed(2) + "×" : "—") +
+             "</td></tr>";
+      });
+    });
+    tbl.innerHTML = h + "</tbody>";
+  })();
+
+  /* =========== build-order control =========== */
+  var ctl = document.getElementById("build-ctl");
+  if (ctl) {
+    ctl.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("button[data-build]");
+      if (!btn) return;
+      build = btn.getAttribute("data-build");
+      Array.prototype.forEach.call(ctl.querySelectorAll("button[data-build]"),
+        function (b) {
+          var on = b.getAttribute("data-build") === build;
+          b.classList.toggle("on", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      redraws.forEach(function (f) { f(); });
+    });
+  }
+
+  /* =========== metric control (matrix only) =========== */
+  var mctl = document.getElementById("metric-ctl");
+  if (mctl) {
+    mctl.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("button[data-metric]");
+      if (!btn) return;
+      metric = btn.getAttribute("data-metric");
+      Array.prototype.forEach.call(mctl.querySelectorAll("button[data-metric]"),
+        function (b) {
+          var on = b.getAttribute("data-metric") === metric;
+          b.classList.toggle("on", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      redraws.forEach(function (f) { f(); });
+    });
+  }
+
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var fire = function () { redraws.forEach(function (f) { f(); }); };
+    if (mq.addEventListener) mq.addEventListener("change", fire);
+  }
+  new MutationObserver(function () {
+    redraws.forEach(function (f) { f(); });
+  }).observe(document.documentElement, { attributes: true,
+                                         attributeFilter: ["data-theme"] });
+})();
+</script>

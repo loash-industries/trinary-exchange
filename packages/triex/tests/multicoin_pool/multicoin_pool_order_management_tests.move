@@ -1148,7 +1148,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
     // === High Priority: Expired Order Removal ===
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_expired_order_removed_bid_e() {
         let mut test = begin(OWNER);
 
@@ -1274,7 +1274,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_expired_order_removed_ask_e() {
         let mut test = begin(OWNER);
 
@@ -2655,7 +2655,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         end(test);
     }
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_get_order_not_found_e() {
         let mut test = begin(OWNER);
 
@@ -3175,7 +3175,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
     // === Medium Priority: Invalid Operations ===
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_cancel_already_canceled_e() {
         let mut test = begin(OWNER);
 
@@ -3231,7 +3231,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_cancel_nonexistent_order_e() {
         let mut test = begin(OWNER);
 
@@ -3317,7 +3317,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = ::triex::book::EBookOrderNotFound)]
+    #[test, expected_failure(abort_code = ::triex::big_vector::ENotFound)]
     fun test_multicoin_pool_modify_nonexistent_order_e() {
         let mut test = begin(OWNER);
 
@@ -3406,7 +3406,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         return_shared(alice_bm);
 
         // Place 3 orders
-        let mut order_ids: vector<u64> = vector[];
+        let mut order_ids: vector<u128> = vector[];
 
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
