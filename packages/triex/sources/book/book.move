@@ -275,6 +275,15 @@ module triex::book {
                             self.price_scaling,
                             cur_quantity,
                         );
+                    matched_base_quantity =
+                        self.extend_if_affordable(
+                            matched_base_quantity,
+                            cur_quantity,
+                            cur_price,
+                            matched_quote,
+                            quote_quantity,
+                            trade_specific_taker_fee,
+                        );
                     quantity_out = quantity_out + matched_base_quantity;
                     let matched_quote_quantity = math::qty_to_quote(
                         matched_base_quantity,
@@ -282,7 +291,16 @@ module triex::book {
                         self.price_scaling,
                     );
                     matched_quote = matched_quote + matched_quote_quantity;
-                    quantity_in_left = quantity_in_left - matched_quote_quantity;
+                    // A unit `extend_if_affordable` added is paid for out of the fee's
+                    // floor, not the budget, so it can overrun the budget by that unit.
+                    quantity_in_left =
+                        quantity_in_left - matched_quote_quantity.min(quantity_in_left);
+                    // The budget ran out inside this maker. Execution fills the
+                    // returned base greedily, so any further unit would come from
+                    // this maker too — under one floor with this piece — never from
+                    // a worse one. Pricing a unit behind it at its own floor
+                    // over-reports the quote left over.
+                    if (matched_base_quantity < cur_quantity) break;
                 } else {
                     // Ask takers have the fee deducted from the quote proceeds,
                     // so the full base input matches; the fee is netted off the
@@ -307,14 +325,41 @@ module triex::book {
 
         // Same helper, same aggregate basis as `calculate_partial_fill_balances`,
         // so the quote reserves exactly the fee that settles. A bid cannot
-        // underflow here: `matched_quote <= budget`, and flooring the fee keeps
-        // `matched_quote + fee <= budget * (1 + r) <= quote_quantity`.
+        // underflow here: either `matched_quote <= budget`, and flooring the fee
+        // keeps `matched_quote + fee <= budget * (1 + r) <= quote_quantity`, or
+        // `extend_if_affordable` took the last unit having checked exactly that
+        // sum, and the spent budget ended the walk.
         let fee = quote_fee::fee_from_scaled_rate(trade_specific_taker_fee, matched_quote);
         if (is_bid) {
             (quantity_out, quote_quantity - matched_quote - fee)
         } else {
             (quantity_in_left, quantity_out - fee)
         }
+    }
+
+    /// One unit past the fee-reserving estimate, if the exact settle cost still fits.
+    ///
+    /// The budget `quote_quantity / (1 + fee)` reserves the fee on the unfloored
+    /// quote, but settlement floors that fee once on the order's whole matched
+    /// quote, so the budget can fall a unit short of what the input actually
+    /// buys. The shortfall is at most one unit whenever a unit costs at least one
+    /// raw quote; checking the order's total with the settle-side helper keeps the
+    /// quote exact without over-committing.
+    fun extend_if_affordable(
+        self: &Book,
+        base_quantity: u64,
+        cur_quantity: u64,
+        price: u64,
+        matched_quote: u64,
+        quote_quantity: u64,
+        taker_fee: u64,
+    ): u64 {
+        if (base_quantity >= cur_quantity) return base_quantity;
+        let total = matched_quote + math::qty_to_quote(base_quantity + 1, price, self.price_scaling);
+        if (total > quote_quantity) return base_quantity;
+        let fee = quote_fee::fee_from_scaled_rate(taker_fee, total);
+        if (fee > quote_quantity - total) return base_quantity;
+        base_quantity + 1
     }
 
     /// Cancels an order given order_id.
