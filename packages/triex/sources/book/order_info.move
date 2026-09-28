@@ -331,23 +331,33 @@ module triex::order_info {
         let mut settled_balances = balances::new(0, 0, 0);
         let mut owed_balances = balances::new(0, 0, 0);
 
+        // The taker fee is charged once, on the order's whole matched quote, and
+        // then apportioned over the fills for their events. Flooring each fill on
+        // its own let a sweep of small levels pay nothing: 50 levels of 90 raw
+        // quote at 1.10% floor to 0 apiece, where the 4,500 they sum to owes 49.
+        // Flooring the aggregate still never exceeds the published rate —
+        // floor(sum q * r) <= sum q * r — so this collects that dust without the
+        // overcharge a per-fill minimum would levy.
+        //
+        // A fill's share is floor(r * Q_i) - floor(r * Q_(i-1)) over the running
+        // matched quote Q, so the shares telescope to exactly the order's fee. The
+        // dry run in `book::get_quantity_out` prices on the same aggregate.
         let mut total_taker_fee = 0;
+        let mut matched_quote = 0;
         let fills = &mut self.fills;
         let mut i = 0;
         let num_fills = fills.length();
         while (i < num_fills) {
             let fill = &mut fills[i];
             if (!fill.expired()) {
-                // The exact call the dry run in `book::get_quantity_out` makes,
-                // on the same per-fill basis, so a quote can never disagree with
-                // what settles.
-                let fee_amount = if (taker_fee > 0) {
-                    quote_fee::fee_from_scaled_rate(taker_fee, fill.quote_quantity())
+                matched_quote = matched_quote + fill.quote_quantity();
+                let fee_to_date = if (taker_fee > 0) {
+                    quote_fee::fee_from_scaled_rate(taker_fee, matched_quote)
                 } else {
                     0
                 };
-                fill.set_fill_taker_fee(&balances::new(0, fee_amount, 0));
-                total_taker_fee = total_taker_fee + fee_amount;
+                fill.set_fill_taker_fee(&balances::new(0, fee_to_date - total_taker_fee, 0));
+                total_taker_fee = fee_to_date;
             };
 
             i = i + 1;

@@ -2,7 +2,14 @@
 module triex::book_tests {
     use std::unit_test::destroy;
     use sui::{object::id_from_address, test_scenario::{next_tx, begin, end}};
-    use triex::{book::{Self, Book}, constants, math, order::{Self, Order}, order_info, quote_fee};
+    use triex::{
+        book::{Self, Book},
+        constants,
+        math,
+        order::{Self, Order},
+        order_info::{Self, OrderInfo},
+        quote_fee
+    };
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;
@@ -297,6 +304,87 @@ module triex::book_tests {
 
         destroy(b);
         destroy(b2);
+        test.end();
+    }
+
+    // === Taker fee on the order's aggregate ===
+    // The multicoin copy of the coin book's aggregate-fee tests. On the bare
+    // `base x price` product one base unit at price 90 is worth 90 raw quote, so
+    // 50 such levels are the audit's measurement: at 1.10% each floors to zero
+    // on its own, while the 4,500 they sum to owes 49.
+
+    const DUST_LEVELS: u64 = 50;
+    const DUST_PRICE: u64 = 90;
+    const DUST_RATE: u64 = 11_000_000; // 1.10%
+
+    #[test_only]
+    fun take(b: &mut Book, qty: u64, is_bid: bool): OrderInfo {
+        let price = if (is_bid) constants::max_price() else constants::min_price();
+        let mut oi = order_info::new(
+            id_from_address(@0x1),
+            id_from_address(@0xB1),
+            @0xB,
+            constants::immediate_or_cancel(),
+            constants::self_matching_allowed(),
+            price,
+            qty,
+            is_bid,
+            0,
+            9_000_000,
+            2_000,
+            constants::max_u64(),
+            false,
+            0,
+            book::price_scaling(b),
+        );
+        b.create_order(&mut oi, 0);
+        oi.calculate_partial_fill_balances(DUST_RATE, 9_000_000);
+        oi
+    }
+
+    #[test]
+    /// A sweep of small fills pays the fee on their sum, and the per-fill amounts
+    /// the events report add up to it.
+    fun a_sweep_of_small_fills_pays_the_fee_on_their_sum() {
+        let mut test = begin(OWNER);
+        let mut b = book::empty_multicoin(test.ctx());
+        DUST_LEVELS.do!(|_| rest(&mut b, DUST_PRICE, 1, false));
+
+        let oi = take(&mut b, DUST_LEVELS, true);
+
+        assert!(oi.fills().length() == DUST_LEVELS, oi.fills().length());
+        assert!(oi.cumulative_quote_quantity() == 4_500, oi.cumulative_quote_quantity());
+        assert!(oi.paid_fees() == 49, oi.paid_fees());
+        let mut reported = 0;
+        oi.fills().do!(|fill| reported = reported + fill.taker_fee());
+        assert!(reported == oi.paid_fees(), reported);
+
+        destroy(b);
+        test.end();
+    }
+
+    #[test]
+    /// A bid dry run over fragmented liquidity reserves the aggregate fee, so the
+    /// swap it sizes settles to exactly the quote it promised: 21 levels, 1,890
+    /// raw quote owing 20, where pricing level by level read the fee as zero.
+    fun bid_dry_run_on_fragmented_liquidity_matches_settlement() {
+        let mut test = begin(OWNER);
+        let mut b = book::empty_multicoin(test.ctx());
+        DUST_LEVELS.do!(|_| rest(&mut b, DUST_PRICE, 1, false));
+
+        let input = 2_000;
+        let (base_out, quote_left) = b.get_quantity_out(0, input, DUST_RATE, 0);
+        assert!(base_out == 21, base_out);
+        assert!(quote_left == 90, quote_left);
+
+        let oi = take(&mut b, base_out, true);
+        assert!(oi.paid_fees() == 20, oi.paid_fees());
+        assert!(
+            input - oi.cumulative_quote_quantity() - oi.paid_fees() == quote_left,
+            oi.cumulative_quote_quantity(),
+        );
+
+        destroy(b);
         test.end();
     }
 }
