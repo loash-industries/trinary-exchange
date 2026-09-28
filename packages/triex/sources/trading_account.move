@@ -174,18 +174,22 @@ module triex::trading_account {
         }
     }
 
+    /// Create a new trading account with an owner, and mint a `DepositCap`,
+    /// `WithdrawCap` and `TradeCap` for it. The caps are sent to `owner`, never
+    /// returned to the caller: a caller holding caps on an account someone else owns
+    /// could drain whatever that owner deposits.
     /// #ref:functions
-    public fun new_with_custom_owner_and_caps(
-        owner: address,
-        ctx: &mut TxContext,
-    ): (TradingAccount, DepositCap, WithdrawCap, TradeCap) {
+    public fun new_with_custom_owner_and_caps(owner: address, ctx: &mut TxContext): TradingAccount {
         let mut trading_account = new_with_custom_owner(owner, ctx);
 
         let deposit_cap = mint_deposit_cap_internal(&mut trading_account, ctx);
         let withdraw_cap = mint_withdraw_cap_internal(&mut trading_account, ctx);
         let trade_cap = mint_trade_cap_internal(&mut trading_account, ctx);
+        transfer::public_transfer(deposit_cap, owner);
+        transfer::public_transfer(withdraw_cap, owner);
+        transfer::public_transfer(trade_cap, owner);
 
-        (trading_account, deposit_cap, withdraw_cap, trade_cap)
+        trading_account
     }
 
     // #feat:refer
@@ -534,8 +538,17 @@ module triex::trading_account {
         bal
     }
 
+    /// Files the trading_account under its owner in the registry. Only the owner can
+    /// register: the per-owner list is capped and never shrinks, so letting anyone
+    /// register would let a stranger fill another address's list and lock them out.
     /// #ref:functions
-    public fun register_trading_account(trading_account: &TradingAccount, registry: &mut Registry) {
+    public fun register_trading_account(
+        trading_account: &TradingAccount,
+        registry: &mut Registry,
+        ctx: &mut TxContext,
+    ) {
+        trading_account.validate_owner(ctx);
+
         let owner = trading_account.owner();
         let trading_account_id = trading_account.id();
         registry.add_trading_account(owner, trading_account_id);
