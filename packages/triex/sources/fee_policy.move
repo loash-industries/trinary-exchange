@@ -34,6 +34,7 @@ module triex::fee_policy {
     const EOperatorShareClassDoesNotExist: u64 = 8;
     const ENoAuthorizedAdapter: u64 = 9;
     const EUnauthorizedAdapter: u64 = 10;
+    const EAdapterPinned: u64 = 11;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -571,6 +572,11 @@ module triex::fee_policy {
     /// path exists at all until the adapter package has been audited and named.
     public struct AuthorizedAdapterKey has copy, drop, store {}
 
+    /// The first adapter type ever registered, kept forever. Clearing the adapter
+    /// closes registration but never unpins it, so the cap cannot swap in a
+    /// witness of its own, destroy a mapping and re-register it elsewhere.
+    public struct PinnedAdapterKey has copy, drop, store {}
+
     /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
     /// at `effective_epoch`, and reads compare against the running epoch so
     /// promotion needs no write.
@@ -806,8 +812,16 @@ module triex::fee_policy {
         0
     }
 
-    /// Register the one witness type allowed to register beneficiaries,
-    /// replacing any previous registration.
+    /// Register the one witness type allowed to register beneficiaries.
+    ///
+    /// The first type registered is pinned for the life of the policy: later
+    /// calls may only re-open registration for that same type after a clear.
+    /// Replacing it would let the cap redirect an operator share — authorize a
+    /// witness it mints itself, destroy the mapping, re-register its own
+    /// address — which is the one power over hub revenue it is promised not to
+    /// have. An adapter package upgrade keeps its defining id, so the pin
+    /// survives upgrades of the adapter; swapping to a different package takes
+    /// a Triex upgrade.
     ///
     /// The type is what makes the gate real. A bare `<W: drop>` bound authorizes
     /// nothing — any package can declare a struct with `drop` and mint one — so a
@@ -817,6 +831,12 @@ module triex::fee_policy {
     /// link a module.
     public fun set_operator_adapter<W: drop>(self: &mut FeePolicy, _cap: &TriexAdminCap) {
         let adapter = type_name::with_defining_ids<W>();
+        let pin_key = PinnedAdapterKey {};
+        if (df::exists_with_type<PinnedAdapterKey, TypeName>(&self.id, pin_key)) {
+            assert!(*df::borrow<PinnedAdapterKey, TypeName>(&self.id, pin_key) == adapter, EAdapterPinned);
+        } else {
+            df::add(&mut self.id, pin_key, adapter);
+        };
         upsert(&mut self.id, AuthorizedAdapterKey {}, adapter);
 
         event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
@@ -832,14 +852,25 @@ module triex::fee_policy {
         };
     }
 
-    /// Withdraw the adapter, closing the registration path entirely until a new
-    /// one is registered. Mappings already written are untouched.
+    /// Withdraw the adapter, closing the registration path entirely until the
+    /// pinned type is registered again. Mappings already written are untouched.
     public fun clear_operator_adapter(self: &mut FeePolicy, _cap: &TriexAdminCap) {
         let key = AuthorizedAdapterKey {};
         if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
             df::remove<AuthorizedAdapterKey, TypeName>(&mut self.id, key);
             event::emit(OperatorAdapterAuthorized { adapter: option::none() });
         };
+    }
+
+    /// The adapter type pinned by the first registration, if any. Registration
+    /// can only ever be enabled for this type.
+    public fun pinned_operator_adapter(self: &FeePolicy): Option<TypeName> {
+        let key = PinnedAdapterKey {};
+        if (df::exists_with_type<PinnedAdapterKey, TypeName>(&self.id, key)) {
+            option::some(*df::borrow<PinnedAdapterKey, TypeName>(&self.id, key))
+        } else {
+            option::none()
+        }
     }
 
     /// The registered adapter type, if registration is enabled.
