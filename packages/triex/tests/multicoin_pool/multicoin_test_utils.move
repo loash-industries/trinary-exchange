@@ -144,9 +144,12 @@ module triex::integration_multicoin_test_utils {
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
         let policy = test.take_shared<FeePolicy>();
 
-        let reference_pool_id = pool::create_pool_admin<USDC, CRED>(
+        // USDC and CRED are both 6-decimal.
+        let reference_pool_id = pool::create_pool_admin_for_testing<USDC, CRED>(
             &mut registry,
             &policy,
+            6,
+            6,
             &admin_cap,
             test.ctx(),
         );

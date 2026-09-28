@@ -4,6 +4,7 @@ module triex::pool {
     use sui::{
         clock::Clock,
         coin::{Self, Coin},
+        coin_registry::Currency,
         event,
         vec_set::{Self, VecSet},
         versioned::{Self, Versioned}
@@ -43,6 +44,14 @@ module triex::pool {
     // const EInvalidZScoreThreshold: u64 = 18;
     // const EInvalidAdditionalTakerFee: u64 = 19;
     const EQuoteNotApproved: u64 = 20;
+    const EInvalidDecimalPair: u64 = 21;
+
+    // === Constants ===
+    /// Widest gap between base and quote decimals a coin pool can price. A coin
+    /// pool encodes price as `P_human * 10^(Dq - Db + 9)`, so the exponent only
+    /// stays inside the `[0, 18]` window a `u64` price can represent while
+    /// `|Dq - Db| <= 9`.
+    const MAX_DECIMAL_GAP: u8 = 9;
 
     // === Structs ===
     public struct Pool<phantom BaseAsset, phantom QuoteAsset> has key {
@@ -107,14 +116,18 @@ module triex::pool {
 
     // === Public-Mutative Functions * POOL CREATION * ===
     /// Create a new pool. The pool is registered in the registry.
-    /// Checks are performed to ensure the tick size, lot size,
-    /// and min size are valid.
+    /// The quote must be registry-approved, and the two coins' decimals — read
+    /// off their `Currency` — must be at most `MAX_DECIMAL_GAP` apart. A coin
+    /// still on legacy `CoinMetadata` gets its `Currency` through the
+    /// permissionless `coin_registry::migrate_legacy_metadata`.
     /// The creation fee is transferred to the treasury address.
     /// Returns the id of the pool created
     /// #ref:functions
     public fun create_permissionless_pool<BaseAsset, QuoteAsset>(
         registry: &mut Registry,
         policy: &FeePolicy,
+        base_currency: &Currency<BaseAsset>,
+        quote_currency: &Currency<QuoteAsset>,
         creation_fee: Coin<CRED>,
         ctx: &mut TxContext,
     ): ID {
@@ -123,6 +136,8 @@ module triex::pool {
         create_pool<BaseAsset, QuoteAsset>(
             registry,
             policy,
+            base_currency.decimals(),
+            quote_currency.decimals(),
             creation_fee,
             ctx,
         )
@@ -934,13 +949,15 @@ module triex::pool {
     // }
 
     // === Public-Mutative Functions * ADMIN * ===
-    /// Create a new pool. The pool is registered in the registry.
-    /// Checks are performed to ensure the tick size, lot size, and min size are
-    /// valid.
+    /// Create a new pool with no creation fee. The pool is registered in the
+    /// registry, under the same quote and decimal-pair checks as
+    /// `create_permissionless_pool`.
     /// Returns the id of the pool created
     public fun create_pool_admin<BaseAsset, QuoteAsset>(
         registry: &mut Registry,
         policy: &FeePolicy,
+        base_currency: &Currency<BaseAsset>,
+        quote_currency: &Currency<QuoteAsset>,
         _cap: &TriexAdminCap,
         ctx: &mut TxContext,
     ): ID {
@@ -948,6 +965,8 @@ module triex::pool {
         create_pool<BaseAsset, QuoteAsset>(
             registry,
             policy,
+            base_currency.decimals(),
+            quote_currency.decimals(),
             creation_fee,
             ctx,
         )
@@ -1420,6 +1439,8 @@ module triex::pool {
     public(package) fun create_pool<BaseAsset, QuoteAsset>(
         registry: &mut Registry,
         policy: &FeePolicy,
+        base_decimals: u8,
+        quote_decimals: u8,
         creation_fee: Coin<CRED>,
         ctx: &mut TxContext,
     ): ID {
@@ -1427,6 +1448,7 @@ module triex::pool {
             type_name::with_defining_ids<BaseAsset>() != type_name::with_defining_ids<QuoteAsset>(),
             ESameBaseAndQuote,
         );
+        validate_decimal_pair(base_decimals, quote_decimals);
 
         // Check if quote currency is approved for pool creation
         let quote_type = type_name::with_defining_ids<QuoteAsset>();
@@ -1466,6 +1488,18 @@ module triex::pool {
         transfer::share_object(pool);
 
         pool_id
+    }
+
+    /// Reject a pair whose price a coin pool cannot represent. Past a gap of
+    /// `MAX_DECIMAL_GAP` the price exponent leaves `[0, 18]`: an 18-decimal base
+    /// against a 6-decimal quote prices in steps of 1,000 quote per whole coin
+    /// and floors anything cheaper below `MIN_PRICE`, and a 0-decimal base
+    /// against the same quote overflows `MAX_PRICE` above ~9,223 per unit. The
+    /// order-side range check cannot see either, because it never sees decimals.
+    fun validate_decimal_pair(base_decimals: u8, quote_decimals: u8) {
+        let gap = if (quote_decimals >= base_decimals) quote_decimals - base_decimals
+        else base_decimals - quote_decimals;
+        assert!(gap <= MAX_DECIMAL_GAP, EInvalidDecimalPair);
     }
 
     public(package) fun bids<BaseAsset, QuoteAsset>(
@@ -1670,6 +1704,53 @@ module triex::pool {
         // );
 
         order_info
+    }
+
+    // === Test Functions ===
+    #[test_only]
+    /// `create_pool_admin` with the decimals passed in rather than read off a
+    /// `Currency`: most test coins are plain structs with no currency behind them.
+    /// The pair still goes through `validate_decimal_pair`.
+    public fun create_pool_admin_for_testing<BaseAsset, QuoteAsset>(
+        registry: &mut Registry,
+        policy: &FeePolicy,
+        base_decimals: u8,
+        quote_decimals: u8,
+        _cap: &TriexAdminCap,
+        ctx: &mut TxContext,
+    ): ID {
+        let creation_fee = coin::zero(ctx);
+        create_pool<BaseAsset, QuoteAsset>(
+            registry,
+            policy,
+            base_decimals,
+            quote_decimals,
+            creation_fee,
+            ctx,
+        )
+    }
+
+    #[test_only]
+    /// `create_permissionless_pool` with the decimals passed in; see
+    /// `create_pool_admin_for_testing`.
+    public fun create_permissionless_pool_for_testing<BaseAsset, QuoteAsset>(
+        registry: &mut Registry,
+        policy: &FeePolicy,
+        base_decimals: u8,
+        quote_decimals: u8,
+        creation_fee: Coin<CRED>,
+        ctx: &mut TxContext,
+    ): ID {
+        assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
+
+        create_pool<BaseAsset, QuoteAsset>(
+            registry,
+            policy,
+            base_decimals,
+            quote_decimals,
+            creation_fee,
+            ctx,
+        )
     }
 }
 

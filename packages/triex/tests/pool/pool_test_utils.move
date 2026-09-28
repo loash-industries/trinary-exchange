@@ -39,6 +39,13 @@ module triex::pool_test_utils {
     const BOB: address = @0xBBBB;
     const CAROL: address = @0xCCCC;
 
+    // Decimals the shared pool helpers create every coin pool with. Pool creation
+    // only uses them to validate the pair, and the test coins are plain structs
+    // with no `CoinMetadata`, so these stand in for the SUI/CRED pair the suite
+    // prices against.
+    const TEST_BASE_DECIMALS: u8 = 9;
+    const TEST_QUOTE_DECIMALS: u8 = 6;
+
     // Entry-tier rates the shared `FeePolicy` is seeded with in tests — tier 0 of
     // the genesis ladder `fee_policy::bootstrap_quote` writes at launch. Multicoin
     // is the premium venue; coin pools price at half of it.
@@ -6010,9 +6017,11 @@ module triex::pool_test_utils {
         let pool_id;
         {
             pool_id =
-                pool::create_pool_admin<BaseAsset, QuoteAsset>(
+                pool::create_pool_admin_for_testing<BaseAsset, QuoteAsset>(
                     &mut registry,
                     &policy,
+                    TEST_BASE_DECIMALS,
+                    TEST_QUOTE_DECIMALS,
                     &admin_cap,
                     test.ctx(),
                 );
@@ -6036,9 +6045,11 @@ module triex::pool_test_utils {
         let pool_id;
         {
             pool_id =
-                pool::create_permissionless_pool<BaseAsset, QuoteAsset>(
+                pool::create_permissionless_pool_for_testing<BaseAsset, QuoteAsset>(
                     &mut registry,
                     &policy,
+                    TEST_BASE_DECIMALS,
+                    TEST_QUOTE_DECIMALS,
                     mint_for_testing<CRED>(
                         constants::pool_creation_fee(),
                         test.ctx(),
