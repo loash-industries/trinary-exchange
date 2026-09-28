@@ -12,7 +12,13 @@
 #[test_only]
 module triex::coin_book_dry_run_tests {
     use sui::{object::id_from_address, test_scenario::begin};
-    use triex::{coin_book::{Self, Book}, coin_order_info, constants, math, quote_fee};
+    use triex::{
+        coin_book::{Self, Book},
+        coin_order_info::{Self, OrderInfo},
+        constants,
+        math,
+        quote_fee
+    };
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;
@@ -110,6 +116,124 @@ module triex::coin_book_dry_run_tests {
 
         b.drop_for_testing();
         b2.drop_for_testing();
+        test.end();
+    }
+
+    // === Taker fee on the order's aggregate ===
+    // Settlement charges the taker fee once, on the order's whole matched quote,
+    // and the dry run prices on the same basis. A book of 50 levels worth 90 raw
+    // quote each is the audit's measurement: at 1.10% every level floors to zero
+    // on its own, while the 4,500 they sum to owes 49.
+
+    const DUST_LEVELS: u64 = 50;
+    const DUST_LEVEL_BASE: u64 = 90_000; // 90 raw quote at price 1e6
+    const DUST_PRICE: u64 = 1_000_000;
+    const DUST_RATE: u64 = 11_000_000; // 1.10%
+
+    fun rest_dust_levels(b: &mut Book, is_bid: bool) {
+        DUST_LEVELS.do!(|_| rest(b, DUST_PRICE, DUST_LEVEL_BASE, is_bid));
+    }
+
+    /// Cross the book at the levels' own price with an immediate-or-cancel taker
+    /// and settle it the way `place_order_int` does.
+    fun take(b: &mut Book, qty: u64, is_bid: bool): OrderInfo {
+        let mut oi = coin_order_info::new(
+            id_from_address(@0x1),
+            id_from_address(@0xB1),
+            @0xB,
+            constants::immediate_or_cancel(),
+            constants::self_matching_allowed(),
+            DUST_PRICE,
+            qty,
+            is_bid,
+            0,
+            9_000_000,
+            2_000,
+            constants::max_u64(),
+            false,
+            0,
+            coin_book::price_scaling(b),
+        );
+        b.create_order(&mut oi, 0);
+        oi.calculate_partial_fill_balances(DUST_RATE, 9_000_000);
+        oi
+    }
+
+    fun sum_fill_taker_fees(oi: &OrderInfo): u64 {
+        let mut total = 0;
+        oi.fills().do!(|fill| total = total + fill.taker_fee());
+        total
+    }
+
+    #[test]
+    /// A sweep of small fills pays the fee on their sum, not the sum of their
+    /// floored fees, and the per-fill amounts the events report add up to it.
+    fun a_sweep_of_small_fills_pays_the_fee_on_their_sum() {
+        let mut test = begin(OWNER);
+        let mut b = coin_book::empty(test.ctx());
+        rest_dust_levels(&mut b, false);
+
+        let oi = take(&mut b, DUST_LEVELS * DUST_LEVEL_BASE, true);
+
+        assert!(oi.fills().length() == DUST_LEVELS, oi.fills().length());
+        assert!(oi.cumulative_quote_quantity() == 4_500, oi.cumulative_quote_quantity());
+        // Per fill this was floor(90 * 1.1%) = 0, fifty times over.
+        assert!(oi.paid_fees() == 49, oi.paid_fees());
+        assert!(sum_fill_taker_fees(&oi) == oi.paid_fees(), sum_fill_taker_fees(&oi));
+        // No single fill is charged more than a unit over its own floored share.
+        oi.fills().do!(|fill| assert!(fill.taker_fee() <= 1, fill.taker_fee()));
+
+        b.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// A bid dry run over fragmented liquidity reserves the aggregate fee, so the
+    /// swap it sizes settles to exactly the quote it promised.
+    ///
+    /// The input stops the walk partway through a level: 21 full levels and 88
+    /// of the 22nd, 1,978 raw quote owing 21. Priced level by level the fee
+    /// would have read as zero, and the swap would have been short 21 at
+    /// settlement.
+    fun bid_dry_run_on_fragmented_liquidity_matches_settlement() {
+        let mut test = begin(OWNER);
+        let mut b = coin_book::empty(test.ctx());
+        rest_dust_levels(&mut b, false);
+
+        let input = 2_000;
+        let (base_out, quote_left) = b.get_quantity_out(0, input, DUST_RATE, 0);
+        assert!(base_out == 1_978_000, base_out);
+        assert!(quote_left == 1, quote_left);
+
+        let oi = take(&mut b, base_out, true);
+        assert!(oi.executed_quantity() == base_out, oi.executed_quantity());
+        assert!(oi.paid_fees() == 21, oi.paid_fees());
+        assert!(
+            input - oi.cumulative_quote_quantity() - oi.paid_fees() == quote_left,
+            oi.cumulative_quote_quantity(),
+        );
+
+        b.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// The ask side nets the aggregate fee off its proceeds, and settlement pays
+    /// out exactly that.
+    fun ask_dry_run_on_fragmented_liquidity_matches_settlement() {
+        let mut test = begin(OWNER);
+        let mut b = coin_book::empty(test.ctx());
+        rest_dust_levels(&mut b, true);
+
+        let input = DUST_LEVELS * DUST_LEVEL_BASE;
+        let (base_left, quote_out) = b.get_quantity_out(input, 0, DUST_RATE, 0);
+        assert!(base_left == 0, base_left);
+        assert!(quote_out == 4_500 - 49, quote_out);
+
+        let oi = take(&mut b, input, false);
+        assert!(oi.cumulative_quote_quantity() - oi.paid_fees() == quote_out, oi.paid_fees());
+
+        b.drop_for_testing();
         test.end();
     }
 }

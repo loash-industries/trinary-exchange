@@ -128,7 +128,19 @@ module triex::book {
         let is_bid = quote_quantity > 0;
 
         let mut quantity_out = 0;
-        let mut quantity_in_left = if (is_bid) quote_quantity else base_quantity;
+        // Settlement charges the taker fee once, on the order's whole matched
+        // quote, so the walk tallies that quote and the fee comes off after it.
+        // A bid pays its fee on top of the quote it spends, so its input funds at
+        // most `budget` of quote, the largest amount with `budget * (1 + r)` still
+        // inside the input; the walk spends against that. Reserving the fee at
+        // the rate settlement charges and no more keeps the bid and ask sides of
+        // the same book quoting symmetrically.
+        let mut quantity_in_left = if (is_bid) {
+            math::div(quote_quantity, constants::float_scaling() + trade_specific_taker_fee)
+        } else {
+            base_quantity
+        };
+        let mut matched_quote = 0;
 
         let book_side = if (is_bid) &self.asks else &self.bids;
         let max_fills = constants::max_fills();
@@ -145,16 +157,6 @@ module triex::book {
                 let mut matched_base_quantity;
 
                 if (is_bid) {
-                    // Bid takers pay the fee on top of the quote they spend, so
-                    // part of the input is reserved for it — at the rate
-                    // settlement charges, no more. Reserving a multiple of a
-                    // known, exactly computable fee is not a reserve; it is input
-                    // the swap never deploys and nobody receives, and it made the
-                    // bid and ask sides of the same book quote asymmetrically.
-                    let quantity_to_match = math::div(
-                        quantity_in_left,
-                        constants::float_scaling() + trade_specific_taker_fee,
-                    );
                     // Capped inside the conversion rather than with a
                     // `.min(cur_quantity)` after it: the uncapped form has to
                     // land the whole scaled quotient in a `u64` before any cap
@@ -162,7 +164,7 @@ module triex::book {
                     // on an answer that was only ever going to be `cur_quantity`.
                     matched_base_quantity =
                         math::quote_to_qty_capped(
-                            quantity_to_match,
+                            quantity_in_left,
                             cur_price,
                             self.price_scaling,
                             cur_quantity,
@@ -173,31 +175,20 @@ module triex::book {
                         cur_price,
                         self.price_scaling,
                     );
-                    // Same helper, same per-level basis as
-                    // `calculate_partial_fill_balances`, so the quote reserves
-                    // exactly the fee that settles.
-                    let fee = quote_fee::fee_from_scaled_rate(
-                        trade_specific_taker_fee,
-                        matched_quote_quantity,
-                    );
-                    quantity_in_left = quantity_in_left - matched_quote_quantity - fee;
+                    matched_quote = matched_quote + matched_quote_quantity;
+                    quantity_in_left = quantity_in_left - matched_quote_quantity;
                 } else {
                     // Ask takers have the fee deducted from the quote proceeds,
-                    // so the full base input matches and the output is netted
-                    // through the same helper settlement uses, per level, so the
-                    // quote agrees with what calculate_partial_fill_balances
-                    // settles.
+                    // so the full base input matches; the fee is netted off the
+                    // output once the walk is done.
                     matched_base_quantity = quantity_in_left.min(cur_quantity);
                     let matched_quote_quantity = math::qty_to_quote(
                         matched_base_quantity,
                         cur_price,
                         self.price_scaling,
                     );
-                    let fee = quote_fee::fee_from_scaled_rate(
-                        trade_specific_taker_fee,
-                        matched_quote_quantity,
-                    );
-                    quantity_out = quantity_out + matched_quote_quantity - fee;
+                    matched_quote = matched_quote + matched_quote_quantity;
+                    quantity_out = quantity_out + matched_quote_quantity;
                     quantity_in_left = quantity_in_left - matched_base_quantity;
                 };
 
@@ -207,10 +198,15 @@ module triex::book {
             current_fills = current_fills + 1;
         };
 
+        // Same helper, same aggregate basis as `calculate_partial_fill_balances`,
+        // so the quote reserves exactly the fee that settles. A bid cannot
+        // underflow here: `matched_quote <= budget`, and flooring the fee keeps
+        // `matched_quote + fee <= budget * (1 + r) <= quote_quantity`.
+        let fee = quote_fee::fee_from_scaled_rate(trade_specific_taker_fee, matched_quote);
         if (is_bid) {
-            (quantity_out, quantity_in_left)
+            (quantity_out, quote_quantity - matched_quote - fee)
         } else {
-            (quantity_in_left, quantity_out)
+            (quantity_in_left, quantity_out - fee)
         }
     }
 

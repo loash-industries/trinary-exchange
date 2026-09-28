@@ -55,7 +55,11 @@ The public entry points live in `triex::pool` and
 `triex::multicoin_pool` (mirrored signatures):
 
 - **Pool creation** — `create_permissionless_pool` (burns a CRED creation
-  fee), plus admin-gated `create_pool_admin` / `unregister_pool_admin`.
+  fee), plus admin-gated `create_pool_admin` / `unregister_pool_admin`. Coin
+  pools take both coins' `coin_registry::Currency` and reject a pair whose
+  decimals are more than 9 apart, the widest gap a `u64` price can encode. A
+  coin still on legacy `CoinMetadata` needs a one-time, permissionless
+  `coin_registry::migrate_legacy_metadata` first.
 - **Orders** — `place_limit_order`, `place_market_order`, `modify_order`,
   `cancel_order`, `cancel_orders`, `cancel_all_orders`. Limit orders support
   the restrictions `NO_RESTRICTION`, `IMMEDIATE_OR_CANCEL`, `FILL_OR_KILL`,

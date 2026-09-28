@@ -119,14 +119,22 @@ module triex::pool_quote_decimal_precision_tests {
     }
 
     /// Create a pool for a pre-approved QuoteAsset. May be called multiple times.
-    fun create_pool<QuoteAsset>(registry_id: ID, test: &mut sui::test_scenario::Scenario): ID {
+    /// `quote_decimals` is the quote type's real precision; the base is always
+    /// 9-decimal SUI.
+    fun create_pool<QuoteAsset>(
+        registry_id: ID,
+        quote_decimals: u8,
+        test: &mut sui::test_scenario::Scenario,
+    ): ID {
         test.next_tx(OWNER);
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
         let policy = test.take_shared<FeePolicy>();
-        let pool_id = pool::create_pool_admin<SUI, QuoteAsset>(
+        let pool_id = pool::create_pool_admin_for_testing<SUI, QuoteAsset>(
             &mut registry,
             &policy,
+            9,
+            quote_decimals,
             &admin_cap,
             test.ctx(),
         );
@@ -224,7 +232,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q9>(registry_id, &mut test);
-        let pool_id = create_pool<Q9>(registry_id, &mut test);
+        let pool_id = create_pool<Q9>(registry_id, 9, &mut test);
         let alice_bm_id = create_funded_bm<Q9>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q9>(BOB, &mut test);
 
@@ -259,7 +267,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q9>(registry_id, &mut test);
-        let pool_id = create_pool<Q9>(registry_id, &mut test);
+        let pool_id = create_pool<Q9>(registry_id, 9, &mut test);
         let alice_bm_id = create_funded_bm<Q9>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q9>(BOB, &mut test);
 
@@ -296,7 +304,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q6>(registry_id, &mut test);
-        let pool_id = create_pool<Q6>(registry_id, &mut test);
+        let pool_id = create_pool<Q6>(registry_id, 6, &mut test);
         let alice_bm_id = create_funded_bm<Q6>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q6>(BOB, &mut test);
 
@@ -332,7 +340,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q6>(registry_id, &mut test);
-        let pool_id = create_pool<Q6>(registry_id, &mut test);
+        let pool_id = create_pool<Q6>(registry_id, 6, &mut test);
         let alice_bm_id = create_funded_bm<Q6>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q6>(BOB, &mut test);
 
@@ -369,7 +377,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q2>(registry_id, &mut test);
-        let pool_id = create_pool<Q2>(registry_id, &mut test);
+        let pool_id = create_pool<Q2>(registry_id, 2, &mut test);
         let alice_bm_id = create_funded_bm<Q2>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q2>(BOB, &mut test);
 
@@ -406,7 +414,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q2>(registry_id, &mut test);
-        let pool_id = create_pool<Q2>(registry_id, &mut test);
+        let pool_id = create_pool<Q2>(registry_id, 2, &mut test);
         let alice_bm_id = create_funded_bm<Q2>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q2>(BOB, &mut test);
 
@@ -452,7 +460,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q1>(registry_id, &mut test);
-        let pool_id = create_pool<Q1>(registry_id, &mut test);
+        let pool_id = create_pool<Q1>(registry_id, 1, &mut test);
         let alice_bm_id = create_funded_bm<Q1>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q1>(BOB, &mut test);
 
@@ -489,7 +497,7 @@ module triex::pool_quote_decimal_precision_tests {
         let mut test = begin(OWNER);
         let registry_id = setup_registry_and_clock(&mut test);
         approve_quote<Q1>(registry_id, &mut test);
-        let pool_id = create_pool<Q1>(registry_id, &mut test);
+        let pool_id = create_pool<Q1>(registry_id, 1, &mut test);
         let alice_bm_id = create_funded_bm<Q1>(ALICE, &mut test);
         let bob_bm_id = create_funded_bm<Q1>(BOB, &mut test);
 
