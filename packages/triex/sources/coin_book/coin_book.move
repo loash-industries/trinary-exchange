@@ -515,7 +515,7 @@ module triex::coin_book {
     }
 
     /// Remove an order from whichever store holds it. Does not refill the buffer:
-    /// callers that remove in a loop want one refill at the end, not one per order.
+    /// spill is one-way, and the buffer repopulates from new placements.
     ///
     /// An id on neither store still aborts with `big_vector`'s `ENotFound`, as it did
     /// when the tree was the only store.

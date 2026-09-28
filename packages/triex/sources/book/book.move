@@ -10,10 +10,8 @@
 /// are O(log n) by key, and no operation rewrites the whole book, so depth is not
 /// bounded by Sui's maximum object size.
 ///
-/// The layout is the "C16u" design of
-/// `docs/plans/multicoin-book-storage-whitepaper.md` §7.4, chosen because it
-/// burns the least storage fee of the seven measured variants under all three
-/// weightings. The flat `vector<Order>` it replaces cost 6,710 MIST per resting
+/// The layout is the "C16u" design, chosen because it burns the least storage
+/// fee of the seven measured variants under all three weightings. The flat `vector<Order>` it replaces cost 6,710 MIST per resting
 /// order on *every* operation and stopped accepting orders entirely at 2,973 per
 /// side.
 ///
@@ -83,7 +81,7 @@ module triex::book {
     /// the buffer repopulates on its own, because any newly posted order at a
     /// competitive price beats the tree's best key and is admitted inline. Removing
     /// the return path was the single largest improvement measured — 42–47% off a
-    /// 10-order sweep (whitepaper F6) — because a refill makes every sweep that
+    /// 10-order sweep — because a refill makes every sweep that
     /// drains the buffer pay tree removals to repopulate it, and the repopulated
     /// buffer then re-spills on the placements that follow.
     ///
@@ -91,7 +89,7 @@ module triex::book {
     /// transaction that touches the pool, at ~7.1k MIST, while the benefit of
     /// keeping churn off the tree saturates at about a dozen orders: a 64-order
     /// buffer costs 74% more per churn operation than this one and is worse than the
-    /// flat vector it replaced in the 45–64 band (whitepaper F5). A hot cache is an
+    /// flat vector it replaced in the 45–64 band. A hot cache is an
     /// asset only while it is small.
     const HOT_CAPACITY: u64 = 16;
 

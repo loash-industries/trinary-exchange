@@ -14,8 +14,7 @@
 ///
 /// One caveat this harness cannot escape: the Move test meter prices computation
 /// and not storage, and storage is the whole reason for the layout under test. The
-/// storage figures live in `docs/plans/multicoin-book-storage-whitepaper.md`, which
-/// measured them on a running node. What this module can still show is the
+/// storage figures were measured separately on a running node. What this module can still show is the
 /// computation side: the flat vector's O(depth x fills) removal scan, which keyed
 /// removal eliminates, and which was the largest single number in that experiment.
 #[test_only]

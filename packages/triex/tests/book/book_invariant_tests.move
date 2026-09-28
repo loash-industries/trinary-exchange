@@ -245,7 +245,7 @@ module triex::book_invariant_tests {
     #[test]
     /// A side deep enough to span many leaf slices, built best-price-last so the
     /// buffer ends up holding the top of the book — the shape a contested book
-    /// settles into (whitepaper §B.2).
+    /// settles into.
     fun deep_side_best_price_last() {
         let mut test = begin(OWNER);
         let mut book = book::empty_multicoin(test.ctx());

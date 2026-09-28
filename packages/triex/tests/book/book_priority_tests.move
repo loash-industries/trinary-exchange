@@ -185,7 +185,7 @@ module triex::book_priority_tests {
         // And the queue really does span the seam, though not where one might
         // guess. At a single price no newcomer can beat the buffer's resident, so
         // the buffer holds exactly *one* order and everything after it goes to the
-        // tree — the extreme of the "worst-price-last" build in whitepaper §B.2.
+        // tree — the extreme of the "worst-price-last" build.
         // A market where everyone quotes the same price gets no benefit from the
         // inline buffer at all, which is worth knowing and is asserted rather than
         // assumed.

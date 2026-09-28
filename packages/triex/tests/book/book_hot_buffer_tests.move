@@ -230,7 +230,7 @@ module triex::book_hot_buffer_tests {
 
         assert_ordered(&book, true, 40);
         // Nothing ever beat the first order, so the buffer never grew past it —
-        // the "worst-price-last" build of whitepaper §B.2.
+        // the "worst-price-last" build.
         assert!(hot_len(&book, true) == 1);
 
         book.drop_for_testing();
