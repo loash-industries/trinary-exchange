@@ -19,7 +19,7 @@ module triex::multicoin_pool {
         big_vector::BigVector,
         book::{Self, Book},
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         fee_schedule::FeeSchedule,
         multicoin_vault::{Self, MultiCoinVault},
         order::Order,
@@ -161,6 +161,7 @@ module triex::multicoin_pool {
             maker_fee,
             treasury_address,
         });
+        fee_policy::emit_pool_fee_class_set(pool_id, fee_class);
 
         transfer::public_transfer(creation_fee, treasury_address);
         transfer::share_object(pool);
@@ -913,6 +914,7 @@ module triex::multicoin_pool {
         );
         let pool_inner = self.load_inner_mut();
         pool_inner.fee_class = fee_class;
+        fee_policy::emit_pool_fee_class_set(pool_inner.pool_id, fee_class);
     }
 
     /// Unregister a pool in case it needs to be redeployed.
