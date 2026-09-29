@@ -1502,6 +1502,7 @@ module triex::pool {
         assert!(gap <= MAX_DECIMAL_GAP, EInvalidDecimalPair);
     }
 
+    /// The cold tree of a side. Not the whole side — see `coin_book::bids`.
     public(package) fun bids<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
     ): &BigVector<Order> {
@@ -1512,6 +1513,14 @@ module triex::pool {
         self: &PoolInner<BaseAsset, QuoteAsset>,
     ): &BigVector<Order> {
         self.book.asks()
+    }
+
+    /// The book itself, for callers that must walk a side whole — across the inline
+    /// top-of-book buffer as well as the tree behind it.
+    public(package) fun book<BaseAsset, QuoteAsset>(
+        self: &PoolInner<BaseAsset, QuoteAsset>,
+    ): &Book {
+        &self.book
     }
 
     /// Trailing turnover the next trade on this pool resolves against: the

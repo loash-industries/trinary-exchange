@@ -474,4 +474,80 @@ module triex::fee_policy_operator_share_tests {
 
         abort 0
     }
+
+    // === Adapter pin ===
+
+    #[test]
+    fun the_first_adapter_is_pinned_and_can_be_reopened() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let adapter = std::type_name::with_defining_ids<Adapter>();
+
+        assert_eq!(policy.pinned_operator_adapter(), option::none());
+        policy.set_operator_adapter<Adapter>(&cap);
+        assert_eq!(policy.pinned_operator_adapter(), option::some(adapter));
+
+        // Clearing closes registration but leaves the pin; the same type may
+        // re-open it, and re-setting it while open is a no-op.
+        policy.clear_operator_adapter(&cap);
+        assert_eq!(policy.pinned_operator_adapter(), option::some(adapter));
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.set_operator_adapter<Adapter>(&cap);
+        assert_eq!(policy.operator_adapter(), option::some(adapter));
+
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EAdapterPinned)]
+    fun a_different_adapter_cannot_replace_the_pinned_one() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.set_operator_adapter<Forgery>(&cap);
+
+        abort 0
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EAdapterPinned)]
+    fun clearing_does_not_unpin_the_adapter() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.clear_operator_adapter(&cap);
+        policy.set_operator_adapter<Forgery>(&cap);
+
+        abort 0
+    }
+
+    /// The redirect the pin exists to stop: the cap authorizes a witness it can
+    /// mint itself, destroys the operator's mapping and registers its own
+    /// address, so the next claim pays it the operator's accrued share.
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EAdapterPinned)]
+    fun the_cap_cannot_redirect_an_operator_share() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+
+        policy.destroy_operator_beneficiary(a_collection(), &cap);
+        policy.set_operator_adapter<Forgery>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xAD, Forgery {});
+
+        abort 0
+    }
 }

@@ -194,7 +194,9 @@ module triex::coin_book_dry_run_tests {
     /// The input stops the walk partway through a level: 21 full levels and 88
     /// of the 22nd, 1,978 raw quote owing 21. Priced level by level the fee
     /// would have read as zero, and the swap would have been short 21 at
-    /// settlement.
+    /// settlement. A unit here costs under one raw quote, so the dry run takes
+    /// one more base past the budget for free: 88,001 of the 22nd level still
+    /// floors to 88.
     fun bid_dry_run_on_fragmented_liquidity_matches_settlement() {
         let mut test = begin(OWNER);
         let mut b = coin_book::empty(test.ctx());
@@ -202,7 +204,7 @@ module triex::coin_book_dry_run_tests {
 
         let input = 2_000;
         let (base_out, quote_left) = b.get_quantity_out(0, input, DUST_RATE, 0);
-        assert!(base_out == 1_978_000, base_out);
+        assert!(base_out == 1_978_001, base_out);
         assert!(quote_left == 1, quote_left);
 
         let oi = take(&mut b, base_out, true);

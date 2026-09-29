@@ -135,7 +135,12 @@ storage unit owner's, not whichever sender happened to deploy a pool first (pool
 creation itself writes nothing) — and never re-pointed by the contracts, so a
 hub changing hands, a capability parked on another object, or a game-side change
 to a character's wallet cannot silently redirect money. Until the admin
-registers an adapter type, no registration path exists at all. There is no
+registers an adapter type, no registration path exists at all, and the first
+type registered is pinned for the life of the policy: `clear_operator_adapter`
+closes registration but never unpins it, and `set_operator_adapter` aborts
+(`EAdapterPinned`) for any other type, so the cap cannot authorize a witness of
+its own and re-register a destroyed mapping to itself. `pinned_operator_adapter()`
+shows the pin. Moving to a different adapter package takes a Triex upgrade. There is no
 rotation surface either: any delegation or re-division of a hub's revenue is
 settled outside Triex, and the admin cap can only **destroy** a mapping (halting
 payouts, which stay encumbered until the owner re-registers), never point it
@@ -156,8 +161,8 @@ power than it sounds. It cannot:
   can never reach it. (What the cap *does* keep is the sub-unit flooring
   remainder described above, which is revenue never credited to anyone else.)
 - Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
-  the address `FeePolicy` records — registered through the adapter witness,
-  destructible but never re-pointable by the cap — and never the caller
+  the address `FeePolicy` records — registered through the pinned adapter's
+  witness, destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled).

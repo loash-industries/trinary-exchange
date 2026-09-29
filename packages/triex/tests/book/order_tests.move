@@ -453,7 +453,7 @@ module triex::order_tests {
         price: u64,
         quantity: u64,
         is_bid: bool,
-        order_id: u64,
+        order_id: u128,
         trading_account_id: ID,
         epoch: u64,
         expire_timestamp: u64,
@@ -665,5 +665,78 @@ module triex::order_tests {
 
         assert_eq!(refund, 1728 * constants::float_scaling() / 1000);
         assert_eq!(retained, 216 * constants::float_scaling() / 100 - refund);
+    }
+
+    // === Snapshotted-rate widths ===
+    // The two rates an order carries are stored narrower than the `u64` the fee
+    // policy hands over, because a multicoin order lives inside the pool object
+    // and every byte is rewritten on every transaction that touches the book.
+    // These pin the boundary: the widest value the policy can produce survives the
+    // round trip, and anything past the stored width aborts rather than wrapping.
+
+    #[test_only]
+    fun order_with_rates(maker_fee_rate: u64, cancel_retention_bps: u64): Order {
+        order::new(
+            1,
+            id_from_address(ALICE),
+            2 * constants::float_scaling(),
+            true,
+            constants::float_scaling(),
+            0,
+            0,
+            maker_fee_rate,
+            cancel_retention_bps,
+            constants::live(),
+            constants::max_u64(),
+        )
+    }
+
+    #[test]
+    fun snapshotted_rates_round_trip_at_the_width_bound() {
+        let mut test = begin(OWNER);
+        next_tx(&mut test, ALICE);
+        // 10,000 bps is 100% — the widest rate the policy allows, and the widest
+        // either field stores.
+        let order = order_with_rates(1_000_000_000, 10_000);
+        assert_eq!(order.maker_fee_rate(), 1_000_000_000);
+        assert_eq!(order.cancel_retention_bps(), 10_000);
+        end(test);
+    }
+
+    #[test]
+    fun snapshotted_maker_rate_round_trips_at_one_basis_point() {
+        let mut test = begin(OWNER);
+        next_tx(&mut test, ALICE);
+        // The finest rate the schedule admits, through the bps encoding.
+        let order = order_with_rates(100_000, 1);
+        assert_eq!(order.maker_fee_rate(), 100_000);
+        assert_eq!(order.cancel_retention_bps(), 1);
+        end(test);
+    }
+
+    #[test, expected_failure(abort_code = order::EMakerFeeRateTooWide)]
+    fun maker_fee_rate_finer_than_one_basis_point_aborts() {
+        let mut test = begin(OWNER);
+        next_tx(&mut test, ALICE);
+        // 0.5 bp. Legal before the fee multiple moved to a whole basis point.
+        let _order = order_with_rates(50_000, 2_000);
+        abort
+    }
+
+    #[test, expected_failure(abort_code = order::EMakerFeeRateTooWide)]
+    fun maker_fee_rate_past_the_width_aborts() {
+        let mut test = begin(OWNER);
+        next_tx(&mut test, ALICE);
+        // 10,001 bps — one basis point past 100%.
+        let _order = order_with_rates(1_000_100_000, 2_000);
+        abort
+    }
+
+    #[test, expected_failure(abort_code = order::ECancelRetentionTooWide)]
+    fun cancel_retention_past_the_width_aborts() {
+        let mut test = begin(OWNER);
+        next_tx(&mut test, ALICE);
+        let _order = order_with_rates(0, 10_001);
+        abort
     }
 }

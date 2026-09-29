@@ -49,6 +49,18 @@ module triex::gas_benchmarks {
     #[test]
     fun bench_churn_at_depth_40_x40() { pool_test_utils::bench_churn_at_depth_40_x40() }
 
+    // Uniquely-named aliases for the 20-cycle churn bodies. `gas-benchmark.sh`
+    // filters tests by substring, and "bench_churn_at_depth_40" also names
+    // "bench_churn_at_depth_40_x40", so the 20-cycle figure cannot be measured under
+    // its own name. Differencing c20 against c40 cancels book construction exactly
+    // and leaves the price of one churn cycle, which is the number these benchmarks
+    // exist to produce.
+    #[test]
+    fun bench_tobchurn_d40_c20() { pool_test_utils::bench_churn_at_depth_40() }
+
+    #[test]
+    fun bench_tobchurn_d300_c20() { pool_test_utils::bench_churn_at_depth_300() }
+
     #[test]
     fun bench_churn_at_depth_300_x40() { pool_test_utils::bench_churn_at_depth_300_x40() }
 
