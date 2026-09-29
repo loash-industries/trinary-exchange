@@ -33,6 +33,28 @@ BENCH_PKG="$SCRATCH/$(basename "$PKG_DIR")"
 cp "$PKG_DIR"/benchmarks/*.move "$BENCH_PKG/tests/"
 cd "$BENCH_PKG"
 
+# The full suite plus the benchmarks is over that limit too, so drop every test
+# module the benchmarks don't reach. Starting from the benchmark files, keep any
+# test module a kept file names, until nothing new turns up.
+module_of() { sed -n 's/^module triex::\([A-Za-z0-9_]*\).*/\1/p' "$1" | head -1; }
+KEEP="$(cd tests && for f in "$PKG_DIR"/benchmarks/*.move; do basename "$f"; done)"
+while :; do
+  added=0
+  while IFS= read -r f; do
+    grep -qxF "$f" <<<"$KEEP" && continue
+    name="$(module_of "tests/$f")"
+    [[ -z "$name" ]] && continue
+    if (cd tests && grep -qw "$name" $KEEP); then
+      KEEP="$KEEP"$'\n'"$f"
+      added=1
+    fi
+  done < <(cd tests && find . -name '*.move' | sed 's|^\./||')
+  (( added )) || break
+done
+while IFS= read -r f; do
+  grep -qxF "$f" <<<"$KEEP" || rm "tests/$f"
+done < <(cd tests && find . -name '*.move' | sed 's|^\./||')
+
 # Stop when the bracket is within 1/PRECISION of the answer.
 PRECISION="${PRECISION:-100}"
 # Where the exponential bracket starts, and the ceiling that means "no answer".
