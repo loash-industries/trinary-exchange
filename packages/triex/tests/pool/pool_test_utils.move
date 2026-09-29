@@ -1759,19 +1759,27 @@ module triex::pool_test_utils {
     }
 
     public(package) fun test_swap_exact_amount_bid_ask() {
-        test_swap_exact_amount(true, false);
+        test_swap_exact_amount(true, false, true);
     }
 
     public(package) fun test_swap_exact_amount_ask_bid() {
-        test_swap_exact_amount(false, false);
+        test_swap_exact_amount(false, false, true);
     }
 
     public(package) fun test_swap_exact_amount_bid_ask_with_trading_account() {
-        test_swap_exact_amount(true, true);
+        test_swap_exact_amount(true, true, true);
     }
 
     public(package) fun test_swap_exact_amount_ask_bid_with_trading_account() {
-        test_swap_exact_amount(false, true);
+        test_swap_exact_amount(false, true, true);
+    }
+
+    public(package) fun test_swap_exact_amount_bid_ask_with_empty_trading_account() {
+        test_swap_exact_amount(true, true, false);
+    }
+
+    public(package) fun test_swap_exact_amount_ask_bid_with_empty_trading_account() {
+        test_swap_exact_amount(false, true, false);
     }
 
     public(package) fun test_swap_exact_amount_with_input_bid_ask() {
@@ -4316,7 +4324,9 @@ module triex::pool_test_utils {
     /// Alice places a bid order, Bob places a swap_exact_amount order
     /// Make sure the assets returned to Bob are correct
     /// Make sure expired orders are skipped over
-    fun test_swap_exact_amount(is_bid: bool, with_trading_account: bool) {
+    /// `bob_funded = false` swaps through a trading account that starts empty, so a
+    /// full fill drains the input balance and the wrapper withdraws zero of it
+    fun test_swap_exact_amount(is_bid: bool, with_trading_account: bool, bob_funded: bool) {
         let mut test = begin(OWNER);
         let registry_id = setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -4402,7 +4412,11 @@ module triex::pool_test_utils {
             )
         };
 
-        let initial_bob_balances = 1000000 * constants::float_scaling();
+        let initial_bob_balances = if (bob_funded) {
+            1000000 * constants::float_scaling()
+        } else {
+            0
+        };
         let bob_trading_account_id = create_acct_and_share_with_funds(
             BOB,
             initial_bob_balances,
