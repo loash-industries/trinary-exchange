@@ -192,10 +192,14 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
   PRECISION=20 ./build_scripts/gas-benchmark.sh # 5% instead of 1%, faster
   ```
 
-  Benchmarks live in [`tests/gas_benchmarks.move`](tests/gas_benchmarks.move)
-  with bodies in `pool_test_utils`. They are not correctness tests — each just
-  performs a fixed amount of work, and is read by subtracting it from one that
-  does strictly more.
+  Benchmarks live in [`benchmarks/gas_benchmarks.move`](benchmarks/gas_benchmarks.move)
+  with bodies in [`benchmarks/gas_benchmark_bodies.move`](benchmarks/gas_benchmark_bodies.move).
+  They are not correctness tests — each just performs a fixed amount of work, and
+  is read by subtracting it from one that does strictly more. They sit outside
+  `tests/` because the test build is close to the Move VM's 10 MB per-package
+  arena limit (`PACKAGE_ARENA_LIMIT_REACHED`); the script copies them into a
+  scratch copy of the package and measures there, so `sui move test` never
+  builds them.
 
   They cover the whole order lifecycle: **creating** (`bench_depth_10/40/80`,
   which also give the cost curve against book depth), **matching**

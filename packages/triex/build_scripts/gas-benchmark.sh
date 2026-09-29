@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Measure the Move VM gas each benchmark in `tests/gas_benchmarks.move` costs.
+# Measure the Move VM gas each benchmark in `benchmarks/gas_benchmarks.move` costs.
 #
 # `sui move test --gas-limit N` aborts a test that spends more than N, so the
 # smallest N a benchmark survives is exactly the gas it needs. This binary
@@ -20,7 +20,40 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PKG_DIR"
+PACKAGES_DIR="$(cd "$PKG_DIR/.." && pwd)"
+
+# The benchmarks live outside `tests/` to keep them out of the default test
+# build, which is close to the Move VM's per-package arena limit. Measure in a
+# scratch copy of `packages/` (so the local `token` dependency still resolves)
+# with the benchmarks dropped into its `tests/`.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+tar -C "$PACKAGES_DIR" --exclude build -cf - . | tar -C "$SCRATCH" -xf -
+BENCH_PKG="$SCRATCH/$(basename "$PKG_DIR")"
+cp "$PKG_DIR"/benchmarks/*.move "$BENCH_PKG/tests/"
+cd "$BENCH_PKG"
+
+# The full suite plus the benchmarks is over that limit too, so drop every test
+# module the benchmarks don't reach. Starting from the benchmark files, keep any
+# test module a kept file names, until nothing new turns up.
+module_of() { sed -n 's/^module triex::\([A-Za-z0-9_]*\).*/\1/p' "$1" | head -1; }
+KEEP="$(cd tests && for f in "$PKG_DIR"/benchmarks/*.move; do basename "$f"; done)"
+while :; do
+  added=0
+  while IFS= read -r f; do
+    grep -qxF "$f" <<<"$KEEP" && continue
+    name="$(module_of "tests/$f")"
+    [[ -z "$name" ]] && continue
+    if (cd tests && grep -qw "$name" $KEEP); then
+      KEEP="$KEEP"$'\n'"$f"
+      added=1
+    fi
+  done < <(cd tests && find . -name '*.move' | sed 's|^\./||')
+  (( added )) || break
+done
+while IFS= read -r f; do
+  grep -qxF "$f" <<<"$KEEP" || rm "tests/$f"
+done < <(cd tests && find . -name '*.move' | sed 's|^\./||')
 
 # Stop when the bracket is within 1/PRECISION of the answer.
 PRECISION="${PRECISION:-100}"
