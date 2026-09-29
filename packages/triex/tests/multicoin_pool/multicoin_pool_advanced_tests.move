@@ -3527,7 +3527,7 @@ module triex::integration_multicoin_pool_advanced_tests {
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(bob_bm_id);
             let proof = ta.generate_proof_as_owner(test.ctx());
-            pool.place_limit_order(
+            let order = pool.place_limit_order(
                 &policy,
                 &mut ta,
                 &proof,
@@ -3540,6 +3540,11 @@ module triex::integration_multicoin_pool_advanced_tests {
                 &clock,
                 test.ctx(),
             );
+            // The order that promoted him still reports the entry tier it was
+            // priced at, and the zero turnover that tier was resolved from.
+            assert!(order.fee_tier() == 0, 10);
+            assert!(order.taker_fee_rate() == 11_000_000, 11);
+            assert!(order.fee_turnover() == 0, 12);
 
             // Bob paid a taker fee out of proceeds, so he has turnover now.
             assert!(pool.account_fee_turnover(&ta, test.ctx()) > 0, 4);

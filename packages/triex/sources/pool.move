@@ -1597,7 +1597,7 @@ module triex::pool {
             let pending = pool_inner.state.take_pending_turnover(trading_account.id());
             let turnover = trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
             let (
-                _tier,
+                fee_tier,
                 taker_fee_rate,
                 maker_fee_rate,
                 cancel_retention_bps,
@@ -1623,6 +1623,7 @@ module triex::pool {
                 clock.timestamp_ms(),
                 pool_inner.book.price_scaling(),
             );
+            order_info.set_fee_tier(fee_tier, taker_fee_rate, turnover);
             pool_inner.book.create_order(&mut order_info, clock.timestamp_ms());
             let (settled, owed, fee_flows) = pool_inner
                 .state

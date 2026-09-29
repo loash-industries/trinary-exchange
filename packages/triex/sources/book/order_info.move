@@ -64,6 +64,16 @@ module triex::order_info {
         // Cancel-retention rate snapshotted at placement, carried onto the resting
         // Order so a policy change never re-prices an order already on the book
         cancel_retention_bps: u64,
+        // Tier of the pool's fee class this order was priced at, resolved from
+        // `fee_turnover` before the order ran. The order's own fees land in the
+        // ring only after pricing, so this is the tier every fill of it paid —
+        // not the tier the trader holds afterwards.
+        fee_tier: u64,
+        // That tier's taker rate, applied to every taking fill of this order
+        taker_fee_rate: u64,
+        // Trailing fee turnover in quote units the tier was resolved from.
+        // Post-trade turnover is `fee_turnover + paid_fees`.
+        fee_turnover: u128,
         // Status of the order
         status: u8,
         // Is a market_order
@@ -218,6 +228,18 @@ module triex::order_info {
         self.cancel_retention_bps
     }
 
+    public fun fee_tier(self: &OrderInfo): u64 {
+        self.fee_tier
+    }
+
+    public fun taker_fee_rate(self: &OrderInfo): u64 {
+        self.taker_fee_rate
+    }
+
+    public fun fee_turnover(self: &OrderInfo): u128 {
+        self.fee_turnover
+    }
+
     public fun status(self: &OrderInfo): u8 {
         self.status
     }
@@ -265,6 +287,9 @@ module triex::order_info {
             epoch,
             maker_fee_rate,
             cancel_retention_bps,
+            fee_tier: 0,
+            taker_fee_rate: 0,
+            fee_turnover: 0,
             paid_fees: 0,
             maker_fees: 0,
             status: constants::live(),
@@ -278,6 +303,20 @@ module triex::order_info {
 
     public(package) fun market_order(self: &OrderInfo): bool {
         self.market_order
+    }
+
+    /// Record the tier resolution that priced this order, so it reaches the
+    /// `OrderInfo` event. Set by the pool right after `new`, from the same
+    /// `resolve_with_retention` call that produced `maker_fee_rate`.
+    public(package) fun set_fee_tier(
+        self: &mut OrderInfo,
+        fee_tier: u64,
+        taker_fee_rate: u64,
+        fee_turnover: u128,
+    ) {
+        self.fee_tier = fee_tier;
+        self.taker_fee_rate = taker_fee_rate;
+        self.fee_turnover = fee_turnover;
     }
 
     public(package) fun set_order_id(self: &mut OrderInfo, order_id: u128) {

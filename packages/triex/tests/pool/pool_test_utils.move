@@ -8089,7 +8089,7 @@ module triex::pool_test_utils {
 
         // Bob takes 200 notional at 2.2% = 4.4, which clears the threshold. The
         // fee on this order is charged at the entry rate he held before it.
-        place_limit_order<SUI, USDC>(
+        let crossing = place_limit_order<SUI, USDC>(
             BOB,
             pool_id,
             trading_account_id_bob,
@@ -8101,6 +8101,12 @@ module triex::pool_test_utils {
             constants::max_u64(),
             &mut test,
         );
+        // The event reports the tier that priced the order — the one held
+        // before it ran — not the one it promoted him to.
+        assert_eq!(crossing.fee_tier(), 0);
+        assert_eq!(crossing.taker_fee_rate(), 22_000_000);
+        assert_eq!(crossing.fee_turnover(), 0);
+        assert_eq!(crossing.paid_fees(), 44 * constants::float_scaling() / 10);
 
         test.next_tx(BOB);
         {
@@ -8183,6 +8189,28 @@ module triex::pool_test_utils {
             return_shared(policy);
             return_shared(pool);
         };
+
+        // His next order carries the promoted tier and the turnover it was
+        // resolved from: the crossing order's `fee_turnover + paid_fees`.
+        let promoted = place_limit_order<SUI, USDC>(
+            BOB,
+            pool_id,
+            trading_account_id_bob,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            false,
+            constants::max_u64(),
+            &mut test,
+        );
+        assert_eq!(promoted.fee_tier(), 1);
+        assert_eq!(promoted.taker_fee_rate(), 11_000_000);
+        assert_eq!(
+            promoted.fee_turnover(),
+            (crossing.fee_turnover() + (crossing.paid_fees() as u128)),
+        );
+        assert_eq!(promoted.paid_fees(), 22 * constants::float_scaling() / 10);
 
         end(test);
     }
