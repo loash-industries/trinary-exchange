@@ -1701,6 +1701,132 @@ module triex::integration_multicoin_pool_advanced_tests {
         multicoin_test_swap_exact_not_fully_filled(false, false, false, true, true);
     }
 
+    /// Selling base through a trading account that holds none of it: the full fill
+    /// drains the base key during settlement, so the wrapper must still be able to
+    /// withdraw the zero base remainder
+    #[test]
+    fun test_multicoin_pool_swap_full_fill_ask_with_empty_trading_account_ok() {
+        let mut test = begin(OWNER);
+
+        let (registry_id, collection_id, collection_cap) = setup_registry_with_multicoin(&mut test);
+        let owner_bm_id = create_trading_account_with_funds(
+            OWNER,
+            1_000_000 * constants::float_scaling(),
+            1_000_000 * constants::float_scaling(),
+            &mut test,
+        );
+        let (pool_id, _reference_pool_id) = setup_multicoin_pool_with_cred_pricing(
+            OWNER,
+            registry_id,
+            collection_id,
+            ASSET_GOLD,
+            owner_bm_id,
+            &mut test,
+        );
+        let alice_bm_id = create_trading_account_with_funds(
+            ALICE,
+            1_000_000 * constants::float_scaling(),
+            1_000_000 * constants::float_scaling(),
+            &mut test,
+        );
+
+        // BOB starts with an empty trading account
+        test.next_tx(BOB);
+        let mut bob_bm = trading_account::new(test.ctx());
+        let bob_trade_cap = bob_bm.mint_trade_cap(test.ctx());
+        let bob_deposit_cap = bob_bm.mint_deposit_cap(test.ctx());
+        let bob_withdraw_cap = bob_bm.mint_withdraw_cap(test.ctx());
+        let bob_bm_id = object::id(&bob_bm);
+        transfer::public_share_object(bob_bm);
+        transfer::public_transfer(bob_trade_cap, BOB);
+        transfer::public_transfer(bob_deposit_cap, BOB);
+        transfer::public_transfer(bob_withdraw_cap, BOB);
+
+        // Alice bids for 2 GOLD at 3 USDC
+        let alice_quantity = 2;
+        test.next_tx(ALICE);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
+        let alice_trade_cap = test.take_from_sender<TradeCap>();
+        let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
+        pool.place_limit_order(
+            &policy,
+            &mut alice_bm,
+            &alice_proof,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            3 * constants::float_scaling(),
+            alice_quantity,
+            true,
+            constants::max_u64(),
+            &clock,
+            test.ctx(),
+        );
+        return_shared(pool);
+        return_shared(policy);
+        return_shared(clock);
+        return_shared(alice_bm);
+        test.return_to_sender(alice_trade_cap);
+
+        // Bob sells exactly the bid quantity, filling it completely
+        test.next_tx(BOB);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut collection = test.take_shared<Collection>();
+        let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
+        let bob_trade_cap = test.take_from_sender<TradeCap>();
+        let bob_deposit_cap = test.take_from_sender<DepositCap>();
+        let bob_withdraw_cap = test.take_from_sender<WithdrawCap>();
+        let base_in_balance = multicoin::mint_and_keep(
+            &collection_cap,
+            &mut collection,
+            ASSET_GOLD,
+            alice_quantity,
+            test.ctx(),
+        );
+
+        let (base_out, quote_out) = pool.swap_exact_base_for_quote_with_trading_account(
+            &policy,
+            &mut bob_bm,
+            &bob_trade_cap,
+            &bob_deposit_cap,
+            &bob_withdraw_cap,
+            base_in_balance,
+            0,
+            &clock,
+            test.ctx(),
+        );
+
+        assert!(base_out.value() == 0, constants::e_order_info_mismatch());
+        // 6 quote proceeds less the 2.2% ask-taker fee
+        assert!(
+            quote_out.value() == 5_868 * constants::float_scaling() / 1000,
+            constants::e_order_info_mismatch(),
+        );
+        assert!(
+            bob_bm.multicoin_balance(collection_id, ASSET_GOLD) == 0,
+            constants::e_order_info_mismatch(),
+        );
+
+        return_shared(bob_bm);
+        test.return_to_sender(bob_trade_cap);
+        test.return_to_sender(bob_deposit_cap);
+        test.return_to_sender(bob_withdraw_cap);
+        return_shared(pool);
+        return_shared(policy);
+        return_shared(clock);
+        return_shared(collection);
+
+        unit_test::destroy(base_out);
+        coin::burn_for_testing(quote_out);
+        unit_test::destroy(collection_cap);
+
+        end(test);
+    }
+
     // === Cancel-All Behavior (Empty) ===
 
     #[test]

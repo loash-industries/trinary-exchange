@@ -566,13 +566,19 @@ module triex::multicoin_pool {
             (base_left, order_info.cumulative_quote_quantity() - order_info.paid_fees())
         };
 
-        let base_out = trading_account.withdraw_multicoin_with_cap(
-            withdraw_cap,
-            collection_id,
-            asset_id,
-            base_out,
-            ctx,
-        );
+        // A full ask fill drains the base key during settlement, and multicoin
+        // rejects zero-amount withdrawals, so a zero remainder is minted directly
+        let base_out = if (base_out == 0) {
+            multicoin::zero(collection_id, asset_id, ctx)
+        } else {
+            trading_account.withdraw_multicoin_with_cap(
+                withdraw_cap,
+                collection_id,
+                asset_id,
+                base_out,
+                ctx,
+            )
+        };
         let quote_out = trading_account.withdraw_with_cap(withdraw_cap, quote_out, ctx);
 
         if (is_bid) {

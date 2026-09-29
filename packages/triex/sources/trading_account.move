@@ -777,6 +777,9 @@ module triex::trading_account {
             } else {
                 balance::zero()
             }
+        } else if (withdraw_amount == 0) {
+            // A fully drained balance has no key, so zero must not require one
+            balance::zero()
         } else {
             assert!(key_exists, ETradingAccountBalanceTooLow);
             let acc_balance: &mut Balance<T> = &mut trading_account.balances[key];

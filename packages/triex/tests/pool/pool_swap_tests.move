@@ -23,6 +23,16 @@ module triex::pool_swap_tests {
     }
 
     #[test]
+    fun test_swap_exact_amount_bid_ask_with_empty_trading_account() {
+        pool_test_utils::test_swap_exact_amount_bid_ask_with_empty_trading_account();
+    }
+
+    #[test]
+    fun test_swap_exact_amount_ask_bid_with_empty_trading_account() {
+        pool_test_utils::test_swap_exact_amount_ask_bid_with_empty_trading_account();
+    }
+
+    #[test]
     fun test_swap_exact_amount_with_input_bid_ask() {
         pool_test_utils::test_swap_exact_amount_with_input_bid_ask();
     }
