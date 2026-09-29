@@ -223,15 +223,11 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 ## Deployments
 
-Environments are declared in `Move.toml` under `[environments]`; published
-addresses are recorded in [`Published.toml`](Published.toml). All current
-deployments are on Sui testnet (chain id `4c78adac`):
-
-| Environment | Package ID |
-| --- | --- |
-| `testnet_stillness` | `0x291b9da738dffedd18d7c5049e5e6792270202e03f3c9d9db4c7097670bf6eb2` |
-| `testnet_utopia` | `0xc0e6294ba180e4998eab5d36aa72584d78f9c780706c6ff8a456c06ca6e4a2dd` |
-| `testnet_wip` | `0xa9ec4afe4757ad2b90102e02b133fcd0cb7cc526722524ce20fcdf53be4ec309` |
+Environments are declared in `Move.toml` under `[environments]`. triex is
+pending a fresh publish to `testnet_stillness` (Sui testnet, chain id
+`4c78adac`); `Published.toml` is recreated by that publish. The earlier
+`testnet_stillness`, `testnet_utopia` and `testnet_wip` publications are
+retired.
 
 ## License
 

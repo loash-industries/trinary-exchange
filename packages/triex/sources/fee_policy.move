@@ -190,6 +190,22 @@ module triex::fee_policy {
         cancel_retention_bps: u64,
     }
 
+    /// The class new pools of `quote` are born into changed. `multicoin`
+    /// separates the multicoin default table from the coin-pool one.
+    public struct DefaultFeeClassSet has copy, drop {
+        quote: TypeName,
+        class_id: u16,
+        multicoin: bool,
+    }
+
+    /// A pool joined `class_id`: at creation, into its quote's default class, or
+    /// on an admin reassignment. Emitted by both pool flavors, so a pool's class
+    /// history is on the event stream rather than only in its inner object.
+    public struct PoolFeeClassSet has copy, drop {
+        pool_id: ID,
+        class_id: u16,
+    }
+
     // === Init ===
     /// The fee tables ship empty — classes are created by the admin after
     /// publish, and pool creation requires a default class for the pool's quote,
@@ -241,6 +257,9 @@ module triex::fee_policy {
             },
         );
         df::add(&mut policy.id, DefaultOperatorShareKey {}, 0u16);
+
+        emit_operator_share_genesis_class(0);
+        event::emit(DefaultOperatorShareClassSet { class_id: 0 });
 
         policy
     }
@@ -390,6 +409,8 @@ module triex::fee_policy {
             self.default_classes.remove(quote);
         };
         self.default_classes.add(quote, class_id);
+
+        event::emit(DefaultFeeClassSet { quote, class_id, multicoin: false });
     }
 
     /// Same, for multicoin pools.
@@ -404,6 +425,8 @@ module triex::fee_policy {
             self.multicoin_default_classes.remove(quote);
         };
         self.multicoin_default_classes.add(quote, class_id);
+
+        event::emit(DefaultFeeClassSet { quote, class_id, multicoin: true });
     }
 
     // === Public-View Functions ===
@@ -492,6 +515,12 @@ module triex::fee_policy {
         assert!(self.classes[class_id].quote == quote, EClassQuoteMismatch);
     }
 
+    /// Record that `pool_id` now trades under `class_id`. Called by both pool
+    /// flavors on creation and on `set_pool_fee_class`.
+    public(package) fun emit_pool_fee_class_set(pool_id: ID, class_id: u16) {
+        event::emit(PoolFeeClassSet { pool_id, class_id });
+    }
+
     // === Private Functions ===
     fun validated_schedule(
         min_turnovers: vector<u128>,
@@ -513,6 +542,28 @@ module triex::fee_policy {
     #[test_only]
     public fun share_for_testing(self: FeePolicy) {
         transfer::share_object(self)
+    }
+
+    #[test_only]
+    public fun default_fee_class_set_parts(self: &DefaultFeeClassSet): (TypeName, u16, bool) {
+        (self.quote, self.class_id, self.multicoin)
+    }
+
+    #[test_only]
+    public fun pool_fee_class_set_parts(self: &PoolFeeClassSet): (ID, u16) {
+        (self.pool_id, self.class_id)
+    }
+
+    #[test_only]
+    public fun default_operator_share_class_set_class_id(self: &DefaultOperatorShareClassSet): u16 {
+        self.class_id
+    }
+
+    #[test_only]
+    public fun operator_share_class_updated_parts(
+        self: &OperatorShareClassUpdated,
+    ): (u16, u64, u64) {
+        (self.class_id, self.bps, self.from_epoch)
     }
 
     // === Operator revenue share ===
@@ -600,6 +651,12 @@ module triex::fee_policy {
 
     public struct OperatorShareClassAssigned has copy, drop {
         collection_id: ID,
+        class_id: u16,
+    }
+
+    /// The class collections without an assignment fall into changed. Also
+    /// emitted when genesis points it at class 0.
+    public struct DefaultOperatorShareClassSet has copy, drop {
         class_id: u16,
     }
 
@@ -702,6 +759,8 @@ module triex::fee_policy {
         assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
         upsert(&mut self.id, DefaultOperatorShareKey {}, class_id);
+
+        event::emit(DefaultOperatorShareClassSet { class_id });
     }
 
     /// Bring a `FeePolicy` that predates the hub share up to the state
@@ -727,7 +786,11 @@ module triex::fee_policy {
     /// Idempotent and non-destructive: it only ever adds what is missing, so
     /// running it against an already-seeded policy — or twice — cannot reset a
     /// live rate or re-point a configured default.
-    public fun seed_operator_share_genesis(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+    public fun seed_operator_share_genesis(
+        self: &mut FeePolicy,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
         let class_key = OperatorShareClassKey { class_id: 0 };
         if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
             df::add(
@@ -739,12 +802,28 @@ module triex::fee_policy {
                     effective_epoch: 0,
                 },
             );
+            emit_operator_share_genesis_class(ctx.epoch());
         };
 
         let default_key = DefaultOperatorShareKey {};
         if (!df::exists_with_type<DefaultOperatorShareKey, u16>(&self.id, default_key)) {
             df::add(&mut self.id, default_key, 0u16);
+            event::emit(DefaultOperatorShareClassSet { class_id: 0 });
         };
+    }
+
+    /// Genesis class 0 is written directly rather than staged, so it announces
+    /// itself with the same event `stage_operator_share_class` emits. `from_epoch`
+    /// is when the rate actually became payable: epoch 0 for `new_policy`, which
+    /// has no earlier history, but the seeding epoch for
+    /// `seed_operator_share_genesis` — before that call the share resolved to
+    /// zero, and rate history must not backdate the genesis rate over it.
+    fun emit_operator_share_genesis_class(from_epoch: u64) {
+        event::emit(OperatorShareClassUpdated {
+            class_id: 0,
+            bps: GENESIS_OPERATOR_SHARE_BPS,
+            from_epoch,
+        });
     }
 
     /// The share rate applying to revenue this collection's pools recognize in

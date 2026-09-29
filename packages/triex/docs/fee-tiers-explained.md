@@ -123,6 +123,31 @@ units and have to be scaled to the asset they price.
 
 *(Code: `fee_policy.move`, `bootstrap_quote()`.)*
 
+### The hub operator share
+
+The other launch step is the **hub operator share**: the fraction of multi-coin
+fee revenue credited to the hub that hosts a collection (class 0, 20% at
+launch, set as the default every collection pays). It is set up alongside the
+quote, as part of standing the exchange up, just like configuring CRED as a
+quote with `bootstrap_quote`.
+
+- **Fresh publish:** `init` seeds class 0 and the default for you. There is
+  nothing to call, but decide before creating the first multi-coin pool
+  whether you want the share live. The share is credited from the first fill
+  whether or not a beneficiary is registered, and until one is, that revenue
+  is held back from fee withdrawal. To launch with the feature off, stage
+  class 0 to zero (`stage_operator_share_class`) before any multi-coin pool
+  exists.
+- **Upgraded deployment:** the existing `FeePolicy` never ran `init`, so the
+  share is off (every collection resolves to 0%) until an admin calls
+  `fee_policy::seed_operator_share_genesis`. Run it with the quote setup, before
+  multi-coin pools start trading. The share is payable from the epoch of that
+  call, and the `OperatorShareClassUpdated` event records that epoch as
+  `from_epoch`, not epoch 0. The call is idempotent.
+
+*(Code: `fee_policy.move` — `new_policy()`, `seed_operator_share_genesis()`,
+`stage_operator_share_class()`, `GENESIS_OPERATOR_SHARE_BPS`.)*
+
 ## The actual numbers today
 
 Both pool kinds launch on an **eight-level ladder** that halves the entry rate by
@@ -190,4 +215,5 @@ and the `MIN_TAKER_FEE` / `MAX_TAKER_FEE` / `MAX_MAKER_FEE` /
 | Someone who trades instantly against the book | taker |
 | Someone whose resting order gets filled later | maker |
 | Admin sets up a quote at launch | `bootstrap_quote` |
+| Admin switches on the hub operator share after an upgrade | `seed_operator_share_genesis` |
 | Admin re-prices a class (next epoch) | `update_class` |

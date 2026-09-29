@@ -19,7 +19,7 @@ module triex::pool {
         coin_state::{Self, State},
         coin_vault::{Self, Vault},
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         fee_schedule::FeeSchedule,
         registry::{TriexAdminCap, Registry},
         trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap}
@@ -818,6 +818,7 @@ module triex::pool {
         );
         let self = self.load_inner_mut();
         self.fee_class = fee_class;
+        fee_policy::emit_pool_fee_class_set(self.pool_id, fee_class);
     }
 
     // #feat:flashloan - DISABLED
@@ -1483,6 +1484,7 @@ module triex::pool {
             maker_fee,
             treasury_address,
         });
+        fee_policy::emit_pool_fee_class_set(pool_id, fee_class);
 
         transfer::public_transfer(creation_fee, treasury_address);
         transfer::share_object(pool);
