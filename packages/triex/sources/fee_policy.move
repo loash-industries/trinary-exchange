@@ -258,7 +258,7 @@ module triex::fee_policy {
         );
         df::add(&mut policy.id, DefaultOperatorShareKey {}, 0u16);
 
-        emit_operator_share_genesis_class();
+        emit_operator_share_genesis_class(0);
         event::emit(DefaultOperatorShareClassSet { class_id: 0 });
 
         policy
@@ -784,7 +784,11 @@ module triex::fee_policy {
     /// Idempotent and non-destructive: it only ever adds what is missing, so
     /// running it against an already-seeded policy — or twice — cannot reset a
     /// live rate or re-point a configured default.
-    public fun seed_operator_share_genesis(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+    public fun seed_operator_share_genesis(
+        self: &mut FeePolicy,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
         let class_key = OperatorShareClassKey { class_id: 0 };
         if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
             df::add(
@@ -796,7 +800,7 @@ module triex::fee_policy {
                     effective_epoch: 0,
                 },
             );
-            emit_operator_share_genesis_class();
+            emit_operator_share_genesis_class(ctx.epoch());
         };
 
         let default_key = DefaultOperatorShareKey {};
@@ -807,13 +811,16 @@ module triex::fee_policy {
     }
 
     /// Genesis class 0 is written directly rather than staged, so it announces
-    /// itself with the same event `stage_operator_share_class` emits: rate
-    /// history then starts at the genesis rate, live from epoch 0.
-    fun emit_operator_share_genesis_class() {
+    /// itself with the same event `stage_operator_share_class` emits. `from_epoch`
+    /// is when the rate actually became payable: epoch 0 for `new_policy`, which
+    /// has no earlier history, but the seeding epoch for
+    /// `seed_operator_share_genesis` — before that call the share resolved to
+    /// zero, and rate history must not backdate the genesis rate over it.
+    fun emit_operator_share_genesis_class(from_epoch: u64) {
         event::emit(OperatorShareClassUpdated {
             class_id: 0,
             bps: GENESIS_OPERATOR_SHARE_BPS,
-            from_epoch: 0,
+            from_epoch,
         });
     }
 

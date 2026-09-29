@@ -60,19 +60,25 @@ module triex::fee_policy_event_tests {
         let cap = registry::get_admin_cap_for_testing(test.ctx());
         policy.strip_operator_share_genesis_for_testing();
 
-        test.next_tx(OWNER);
-        policy.seed_operator_share_genesis(&cap);
+        // Seed a few epochs in, as an upgraded deployment would.
+        test.next_epoch(OWNER);
+        test.next_epoch(OWNER);
+        let seeded_at = test.ctx().epoch();
+        policy.seed_operator_share_genesis(&cap, test.ctx());
         let updates = event::events_by_type<OperatorShareClassUpdated>();
         assert_eq!(updates.length(), 1);
         let (class_id, bps, from_epoch) = updates[0].operator_share_class_updated_parts();
         assert_eq!(class_id, 0);
         assert_eq!(bps, GENESIS_SHARE_BPS);
-        assert_eq!(from_epoch, 0);
+        // Payable from the seeding epoch, not backdated to 0: the share
+        // resolved to zero until this call.
+        assert_eq!(seeded_at, 2);
+        assert_eq!(from_epoch, seeded_at);
         assert_eq!(event::events_by_type<DefaultOperatorShareClassSet>().length(), 1);
 
         // Already seeded: nothing is written, so nothing is announced.
         test.next_tx(OWNER);
-        policy.seed_operator_share_genesis(&cap);
+        policy.seed_operator_share_genesis(&cap, test.ctx());
         assert_eq!(event::events_by_type<OperatorShareClassUpdated>().length(), 0);
         assert_eq!(event::events_by_type<DefaultOperatorShareClassSet>().length(), 0);
 

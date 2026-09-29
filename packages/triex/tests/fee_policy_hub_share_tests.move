@@ -78,7 +78,7 @@ module triex::fee_policy_operator_share_tests {
         let cap = registry::get_admin_cap_for_testing(test.ctx());
         policy.strip_operator_share_genesis_for_testing();
 
-        policy.seed_operator_share_genesis(&cap);
+        policy.seed_operator_share_genesis(&cap, test.ctx());
 
         assert!(policy.operator_share_class_exists(0));
         assert_eq!(policy.operator_share_class(a_collection()), 0);
@@ -105,8 +105,8 @@ module triex::fee_policy_operator_share_tests {
         policy.stage_operator_share_class(CLASS_PARTNER, 2_500, &cap, test.ctx());
         policy.set_default_operator_share_class(CLASS_PARTNER, &cap);
 
-        policy.seed_operator_share_genesis(&cap);
-        policy.seed_operator_share_genesis(&cap);
+        policy.seed_operator_share_genesis(&cap, test.ctx());
+        policy.seed_operator_share_genesis(&cap, test.ctx());
 
         assert_eq!(policy.operator_share_class(a_collection()), CLASS_PARTNER);
         assert_eq!(policy.operator_share_bps_at(a_collection(), 1), 2_500);
