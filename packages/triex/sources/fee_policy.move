@@ -560,7 +560,9 @@ module triex::fee_policy {
     }
 
     #[test_only]
-    public fun operator_share_class_updated_parts(self: &OperatorShareClassUpdated): (u16, u64, u64) {
+    public fun operator_share_class_updated_parts(
+        self: &OperatorShareClassUpdated,
+    ): (u16, u64, u64) {
         (self.class_id, self.bps, self.from_epoch)
     }
 

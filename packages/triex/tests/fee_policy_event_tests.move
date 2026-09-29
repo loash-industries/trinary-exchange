@@ -170,7 +170,11 @@ module triex::fee_policy_event_tests {
     #[test]
     fun multicoin_pool_announces_its_class_at_creation_and_on_reassignment() {
         let mut test = begin(OWNER);
-        let (registry_id, collection_id, collection_cap) = multicoin_test_utils::setup_registry_with_multicoin(
+        let (
+            registry_id,
+            collection_id,
+            collection_cap,
+        ) = multicoin_test_utils::setup_registry_with_multicoin(
             &mut test,
         );
         let pool_id = multicoin_test_utils::setup_multicoin_pool(
