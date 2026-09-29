@@ -478,7 +478,8 @@ module triex::coin_book {
         taker_fee: u64,
     ): u64 {
         if (base_quantity >= cur_quantity) return base_quantity;
-        let total = matched_quote + math::qty_to_quote(base_quantity + 1, price, self.price_scaling);
+        let total =
+            matched_quote + math::qty_to_quote(base_quantity + 1, price, self.price_scaling);
         if (total > quote_quantity) return base_quantity;
         let fee = quote_fee::fee_from_scaled_rate(taker_fee, total);
         if (fee > quote_quantity - total) return base_quantity;

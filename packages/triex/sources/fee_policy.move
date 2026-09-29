@@ -833,7 +833,10 @@ module triex::fee_policy {
         let adapter = type_name::with_defining_ids<W>();
         let pin_key = PinnedAdapterKey {};
         if (df::exists_with_type<PinnedAdapterKey, TypeName>(&self.id, pin_key)) {
-            assert!(*df::borrow<PinnedAdapterKey, TypeName>(&self.id, pin_key) == adapter, EAdapterPinned);
+            assert!(
+                *df::borrow<PinnedAdapterKey, TypeName>(&self.id, pin_key) == adapter,
+                EAdapterPinned,
+            );
         } else {
             df::add(&mut self.id, pin_key, adapter);
         };

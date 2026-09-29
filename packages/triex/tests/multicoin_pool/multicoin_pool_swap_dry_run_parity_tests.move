@@ -6,7 +6,11 @@
 module triex::multicoin_pool_swap_dry_run_parity_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
     use std::unit_test;
-    use sui::{clock::Clock, coin::mint_for_testing, test_scenario::{Scenario, begin, end, return_shared}};
+    use sui::{
+        clock::Clock,
+        coin::mint_for_testing,
+        test_scenario::{Scenario, begin, end, return_shared}
+    };
     use token::cred::CRED;
     use triex::{
         constants,
@@ -36,7 +40,13 @@ module triex::multicoin_pool_swap_dry_run_parity_tests {
 
         test.next_tx(OWNER);
         let mut collection = test.take_shared<Collection>();
-        let gold = multicoin::mint_and_keep(&cap, &mut collection, ASSET_GOLD, 1_000_000, test.ctx());
+        let gold = multicoin::mint_and_keep(
+            &cap,
+            &mut collection,
+            ASSET_GOLD,
+            1_000_000,
+            test.ctx(),
+        );
         return_shared(collection);
         transfer::public_transfer(gold, BOB);
 

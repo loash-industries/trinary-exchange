@@ -5,19 +5,23 @@
 /// on a worse maker — pricing that unit under its own floor — under-costs the
 /// plan: the swap then needs more quote than it was given and aborts.
 module triex::pool_swap_dry_run_parity_tests {
+    use std::unit_test::destroy;
     use sui::{
         clock::Clock,
         coin::{Coin, mint_for_testing},
         sui::SUI,
         test_scenario::{Scenario, begin, end, return_shared}
     };
-    use std::unit_test::destroy;
     use token::cred::CRED;
     use triex::{
         constants,
         fee_policy::FeePolicy,
         pool::Pool,
-        pool_test_utils::{setup_test, setup_pool_with_default_fees_and_reference_pool, place_limit_order},
+        pool_test_utils::{
+            setup_test,
+            setup_pool_with_default_fees_and_reference_pool,
+            place_limit_order
+        },
         trading_account_tests::{USDC, create_acct_and_share_with_funds}
     };
 
@@ -57,7 +61,13 @@ module triex::pool_swap_dry_run_parity_tests {
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let clock = test.take_shared<Clock>();
         let policy = test.take_shared<FeePolicy>();
-        let (base_out, quote_left) = pool.get_quantity_out(&policy, 0, quote_in, &clock, test.ctx());
+        let (base_out, quote_left) = pool.get_quantity_out(
+            &policy,
+            0,
+            quote_in,
+            &clock,
+            test.ctx(),
+        );
         return_shared(policy);
         return_shared(clock);
         return_shared(pool);
