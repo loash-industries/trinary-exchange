@@ -5,10 +5,13 @@ module triex::trading_account_tests {
     use sui::{
         coin::mint_for_testing,
         sui::SUI,
-        test_scenario::{Scenario, begin, end, return_shared}
+        test_scenario::{Self, Scenario, begin, end, return_shared}
     };
     use token::cred::CRED;
-    use triex::trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap};
+    use triex::{
+        registry::{Self, Registry},
+        trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap}
+    };
 
     public struct SPAM has store {}
     public struct USDC has store {}
@@ -1996,6 +1999,113 @@ module triex::trading_account_tests {
         return_shared(trading_account);
         destroy(withdrawn_multicoin);
         destroy(collection_cap);
+        test.end();
+    }
+
+    // === Ownership: registration and custom-owner caps ===
+
+    /// Share a registry with its trading-account map initialised, as deployment does.
+    fun setup_registry(test: &mut Scenario): ID {
+        test.next_tx(OWNER);
+        let registry_id = registry::test_registry(test.ctx());
+        test.next_tx(OWNER);
+        let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        registry.init_trading_account_map(&cap, test.ctx());
+        destroy(cap);
+        return_shared(registry);
+        registry_id
+    }
+
+    #[test]
+    fun test_register_trading_account_as_owner_ok() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_registry(&mut test);
+
+        test.next_tx(ALICE);
+        let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let trading_account = trading_account::new(test.ctx());
+        trading_account.register_trading_account(&mut registry, test.ctx());
+        assert!(registry.get_trading_account_ids(ALICE).contains(&object::id(&trading_account)));
+
+        transfer::public_share_object(trading_account);
+        return_shared(registry);
+        test.end();
+    }
+
+    #[test]
+    fun test_register_custom_owner_account_by_owner_ok() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_registry(&mut test);
+
+        test.next_tx(ALICE);
+        let trading_account = trading_account::new_with_custom_owner(BOB, test.ctx());
+        let trading_account_id = object::id(&trading_account);
+        transfer::public_share_object(trading_account);
+
+        test.next_tx(BOB);
+        let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
+        trading_account.register_trading_account(&mut registry, test.ctx());
+        assert!(registry.get_trading_account_ids(BOB).contains(&trading_account_id));
+
+        return_shared(trading_account);
+        return_shared(registry);
+        test.end();
+    }
+
+    /// TRIEX-144: a stranger cannot file an account under someone else's address.
+    /// Before the owner check, 100 such registrations locked the victim out of the
+    /// registry for good.
+    #[test, expected_failure(abort_code = trading_account::EInvalidOwner)]
+    fun test_register_trading_account_as_non_owner_e() {
+        let mut test = begin(OWNER);
+        let registry_id = setup_registry(&mut test);
+
+        test.next_tx(ALICE);
+        let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let trading_account = trading_account::new_with_custom_owner(BOB, test.ctx());
+        trading_account.register_trading_account(&mut registry, test.ctx());
+
+        abort
+    }
+
+    /// TRIEX-145: the caps minted for a custom-owner account go to the owner, and
+    /// the creator ends up holding none of them.
+    #[test]
+    fun test_new_with_custom_owner_and_caps_sends_caps_to_owner() {
+        let mut test = begin(OWNER);
+
+        test.next_tx(ALICE);
+        let trading_account = trading_account::new_with_custom_owner_and_caps(BOB, test.ctx());
+        assert!(trading_account.owner() == BOB);
+        let trading_account_id = object::id(&trading_account);
+        transfer::public_share_object(trading_account);
+
+        test.next_tx(BOB);
+        assert!(!test_scenario::has_most_recent_for_address<DepositCap>(ALICE));
+        assert!(!test_scenario::has_most_recent_for_address<WithdrawCap>(ALICE));
+        assert!(!test_scenario::has_most_recent_for_address<TradeCap>(ALICE));
+
+        let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
+        let deposit_cap = test.take_from_sender<DepositCap>();
+        let withdraw_cap = test.take_from_sender<WithdrawCap>();
+        let trade_cap = test.take_from_sender<TradeCap>();
+
+        trading_account.deposit_with_cap(
+            &deposit_cap,
+            mint_for_testing<SUI>(100, test.ctx()),
+            test.ctx(),
+        );
+        let coin = trading_account.withdraw_with_cap<SUI>(&withdraw_cap, 40, test.ctx());
+        assert!(coin.value() == 40);
+        assert!(trading_account.balance<SUI>() == 60);
+
+        destroy(coin);
+        test.return_to_sender(deposit_cap);
+        test.return_to_sender(withdraw_cap);
+        test.return_to_sender(trade_cap);
+        return_shared(trading_account);
         test.end();
     }
 }
