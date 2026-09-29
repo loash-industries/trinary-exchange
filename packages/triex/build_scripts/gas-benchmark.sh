@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Measure the Move VM gas each benchmark in `tests/gas_benchmarks.move` costs.
+# Measure the Move VM gas each benchmark in `benchmarks/gas_benchmarks.move` costs.
 #
 # `sui move test --gas-limit N` aborts a test that spends more than N, so the
 # smallest N a benchmark survives is exactly the gas it needs. This binary
@@ -20,7 +20,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PKG_DIR"
+PACKAGES_DIR="$(cd "$PKG_DIR/.." && pwd)"
+
+# The benchmarks live outside `tests/` to keep them out of the default test
+# build, which is close to the Move VM's per-package arena limit. Measure in a
+# scratch copy of `packages/` (so the local `token` dependency still resolves)
+# with the benchmarks dropped into its `tests/`.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+tar -C "$PACKAGES_DIR" --exclude build -cf - . | tar -C "$SCRATCH" -xf -
+BENCH_PKG="$SCRATCH/$(basename "$PKG_DIR")"
+cp "$PKG_DIR"/benchmarks/*.move "$BENCH_PKG/tests/"
+cd "$BENCH_PKG"
 
 # Stop when the bracket is within 1/PRECISION of the answer.
 PRECISION="${PRECISION:-100}"
