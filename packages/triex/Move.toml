@@ -5,7 +5,7 @@ version = "0.0.1"
 
 [dependencies]
 token = { local = "../token" }
-multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "2772c26d24c02671726d39f167b8f772777875d9" }
 
 [environments]
 localnet = "c7f5dcae"
