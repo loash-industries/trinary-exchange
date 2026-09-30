@@ -12,13 +12,7 @@
 #[test_only]
 module triex::coin_book_dry_run_tests {
     use sui::{object::id_from_address, test_scenario::begin};
-    use triex::{
-        book::{Self, Book},
-        order_info::{Self, OrderInfo},
-        constants,
-        math,
-        quote_fee
-    };
+    use triex::{book::{Self, Book}, constants, math, order_info::{Self, OrderInfo}, quote_fee};
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;

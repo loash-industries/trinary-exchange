@@ -26,7 +26,7 @@
 #[test_only]
 module triex::coin_book_workload_tests {
     use sui::test_scenario::begin;
-    use triex::{book::{Self, Book}, order_info, constants};
+    use triex::{book::{Self, Book}, constants, order_info};
 
     const OWNER: address = @0x1;
 

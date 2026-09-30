@@ -17,8 +17,8 @@ module triex::coin_book_hot_buffer_tests {
     use triex::{
         big_vector::slice_borrow,
         book::{Self, Book},
-        order_info::{Self, OrderInfo},
-        constants
+        constants,
+        order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;

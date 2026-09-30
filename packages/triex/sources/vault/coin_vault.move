@@ -7,9 +7,13 @@
 /// mirrors the multicoin vault's own copy, which adds the operator share on top —
 /// any change to it must land in both.
 module triex::coin_vault {
-        use sui::{balance::{Self, Balance}, coin::{Self, Coin}};
+    use sui::{balance::{Self, Balance}, coin::{Self, Coin}};
     use token::cred::CRED;
-    use triex::{balances::Balances, trading_account::{TradeProof, TradingAccount}, vault::{Self, QuoteFeeDeposit}};
+    use triex::{
+        balances::Balances,
+        trading_account::{TradeProof, TradingAccount},
+        vault::{Self, QuoteFeeDeposit}
+    };
 
     // === Errors ===
     const EInsufficientFeeReserve: u64 = 0;
@@ -48,7 +52,6 @@ module triex::coin_vault {
         /// per-order residue tracking the vault does not keep.
         locked_maker_fees: u64,
     }
-
 
     // #feat:flashloan - DISABLED
     // public struct FlashLoan {

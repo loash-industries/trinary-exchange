@@ -2,14 +2,7 @@
 module triex::coin_order_info_coverage_tests {
     use std::unit_test::assert_eq;
     use sui::object::id_from_address;
-    use triex::{
-        balances,
-        fill,
-        order,
-        order_info::{Self, OrderInfo},
-        constants,
-        quote_fee
-    };
+    use triex::{balances, constants, fill, order, order_info::{Self, OrderInfo}, quote_fee};
 
     const ALICE: address = @0xA;
     const PRICE: u64 = 2_000_000_000;

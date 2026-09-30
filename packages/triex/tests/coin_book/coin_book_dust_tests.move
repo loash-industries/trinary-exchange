@@ -16,7 +16,7 @@
 #[test_only]
 module triex::coin_book_dust_tests {
     use sui::test_scenario::{begin, Scenario};
-    use triex::{book::{Self, Book}, order_info::{Self, OrderInfo}, constants, math};
+    use triex::{book::{Self, Book}, constants, math, order_info::{Self, OrderInfo}};
 
     const OWNER: address = @0x1;
 

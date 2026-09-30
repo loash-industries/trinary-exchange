@@ -11,17 +11,17 @@ module triex::pool {
     };
     use token::cred::CRED;
     use triex::{
-        big_vector::BigVector,
         account::Account,
+        big_vector::BigVector,
         book::{Self, Book},
-        order::Order,
-        order_info::{Self, OrderInfo},
-        state::{Self, State},
         coin_vault::{Self, Vault},
         constants,
         fee_policy::{Self, FeePolicy},
         fee_schedule::FeeSchedule,
+        order::Order,
+        order_info::{Self, OrderInfo},
         registry::{TriexAdminCap, Registry},
+        state::{Self, State},
         trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         vault
     };

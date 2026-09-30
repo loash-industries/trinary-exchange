@@ -11,14 +11,13 @@ module triex::pool_test_utils {
     use token::cred::CRED;
     use triex::{
         book,
-        fill::Fill,
-        order::{Self, Order},
-        order_info::{Self, OrderInfo},
         coin_vault,
-        vault,
         constants,
         fee_policy::{Self, FeePolicy},
+        fill::Fill,
         math,
+        order::{Self, Order},
+        order_info::{Self, OrderInfo},
         pool::{Self, Pool},
         quote_fee,
         registry::{Self, Registry, TriexAdminCap},
@@ -31,7 +30,8 @@ module triex::pool_test_utils {
             create_acct_and_share_with_funds,
             create_acct_and_share_with_funds_typed,
             create_caps
-        }
+        },
+        vault
     };
 
     const OWNER: address = @0x1;
@@ -6861,11 +6861,7 @@ module triex::pool_test_utils {
 
             let expiries = event::events_by_type<order_info::OrderExpired>();
             assert!(expiries.length() == 1, 5);
-            let (
-                expired_order_id,
-                fee_refunded,
-                fee_retained,
-            ) = order_info::expired_event_parts(
+            let (expired_order_id, fee_refunded, fee_retained) = order_info::expired_event_parts(
                 &expiries[0],
             );
             assert!(expired_order_id == refund_order_id, 6);

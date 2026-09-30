@@ -7,10 +7,10 @@ module triex::order_info {
     use sui::event;
     use triex::{
         balances::{Self, Balances},
-        fill::Fill,
-        order::{Self, Order},
         constants,
+        fill::Fill,
         math,
+        order::{Self, Order},
         quote_fee
     };
 

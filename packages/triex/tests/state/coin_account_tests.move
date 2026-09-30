@@ -2,7 +2,7 @@
 module triex::coin_account_tests {
     use std::unit_test::assert_eq;
     use sui::object::id_from_address;
-    use triex::{balances, account as coin_account, fill as coin_fill, constants};
+    use triex::{account as coin_account, balances, constants, fill as coin_fill};
 
     #[test]
     /// Total volume sums taker volume and live maker fills.

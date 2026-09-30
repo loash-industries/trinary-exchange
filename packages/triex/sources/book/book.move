@@ -33,10 +33,10 @@
 module triex::book {
     use triex::{
         big_vector::{Self, BigVector, SliceRef, slice_borrow, slice_borrow_mut},
-        order::Order,
-        order_info::OrderInfo,
         constants,
         math,
+        order::Order,
+        order_info::OrderInfo,
         quote_fee,
         utils
     };
@@ -529,7 +529,6 @@ module triex::book {
         self.book_side(order_id).borrow(order_id).copy_order()
     }
 
-
     /// The multicoin book: `price_scaling = 1`. Coin pools use `empty`.
     public(package) fun empty_multicoin(ctx: &mut TxContext): Book {
         Book {
@@ -550,7 +549,6 @@ module triex::book {
             price_scaling: 1,
         }
     }
-
 
     /// Returns the mid price of the order book.
     /// #ref:mid_price
@@ -584,7 +582,6 @@ module triex::book {
 
         math::mul(best_ask_price + best_bid_price, constants::half())
     }
-
 
     /// Returns the best bids and asks.
     /// The number of ticks is the number of price levels to return.
