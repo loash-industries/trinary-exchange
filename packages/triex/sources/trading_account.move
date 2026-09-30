@@ -192,6 +192,26 @@ module triex::trading_account {
         trading_account
     }
 
+    /// Create a new trading account owned by the object `owner`, and return it with
+    /// a `DepositCap`, `WithdrawCap` and `TradeCap`. Only the module that defines an
+    /// object can lend out `&mut UID` to it, and receiving caps sent to that object
+    /// needs the same `&mut UID`, so returning them here gives the caller no more
+    /// power than `new_with_custom_owner_and_caps` would. It saves the second
+    /// transaction that receiving the caps would take.
+    /// #ref:functions
+    public fun new_with_uid_owner_and_caps(
+        owner: &mut UID,
+        ctx: &mut TxContext,
+    ): (TradingAccount, DepositCap, WithdrawCap, TradeCap) {
+        let mut trading_account = new_with_custom_owner(owner.to_address(), ctx);
+
+        let deposit_cap = mint_deposit_cap_internal(&mut trading_account, ctx);
+        let withdraw_cap = mint_withdraw_cap_internal(&mut trading_account, ctx);
+        let trade_cap = mint_trade_cap_internal(&mut trading_account, ctx);
+
+        (trading_account, deposit_cap, withdraw_cap, trade_cap)
+    }
+
     // #feat:refer
     // /// Set the referral for the trading account.
     // /// #ref:functions

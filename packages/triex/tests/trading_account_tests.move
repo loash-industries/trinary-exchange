@@ -2108,4 +2108,36 @@ module triex::trading_account_tests {
         return_shared(trading_account);
         test.end();
     }
+
+    /// TRIEX-158: an object-owned account is owned by the UID's address, and its
+    /// caps come back to the caller, working for deposit, withdraw and trade in the
+    /// same transaction.
+    #[test]
+    fun test_new_with_uid_owner_and_caps_returns_caps() {
+        let mut test = begin(OWNER);
+
+        test.next_tx(ALICE);
+        let mut owner_uid = object::new(test.ctx());
+        let (mut trading_account, deposit_cap, withdraw_cap, trade_cap) =
+            trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+        assert!(trading_account.owner() == owner_uid.to_address());
+
+        trading_account.deposit_with_cap(
+            &deposit_cap,
+            mint_for_testing<SUI>(100, test.ctx()),
+            test.ctx(),
+        );
+        let coin = trading_account.withdraw_with_cap<SUI>(&withdraw_cap, 40, test.ctx());
+        assert!(coin.value() == 40);
+        assert!(trading_account.balance<SUI>() == 60);
+        let _ = trading_account.generate_proof_as_trader(&trade_cap, test.ctx());
+
+        destroy(coin);
+        destroy(deposit_cap);
+        destroy(withdraw_cap);
+        destroy(trade_cap);
+        destroy(trading_account);
+        owner_uid.delete();
+        test.end();
+    }
 }
