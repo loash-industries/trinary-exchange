@@ -11,7 +11,7 @@ manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05
 deps = {}
 
 [pinned.testnet.MoveStdlib_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "68dc1b8f36b2dca183046c7f65c00c2d8509ac17" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "ceaaff1cc84c1ba2f12c4e7928914ece81fbdd0f" }
 use_environment = "testnet"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
@@ -23,13 +23,13 @@ manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D
 deps = { MoveStdlib = "MoveStdlib" }
 
 [pinned.testnet.Sui_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "68dc1b8f36b2dca183046c7f65c00c2d8509ac17" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "ceaaff1cc84c1ba2f12c4e7928914ece81fbdd0f" }
 use_environment = "testnet"
 manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
 deps = { MoveStdlib = "MoveStdlib_1" }
 
 [pinned.testnet.multicoin]
-source = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
+source = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "2772c26d24c02671726d39f167b8f772777875d9" }
 use_environment = "testnet"
 manifest_digest = "0532D72C4F42A4472D331C54E2F8FB1595A305815D58568D26C6F8A4AC9BBFCE"
 deps = { Sui = "Sui_1" }
@@ -40,10 +40,10 @@ use_environment = "testnet"
 manifest_digest = "5745706258F61D6CE210904B3E6AE87A73CE9D31A6F93BE4718C442529332A87"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
-[pinned.testnet.triexbook]
+[pinned.testnet.triex]
 source = { root = true }
 use_environment = "testnet"
-manifest_digest = "AB98EE00FF8402D65BF4CE85230803CE2F28139F5AF63158525C8D5E8A97B67D"
+manifest_digest = "08A9453149DC1399EF0EB36E195761D8A86D8EE0362C9BB76251154E70FC9534"
 deps = { multicoin = "multicoin", std = "MoveStdlib", sui = "Sui", token = "token" }
 
 [pinned.testnet_stillness.MoveStdlib]
@@ -53,7 +53,7 @@ manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05
 deps = {}
 
 [pinned.testnet_stillness.MoveStdlib_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "68dc1b8f36b2dca183046c7f65c00c2d8509ac17" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "ceaaff1cc84c1ba2f12c4e7928914ece81fbdd0f" }
 use_environment = "testnet_stillness"
 manifest_digest = "C4FE4C91DE74CBF223B2E380AE40F592177D21870DC2D7EB6227D2D694E05363"
 deps = {}
@@ -65,13 +65,13 @@ manifest_digest = "38D8855849DF7CA0FAD3B9510DD9EC3755149F5B283E45CA6547194ADFF90
 deps = { MoveStdlib = "MoveStdlib" }
 
 [pinned.testnet_stillness.Sui_1]
-source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "68dc1b8f36b2dca183046c7f65c00c2d8509ac17" }
+source = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "ceaaff1cc84c1ba2f12c4e7928914ece81fbdd0f" }
 use_environment = "testnet_stillness"
 manifest_digest = "38D8855849DF7CA0FAD3B9510DD9EC3755149F5B283E45CA6547194ADFF90D73"
 deps = { MoveStdlib = "MoveStdlib_1" }
 
 [pinned.testnet_stillness.multicoin]
-source = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
+source = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "2772c26d24c02671726d39f167b8f772777875d9" }
 use_environment = "testnet_stillness"
 manifest_digest = "F9E9049D3BBD97DDD059B97AA23436FCF53B91042015F80D4B5593407FD6A1F8"
 deps = { Sui = "Sui_1" }
@@ -82,8 +82,8 @@ use_environment = "testnet_stillness"
 manifest_digest = "16363423CD37589C5B9A56E3F9E984FED988276E0134635135B45CB4480A9484"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
-[pinned.testnet_stillness.triexbook]
+[pinned.testnet_stillness.triex]
 source = { root = true }
 use_environment = "testnet_stillness"
-manifest_digest = "FF1E1C3CF71A08112FD2DCBC99AE9710356302D9C53F863B0CD947DB3FD9745F"
+manifest_digest = "835FE8BDE3667D6657EBADF174E9A70AE89B8DB6DEE61C0F84BF0A8327387E0B"
 deps = { multicoin = "multicoin", std = "MoveStdlib", sui = "Sui", token = "token" }

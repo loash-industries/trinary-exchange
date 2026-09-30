@@ -8,10 +8,10 @@ on-chain Move packages that power the exchange and CRED, its native fee currency
 
 | Package | Path | Description |
 | --- | --- | --- |
-| `triexbook` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), balance manager, multi-coin pool, and admin controls. |
+| `triex` | [`packages/triex/`](packages/triex/) | The core exchange: order book, matching engine, pools (Book / State / Vault), trading account, multi-coin pool, and admin controls. |
 | `token` | [`packages/token/`](packages/token/) | The `CRED` token (`cred.move`) — a neutral trading currency used to pay trading fees. It is not a governance token and confers no voting or staking rights. |
 
-`triexbook` depends on `token` via a local path (`token = { local = "../token" }`),
+`triex` depends on `token` via a local path (`token = { local = "../token" }`),
 so the two packages must remain siblings in this repo. It also pulls in the external
 [`multicoin`](https://github.com/Algorithmic-Warfare/multicoin) package as a git
 dependency.
@@ -24,9 +24,9 @@ A `Pool` is composed of three distinct parts that define the flow for every acti
 2. **State** — maintains per-user data, volumes, historic volumes, and trade parameters.
 3. **Vault** — settles user funds after an action executes.
 
-The `BalanceManager` is a shared object holding all balances for a single account.
+The `TradingAccount` is a shared object holding all balances for a single account.
 It has one owner and up to 1000 traders, and is required as an input to (almost) all
-interactions with the exchange. A single `BalanceManager` can be used across all pools.
+interactions with the exchange. A single `TradingAccount` can be used across all pools.
 
 See [`packages/triex/README.md`](packages/triex/README.md) for the full protocol
 description, and [`CAPABILITIES.md`](CAPABILITIES.md) for the trust model and the full list
@@ -46,7 +46,7 @@ Each package is a standard Sui Move package. From a package directory:
 # Build
 sui move build
 
-# Run the Move unit tests (triexbook)
+# Run the Move unit tests (triex)
 cd packages/triex
 sui move test
 
@@ -75,7 +75,7 @@ trinary-exchange/
     ├── token/            # CRED token package
     │   ├── Move.toml
     │   └── sources/cred.move
-    └── triexbook/        # Core CLOB exchange package
+    └── triex/        # Core CLOB exchange package
         ├── Move.toml
         ├── sources/          # book, state, vault, pool, multicoin_pool, registry, ...
         ├── tests/            # Move unit + integration tests
@@ -85,6 +85,25 @@ trinary-exchange/
 > Note: `build/` output and `.env*` files are git-ignored and regenerated locally —
 > see [`.gitignore`](.gitignore).
 
+## Error codes
+
+Abort constants are keyed by `(module, code)` — an abort always carries its module,
+so `EInvalidFee = 1` in `pool` and in `multicoin_pool` do not collide, and the codes
+stay small and readable. Codes must be unique *within* a module.
+
+Client-facing labels are not maintained here: [`@trinaryex/sdk`][sdk] generates its
+abort catalog from these sources. After adding, removing or renumbering an error
+constant, regenerate it there:
+
+```bash
+npm run generate:error-codes -- --contracts <path to this repo>
+```
+
+Renaming or deleting a constant that the SDK has curated text for is a compile error
+in the SDK, so it will not silently stop matching.
+
+[sdk]: https://github.com/loash-industries/sdk
+
 ## Security
 
 All deployments are on Sui **testnet** only and the code is **unaudited** — use at
@@ -92,7 +111,7 @@ your own risk. See [`CAPABILITIES.md`](CAPABILITIES.md) for the operator trust m
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). The `triexbook` package is a modified
+Apache-2.0 — see [LICENSE](LICENSE). The `triex` package is a modified
 derivative of [DeepBook v3](https://github.com/MystenLabs/deepbookv3),
 Copyright (c) Mysten Labs, Inc. (Apache-2.0); see the notice of changes in
 [`packages/triex/README.md`](packages/triex/README.md#license).
