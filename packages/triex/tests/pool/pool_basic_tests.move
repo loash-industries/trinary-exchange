@@ -658,7 +658,7 @@ module triex::pool_basic_tests {
         permissionless_pools_case();
     }
 
-    #[test, expected_failure(abort_code = ::triex::coin_order_info::EInvalidOrderType)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EInvalidOrderType)]
     fun test_place_order_max_restrictions_e() {
         place_order_max_restrictions_case();
     }
@@ -668,7 +668,7 @@ module triex::pool_basic_tests {
         place_and_cancel_order_empty_case();
     }
 
-    #[test, expected_failure(abort_code = ::triex::coin_order_info::EInvalidExpireTimestamp)]
+    #[test, expected_failure(abort_code = ::triex::order_info::EInvalidExpireTimestamp)]
     fun test_place_order_expired_order_skipped() {
         place_order_expired_order_skipped_case();
     }

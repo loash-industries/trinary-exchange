@@ -16,8 +16,8 @@ module triex::coin_book_hot_buffer_tests {
     use sui::test_scenario::begin;
     use triex::{
         big_vector::slice_borrow,
-        coin_book::{Self, Book},
-        coin_order_info::{Self, OrderInfo},
+        book::{Self, Book},
+        order_info::{Self, OrderInfo},
         constants
     };
 
@@ -36,7 +36,7 @@ module triex::coin_book_hot_buffer_tests {
     fun price_at(level: u64): u64 { (level + 1) * scaling() }
 
     fun order(order_type: u8, price: u64, quantity: u64, is_bid: bool, ts: u64): OrderInfo {
-        coin_order_info::new(
+        order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -145,7 +145,7 @@ module triex::coin_book_hot_buffer_tests {
     /// pushes its worst order out to the tree. This is the spill path, run 40 times.
     fun improving_prices_spill_in_order() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 40) {
@@ -168,7 +168,7 @@ module triex::coin_book_hot_buffer_tests {
     /// the buffer is never the destination and orders go straight to the tree.
     fun worsening_prices_land_behind_the_buffer() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 40;
         while (i > 0) {
@@ -189,7 +189,7 @@ module triex::coin_book_hot_buffer_tests {
     /// at positions other than the end.
     fun interleaved_prices_stay_ordered() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // A stride coprime with the range visits every level in a scattered order.
         let mut i = 0;
@@ -210,7 +210,7 @@ module triex::coin_book_hot_buffer_tests {
     /// same treatment rather than being assumed symmetric.
     fun ask_side_spills_and_orders() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 40;
         while (i > 0) {
@@ -236,7 +236,7 @@ module triex::coin_book_hot_buffer_tests {
     /// tree until a competitive quote rebuilds the buffer.
     fun sweep_past_the_buffer_leaves_it_empty() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // Deep enough that the buffer spills and a tree exists behind it.
         let mut i = 0;
@@ -268,7 +268,7 @@ module triex::coin_book_hot_buffer_tests {
     /// the property that pays for removing the return path.
     fun competitive_quotes_rebuild_the_buffer_without_touching_the_tree() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 60) {
@@ -304,7 +304,7 @@ module triex::coin_book_hot_buffer_tests {
     /// pays a tree insert.
     fun spill_is_gated_on_real_overflow() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < HOT_CAPACITY) {
@@ -328,7 +328,7 @@ module triex::coin_book_hot_buffer_tests {
     /// every step — the refill has to cope with a tree that runs out mid-batch.
     fun repeated_sweeps_drain_the_side_cleanly() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 40) {
@@ -361,7 +361,7 @@ module triex::coin_book_hot_buffer_tests {
     /// the two that sit either side of the seam — and then everything else.
     fun cancels_on_both_sides_of_the_seam() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut ids = vector[];
         let mut i = 0;
@@ -404,7 +404,7 @@ module triex::coin_book_hot_buffer_tests {
     /// passing while testing nothing about the seam it is named for.
     fun rebuilds_after_being_emptied() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let deep = HOT_CAPACITY * 2;
         let mut i = 0;
@@ -443,7 +443,7 @@ module triex::coin_book_hot_buffer_tests {
     /// the last hot order and the continuation is the first tree order.
     fun anchored_reads_cross_the_seam() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 40) {

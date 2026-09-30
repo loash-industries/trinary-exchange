@@ -4,9 +4,9 @@ module triex::coin_order_info_coverage_tests {
     use sui::object::id_from_address;
     use triex::{
         balances,
-        coin_fill as fill,
-        coin_order as order,
-        coin_order_info::{Self as order_info, OrderInfo},
+        fill,
+        order,
+        order_info::{Self, OrderInfo},
         constants,
         quote_fee
     };
@@ -122,7 +122,7 @@ module triex::coin_order_info_coverage_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::coin_order_info::EInvalidExpireTimestamp)]
+    #[expected_failure(abort_code = triex::order_info::EInvalidExpireTimestamp)]
     fun validate_rejects_past_expiry() {
         let info = new_order_info(
             constants::no_restriction(),
@@ -134,7 +134,7 @@ module triex::coin_order_info_coverage_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::coin_order_info::EInvalidOrderType)]
+    #[expected_failure(abort_code = triex::order_info::EInvalidOrderType)]
     fun validate_rejects_unknown_order_type() {
         let info = new_order_info(
             constants::max_restriction() + 1,
@@ -146,7 +146,7 @@ module triex::coin_order_info_coverage_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::coin_order_info::EMarketOrderCannotBePostOnly)]
+    #[expected_failure(abort_code = triex::order_info::EMarketOrderCannotBePostOnly)]
     fun validate_rejects_post_only_market_order() {
         let info = new_order_info(
             constants::post_only(),
@@ -158,7 +158,7 @@ module triex::coin_order_info_coverage_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = triex::coin_order_info::ESelfMatchingCancelTaker)]
+    #[expected_failure(abort_code = triex::order_info::ESelfMatchingCancelTaker)]
     fun cancel_taker_aborts_on_self_match() {
         let mut info = new_order_info(
             constants::no_restriction(),

@@ -25,8 +25,8 @@ module triex::coin_book_invariant_tests {
     use sui::test_scenario::begin;
     use triex::{
         big_vector::slice_borrow,
-        coin_book::{Self, Book},
-        coin_order_info::{Self, OrderInfo},
+        book::{Self, Book},
+        order_info::{Self, OrderInfo},
         constants
     };
 
@@ -53,7 +53,7 @@ module triex::coin_book_invariant_tests {
     fun draw(seed: &mut u64, n: u64): u64 { next(seed) % n }
 
     fun order(order_type: u8, price: u64, quantity: u64, is_bid: bool): OrderInfo {
-        coin_order_info::new(
+        order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -144,7 +144,7 @@ module triex::coin_book_invariant_tests {
     /// every operation on both sides.
     fun churn(seed_init: u64, ops: u64, band: u64) {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
         let mut seed = seed_init;
 
         let mut live_bids = vector[];
@@ -288,7 +288,7 @@ module triex::coin_book_invariant_tests {
     /// settles into.
     fun deep_side_best_price_last() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 300) {
@@ -314,7 +314,7 @@ module triex::coin_book_invariant_tests {
     /// order and the whole side served from the tree.
     fun deep_side_worst_price_last() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 300) {
@@ -336,7 +336,7 @@ module triex::coin_book_invariant_tests {
     /// flat vector this book replaced could not have reached much beyond.
     fun tree_gains_a_level() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // Flush the transaction periodically: a thousand `OrderPlaced` events
         // held in one transaction exhaust the Move test harness's memory limit

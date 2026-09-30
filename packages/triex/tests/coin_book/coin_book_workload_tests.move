@@ -26,7 +26,7 @@
 #[test_only]
 module triex::coin_book_workload_tests {
     use sui::test_scenario::begin;
-    use triex::{coin_book::{Self, Book}, coin_order_info, constants};
+    use triex::{book::{Self, Book}, order_info, constants};
 
     const OWNER: address = @0x1;
 
@@ -103,7 +103,7 @@ module triex::coin_book_workload_tests {
     }
 
     fun place(book: &mut Book, price: u64, quantity: u64, is_bid: bool, ts: u64, ps: u64): u128 {
-        let mut info = coin_order_info::new(
+        let mut info = order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -128,7 +128,7 @@ module triex::coin_book_workload_tests {
     /// An ask priced through the live surface, sized to consume exactly `reach`
     /// makers. IOC so any unmatched remainder never rests.
     fun take(book: &mut Book, reach: u64, ts: u64, ps: u64) {
-        let mut info = coin_order_info::new(
+        let mut info = order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -232,7 +232,7 @@ module triex::coin_book_workload_tests {
         price_scaling: u64,
     ) {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty_with_geometry_scaled(
+        let mut book = book::empty_with_geometry_scaled(
             max_slice_size,
             max_fan_out,
             price_scaling,

@@ -27,7 +27,7 @@
 #[test_only]
 module triex::coin_book_priority_tests {
     use sui::test_scenario::begin;
-    use triex::{coin_book::{Self, Book}, coin_order_info::{Self, OrderInfo}, constants};
+    use triex::{book::{Self, Book}, order_info::{Self, OrderInfo}, constants};
 
     const OWNER: address = @0x1;
     const HOT_CAPACITY: u64 = 32;
@@ -77,7 +77,7 @@ module triex::coin_book_priority_tests {
     fun level(): u64 { 100 * scaling() }
 
     fun order(order_type: u8, price: u64, quantity: u64, is_bid: bool, expire: u64): OrderInfo {
-        coin_order_info::new(
+        order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -206,7 +206,7 @@ module triex::coin_book_priority_tests {
     /// sequence counters run in opposite directions per side, so both are checked.
     fun same_price_queues_by_arrival_on_both_sides() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut bids = vector[];
         let mut asks = vector[];
@@ -246,7 +246,7 @@ module triex::coin_book_priority_tests {
     /// rather than by the inline vector's insert position.
     fun same_price_queue_behind_a_full_buffer_keeps_arrival_order() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // Improving prices fill and overflow the buffer.
         let mut i = 0;
@@ -286,7 +286,7 @@ module triex::coin_book_priority_tests {
     /// the earlier order without breaking any ordering assertion.
     fun equal_price_never_displaces_the_earlier_order() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let first = rest(&mut book, level(), true);
         let mut i = 0u64;
@@ -315,7 +315,7 @@ module triex::coin_book_priority_tests {
     /// the path where a mis-indexed `spill` would evict the wrong order.
     fun improving_placements_never_demote() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < deep()) {
@@ -337,7 +337,7 @@ module triex::coin_book_priority_tests {
     /// must leave the existing queue untouched.
     fun scattered_placements_never_demote() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < deep()) {
@@ -360,7 +360,7 @@ module triex::coin_book_priority_tests {
     /// worse-priced order stays inline ahead of it.
     fun spill_evicts_only_the_worst_of_the_buffer() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // Fill the buffer exactly, best price last.
         let mut i = 0;
@@ -404,7 +404,7 @@ module triex::coin_book_priority_tests {
         while (pi < positions.length()) {
             let at = positions[pi];
             let mut test = begin(OWNER);
-            let mut book = coin_book::empty(test.ctx());
+            let mut book = book::empty(test.ctx());
 
             let mut i = 0;
             while (i < deep()) {
@@ -432,7 +432,7 @@ module triex::coin_book_priority_tests {
     /// where a refill design would reorder and this one must not.
     fun draining_the_buffer_by_cancel_never_demotes() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 40) {
@@ -468,7 +468,7 @@ module triex::coin_book_priority_tests {
     /// later — including orders placed *after* the partial fill.
     fun partial_fill_keeps_the_maker_at_the_head() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let a = rest_qty(&mut book, level(), qty(), false);
         let b = rest_qty(&mut book, level(), qty(), false);
@@ -501,7 +501,7 @@ module triex::coin_book_priority_tests {
         while (di < depths.length()) {
             let depth_taken = depths[di];
             let mut test = begin(OWNER);
-            let mut book = coin_book::empty(test.ctx());
+            let mut book = book::empty(test.ctx());
 
             let mut i = 0;
             while (i < deep()) {
@@ -534,7 +534,7 @@ module triex::coin_book_priority_tests {
     /// must stay exactly where it is, at the front of what remains.
     fun sweep_stopping_mid_order_leaves_it_in_place() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut ids = vector[];
         let mut i = 0;
@@ -564,7 +564,7 @@ module triex::coin_book_priority_tests {
     /// over it — and the survivors either side must keep their relative order.
     fun retiring_expired_makers_never_demotes() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // Alternate live and short-dated orders down the side.
         let mut i = 0;
@@ -605,7 +605,7 @@ module triex::coin_book_priority_tests {
     /// `modify_order` mutates in place under an unchanged key.
     fun modify_down_never_requeues() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut ids = vector[];
         let mut i = 0u64;
@@ -644,7 +644,7 @@ module triex::coin_book_priority_tests {
     /// in-place mutation that accidentally reinserted would show up here first.
     fun modifying_the_best_order_keeps_it_best() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let best = rest_qty(&mut book, price_at(0), qty() * 8, false);
         let mut i = 1;
@@ -673,7 +673,7 @@ module triex::coin_book_priority_tests {
     /// has demoted everything it passed.
     fun modify_in_the_tree_does_not_promote() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < deep()) {
@@ -709,7 +709,7 @@ module triex::coin_book_priority_tests {
     /// where an interaction between two correct-in-isolation paths would show.
     fun mixed_workload_never_demotes() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut seed = 0xD3_0770_1000_0001u64;
 

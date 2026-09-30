@@ -1,5 +1,5 @@
 #[test_only]
-/// The bid-side dry run (`coin_book::get_quantity_out`) has to price exactly the
+/// The bid-side dry run (`book::get_quantity_out`) has to price exactly the
 /// fills `swap_exact_quote_for_base` then executes. Execution fills the planned
 /// base greedily from the best maker, so a dry run that spends a leftover budget
 /// on a worse maker — pricing that unit under its own floor — under-costs the

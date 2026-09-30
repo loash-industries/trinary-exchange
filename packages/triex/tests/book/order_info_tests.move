@@ -155,7 +155,7 @@ module triex::order_info_tests {
             false,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 5 * constants::sui_unit(), 0);
@@ -190,7 +190,7 @@ module triex::order_info_tests {
             false,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 38_130_000_000, 0);
@@ -279,7 +279,7 @@ module triex::order_info_tests {
             false,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 10 * constants::sui_unit(), 0);
@@ -313,7 +313,7 @@ module triex::order_info_tests {
             false,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 100 * constants::sui_unit(), 0);
@@ -370,7 +370,7 @@ module triex::order_info_tests {
             true,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 1_000_000, 0);
@@ -420,7 +420,7 @@ module triex::order_info_tests {
             false,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 999_990_000_000, 0);
@@ -455,7 +455,7 @@ module triex::order_info_tests {
             true,
             test.ctx().epoch(),
         ).to_order();
-        let has_next = order_info.match_maker(&mut maker_order, 0);
+        let has_next = order_info.match_maker(&mut maker_order, 0).continues();
         assert!(has_next, 0);
         assert!(order_info.fills_ref().length() == 1, 0);
         assert!(order_info.executed_quantity() == 100_000, 0);

@@ -4,19 +4,22 @@
 /// The book module contains the `Book` struct which represents the order book.
 /// All order book operations are defined in this module.
 ///
-/// This is the **multicoin** order book. Orders live in a `BigVector<Order>`
-/// keyed by an encoded `u128` order id, with the best `HOT_CAPACITY` orders of
-/// each side held inline in the pool object. Insert, cancel, modify and lookup
-/// are O(log n) by key, and no operation rewrites the whole book, so depth is not
-/// bounded by Sui's maximum object size.
+/// One book serves both pool kinds. Coin pools build it with `empty`
+/// (`price_scaling = FLOAT_SCALING`, a 32/24 hot buffer); multicoin pools with
+/// `empty_multicoin` (`price_scaling = 1`, a 16/12 hot buffer). Everything else —
+/// storage, matching, validation and the dry-run quote — is the same code. The
+/// coin-only guards (the zero-quote size bound, `MatchOutcome::Skipped`, the
+/// dry-run step-over) reduce to no-ops at `price_scaling = 1`, where
+/// `min_qty_for_nonzero_quote` is 1 and every non-empty fill converts to non-zero
+/// quote.
 ///
-/// The layout is the "C16u" design, chosen because it burns the least storage
-/// fee of the seven measured variants under all three weightings. The flat `vector<Order>` it replaces cost 6,710 MIST per resting
-/// order on *every* operation and stopped accepting orders entirely at 2,973 per
-/// side.
+/// Orders live in a `BigVector<Order>` keyed by an encoded `u128` order id, with
+/// the best orders of each side held inline in the pool object. Insert, cancel,
+/// modify and lookup are O(log n) by key, and no operation rewrites the whole
+/// book, so depth is not bounded by Sui's maximum object size.
 ///
-/// Iteration order is identical to the flat vector book's, so matching, level2
-/// and pagination observe orders in exactly the same sequence:
+/// Iteration order is identical to the flat vector book this replaced, so
+/// matching, level2 and pagination observe orders in exactly the same sequence:
 ///   - bids: keys ascend by price, best bid is the max key — walk `max_slice`
 ///     then `prev_slice`.
 ///   - asks: keys ascend by price, best ask is the min key — walk `min_slice`
@@ -24,22 +27,13 @@
 /// Within one price level the per-side sequence counters (bids descending, asks
 /// ascending — see `constants::start_bid_order_id`) put the oldest order first on
 /// both sides, which is what makes key order equal price-time priority.
-///
-/// This file and `triex::coin_book` now share a storage design but remain forked:
-/// they differ in matching semantics (`match_maker` returns `bool` here, a
-/// three-state `MatchOutcome` there), in price scaling, and in which views they
-/// expose. Re-merging them is possible but is its own piece of work.
-///
-/// The fee arithmetic in `get_quantity_out` is shared verbatim with
-/// `triex::coin_book`; only the traversal differs. Any change to it must land in
-/// both files.
 module triex::book {
     use triex::{
         big_vector::{Self, BigVector, SliceRef, slice_borrow, slice_borrow_mut},
-        constants,
-        math,
         order::Order,
         order_info::OrderInfo,
+        constants,
+        math,
         quote_fee,
         utils
     };
@@ -50,8 +44,8 @@ module triex::book {
     const EInvalidPriceRange: u64 = 3;
     const EInvalidTicks: u64 = 4;
     const ENewQuantityMustBeLessThanOriginal: u64 = 7;
-    // Note: there is no book-level "order not found" code any more. A cancel,
-    // modify or lookup of an absent id aborts inside `big_vector` with its own
+    // Note: there is no book-level "order not found" code here. A cancel, modify
+    // or lookup of an absent id aborts inside `big_vector` with its own
     // `ENotFound`, because the id *is* the storage key — the book never searches
     // for it, so it has no opportunity to raise a code of its own.
 
@@ -66,7 +60,7 @@ module triex::book {
     public fun new_quantity_must_be_less_than_original(): u64 { ENewQuantityMustBeLessThanOriginal }
 
     /// === Top-of-book buffer ===
-    /// Each side keeps its best `HOT_CAPACITY` orders inline in the `Book` and the
+    /// Each side keeps its best `hot_capacity` orders inline in the `Book` and the
     /// rest in the `BigVector` behind it. One invariant ties the two stores together:
     ///
     ///   *every order in a side's hot buffer is better-priced than every order in
@@ -79,31 +73,40 @@ module triex::book {
     /// **Spill is one-way.** Orders leave the buffer for the tree on overflow and
     /// never travel back; the tree drains in place through matching and cancels, and
     /// the buffer repopulates on its own, because any newly posted order at a
-    /// competitive price beats the tree's best key and is admitted inline. Removing
-    /// the return path was the single largest improvement measured — 42–47% off a
-    /// 10-order sweep — because a refill makes every sweep that
-    /// drains the buffer pay tree removals to repopulate it, and the repopulated
-    /// buffer then re-spills on the placements that follow.
+    /// competitive price beats the tree's best key and is admitted inline.
+    /// Refill-on-drain would make every sweep that empties the buffer pay tree
+    /// *removals* to repopulate it, and the repopulated buffer would then re-spill on
+    /// the placements that follow — paying twice for one sweep. Removing the return
+    /// path was the largest single improvement in the multicoin storage experiment
+    /// (42–47% off a 10-order sweep).
     ///
-    /// The capacity is deliberately small. Each inline order is rewritten on every
-    /// transaction that touches the pool, at ~7.1k MIST, while the benefit of
-    /// keeping churn off the tree saturates at about a dozen orders: a 64-order
-    /// buffer costs 74% more per churn operation than this one and is worse than the
-    /// flat vector it replaced in the 45–64 band. A hot cache is an
-    /// asset only while it is small.
-    const HOT_CAPACITY: u64 = 16;
-
-    /// On genuine overflow, spill down to here rather than back to `HOT_CAPACITY`,
-    /// leaving headroom for the placements that follow. Held exactly *at* capacity
-    /// the buffer would spill on every top-of-book placement, paying a tree write
-    /// each time — precisely the cost it exists to avoid.
-    const HOT_SPILL_TARGET: u64 = 12;
+    /// On genuine overflow a side spills down to its spill target rather than back to
+    /// capacity, leaving headroom for the placements that follow. Held exactly *at*
+    /// capacity the buffer would spill on every top-of-book placement, paying a tree
+    /// write each time — precisely the cost it exists to avoid. The gap to capacity
+    /// sets how *lumpy* spilling is, not how much it costs.
+    ///
+    /// Capacity is per pool kind, because each inline order is rewritten on every
+    /// transaction that touches the pool (~7.1k MIST) while the benefit of keeping
+    /// churn off the tree saturates quickly:
+    ///
+    /// - Multicoin: 16 / 12. The storage experiment measured a 64-order buffer at
+    ///   74% more per churn operation, and a 32-order one worse than 16 at depths
+    ///   30/150/300 on multicoin synthetic flow.
+    /// - Coin: 32 / 24, a deliberate departure. Mainnet coin flow puts 85.5% of maker
+    ///   placements within ~28 of the touch, which a 16-buffer misses and a
+    ///   32-buffer catches. Untested either way; it needs a coin-pool driver to
+    ///   settle (see commit 1a70602).
+    const COIN_HOT_CAPACITY: u64 = 32;
+    const COIN_HOT_SPILL_TARGET: u64 = 24;
+    const MULTICOIN_HOT_CAPACITY: u64 = 16;
+    const MULTICOIN_HOT_SPILL_TARGET: u64 = 12;
 
     /// === Structs ===
     public struct Book has store {
         bids: BigVector<Order>, // keyed ascending by price; best bid is the max key
         asks: BigVector<Order>, // keyed ascending by price; best ask is the min key
-        // Inline top-of-book buffers: the best `HOT_CAPACITY` orders of each side,
+        // Inline top-of-book buffers: the best `hot_capacity` orders of each side,
         // held in the pool object itself rather than behind a dynamic field. A trade
         // at the inside market — which is nearly all of them — then reads and writes
         // no dynamic field at all.
@@ -117,11 +120,11 @@ module triex::book {
         hot_asks: vector<Order>,
         next_bid_order_id: u64, // descends from START_BID_ORDER_ID
         next_ask_order_id: u64, // ascends from START_ASK_ORDER_ID
-        // Divisor used in qty ↔ quote conversions. 1 for multicoin pools —
-        // price = human × QUOTE_UNIT, with no float division. (The coin book
-        // uses FLOAT_SCALING; see `triex::coin_book`.) Kept as a field, rather
-        // than read from `constants` at each use, so the conversion helpers stay
-        // call-compatible with the coin book, which varies it.
+        // Divisor used in qty ↔ quote conversions: FLOAT_SCALING (1e9) for coin
+        // pools, where price = human × QUOTE_UNIT × FLOAT_SCALING / BASE_UNIT, and 1
+        // for multicoin pools, where price = human × QUOTE_UNIT with no division.
+        // It also identifies the pool kind, which is what sizes the hot buffer —
+        // see `hot_capacity`.
         price_scaling: u64,
     }
 
@@ -144,7 +147,7 @@ module triex::book {
 
     /// === Public-Package Functions ===
     /// The cold tree for a side. This is **not** the whole side: its best
-    /// `HOT_CAPACITY` orders are in `hot_bids` / `hot_asks`. Callers that need to see
+    /// `hot_capacity` orders are in `hot_bids` / `hot_asks`. Callers that need to see
     /// a side whole must go through `Cursor`, `get_order` or `side_length`.
     public(package) fun bids(self: &Book): &BigVector<Order> {
         &self.bids
@@ -175,10 +178,122 @@ module triex::book {
         self.side_length(is_bid) == 0
     }
 
-    /// The `FLOAT_SCALING` constructor this module used to expose for coin pools is
-    /// gone — they build their book through `coin_book::empty` now. Only the
-    /// multicoin constructor below remains.
-    public(package) fun empty_multicoin(ctx: &mut TxContext): Book {
+    // === Cursor ===
+
+    public(package) fun cursor_is_null(self: &Cursor): bool {
+        !self.in_hot && self.tree.is_none()
+    }
+
+    /// Position at the best-priced order of a side, or a null cursor if it is empty.
+    public(package) fun cursor_begin(self: &Book, is_bid: bool): Cursor {
+        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
+        let n = hot.length();
+        if (n > 0) {
+            // Worst-first storage: the best order is the last element.
+            return Cursor { hot_ix: n - 1, in_hot: true, tree: option::none(), offset: 0 }
+        };
+        self.cursor_tree_begin(is_bid)
+    }
+
+    /// Position at the first order strictly worse than `key` in book order.
+    ///
+    /// Used for pagination, where the anchor is exclusive and positional: `key` need
+    /// not name a live order, and an id that has since left the book resolves to the
+    /// position it would have occupied.
+    public(package) fun cursor_after(self: &Book, is_bid: bool, key: u128): Cursor {
+        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
+        // Scan the buffer best-first for the first order the anchor is better than.
+        let mut i = hot.length();
+        while (i > 0) {
+            if (better(is_bid, key, hot.borrow(i - 1).order_id())) {
+                return Cursor { hot_ix: i - 1, in_hot: true, tree: option::none(), offset: 0 }
+            };
+            i = i - 1;
+        };
+
+        // At or past every hot order, so resume in the tree. Both seeks below also do
+        // the right thing for an anchor that lies in the *hot* key range: such a key
+        // is better than every tree key, so each lands on the tree's own best order.
+        let cold = if (is_bid) &self.bids else &self.asks;
+        let (r, o) = if (is_bid) cold.slice_before(key) else cold.slice_following(key);
+        if (r.is_null()) return cursor_exhausted();
+        let cur = Cursor { hot_ix: 0, in_hot: false, tree: option::some(r), offset: o };
+        // `slice_before` is already strictly-before, but `slice_following` is
+        // inclusive, so an exact hit on the ask side has to be stepped over to keep
+        // the anchor exclusive on both sides.
+        if (!is_bid && slice_borrow(cold.borrow_slice(r), o).order_id() == key) {
+            self.cursor_next(is_bid, cur)
+        } else {
+            cur
+        }
+    }
+
+    /// Advance one order towards the worse side of the book.
+    public(package) fun cursor_next(self: &Book, is_bid: bool, cur: Cursor): Cursor {
+        if (cur.in_hot) {
+            if (cur.hot_ix > 0) {
+                return Cursor {
+                    hot_ix: cur.hot_ix - 1,
+                    in_hot: true,
+                    tree: option::none(),
+                    offset: 0,
+                }
+            };
+            // Buffer exhausted: fall through into the tree. This is the only dynamic
+            // field a top-of-book walk touches, and only if it runs past the buffer.
+            return self.cursor_tree_begin(is_bid)
+        };
+        if (cur.tree.is_none()) return cursor_exhausted();
+
+        let r = *cur.tree.borrow();
+        let cold = if (is_bid) &self.bids else &self.asks;
+        let (nr, no) = if (is_bid) {
+            cold.prev_slice(r, cur.offset)
+        } else {
+            cold.next_slice(r, cur.offset)
+        };
+        if (nr.is_null()) {
+            cursor_exhausted()
+        } else {
+            Cursor { hot_ix: 0, in_hot: false, tree: option::some(nr), offset: no }
+        }
+    }
+
+    public(package) fun cursor_borrow(self: &Book, is_bid: bool, cur: &Cursor): &Order {
+        if (cur.in_hot) {
+            let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
+            return hot.borrow(cur.hot_ix)
+        };
+        let cold = if (is_bid) &self.bids else &self.asks;
+        slice_borrow(cold.borrow_slice(*cur.tree.borrow()), cur.offset)
+    }
+
+    fun cursor_exhausted(): Cursor {
+        Cursor { hot_ix: 0, in_hot: false, tree: option::none(), offset: 0 }
+    }
+
+    fun cursor_tree_begin(self: &Book, is_bid: bool): Cursor {
+        let cold = if (is_bid) &self.bids else &self.asks;
+        let (r, o) = if (is_bid) cold.max_slice() else cold.min_slice();
+        if (r.is_null()) {
+            cursor_exhausted()
+        } else {
+            Cursor { hot_ix: 0, in_hot: false, tree: option::some(r), offset: o }
+        }
+    }
+
+    fun cursor_borrow_mut(self: &mut Book, is_bid: bool, cur: &Cursor): &mut Order {
+        if (cur.in_hot) {
+            let hot = if (is_bid) &mut self.hot_bids else &mut self.hot_asks;
+            return hot.borrow_mut(cur.hot_ix)
+        };
+        let cold = if (is_bid) &mut self.bids else &mut self.asks;
+        slice_borrow_mut(cold.borrow_slice_mut(*cur.tree.borrow()), cur.offset)
+    }
+
+    /// The coin-pool book: `price_scaling = FLOAT_SCALING` and the larger hot
+    /// buffer. Multicoin pools use `empty_multicoin`.
+    public(package) fun empty(ctx: &mut TxContext): Book {
         Book {
             bids: big_vector::empty(
                 constants::max_slice_size(),
@@ -194,7 +309,7 @@ module triex::book {
             hot_asks: vector[],
             next_bid_order_id: constants::start_bid_order_id(),
             next_ask_order_id: constants::start_ask_order_id(),
-            price_scaling: 1,
+            price_scaling: constants::float_scaling(),
         }
     }
 
@@ -207,6 +322,9 @@ module triex::book {
     /// If order is IOC or fully executed, it will not be injected.
     public(package) fun create_order(self: &mut Book, order_info: &mut OrderInfo, timestamp: u64) {
         order_info.validate_inputs(timestamp);
+        // The id is derived from the order's own price, so it is only well-formed
+        // once `validate_inputs` has bounded the price at `MAX_PRICE` — the widest
+        // value bits 64..126 of the key can hold.
         let order_id = utils::encode_order_id(
             order_info.is_bid(),
             order_info.price(),
@@ -248,7 +366,7 @@ module triex::book {
         };
         let mut matched_quote = 0;
 
-        // The side quoted *against* is the opposite of the taker's.
+        // Best price first, across the hot buffer and then the tree behind it.
         let maker_is_bid = !is_bid;
         let mut cur = self.cursor_begin(maker_is_bid);
         let max_fills = constants::max_fills();
@@ -284,23 +402,32 @@ module triex::book {
                             quote_quantity,
                             trade_specific_taker_fee,
                         );
-                    quantity_out = quantity_out + matched_base_quantity;
                     let matched_quote_quantity = math::qty_to_quote(
                         matched_base_quantity,
                         cur_price,
                         self.price_scaling,
                     );
-                    matched_quote = matched_quote + matched_quote_quantity;
-                    // A unit `extend_if_affordable` added is paid for out of the fee's
-                    // floor, not the budget, so it can overrun the budget by that unit.
-                    quantity_in_left =
-                        quantity_in_left - matched_quote_quantity.min(quantity_in_left);
-                    // The budget ran out inside this maker. Execution fills the
-                    // returned base greedily, so any further unit would come from
-                    // this maker too — under one floor with this piece — never from
-                    // a worse one. Pricing a unit behind it at its own floor
-                    // over-reports the quote left over.
-                    if (matched_base_quantity < cur_quantity) break;
+                    // The matcher steps over a maker that cannot settle for a non-zero
+                    // quote — retiring it when the maker itself is under the bound,
+                    // skipping it when the shortfall is the taker's own residue — and
+                    // reaches the orders behind it either way. The quote has to walk the
+                    // same way: stopping here would under-report every level behind the
+                    // first such maker while settlement filled straight through it.
+                    if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
+                        quantity_out = quantity_out + matched_base_quantity;
+                        matched_quote = matched_quote + matched_quote_quantity;
+                        // A unit `extend_if_affordable` added is paid for out of the fee's
+                        // floor, not the budget, so it can overrun the budget by that unit.
+                        quantity_in_left =
+                            quantity_in_left - matched_quote_quantity.min(quantity_in_left);
+                        // The budget ran out inside this maker. Execution fills the
+                        // returned base greedily, so any further unit would come
+                        // from this maker too — under one floor with this piece —
+                        // never from a worse one. Pricing a unit behind it at its
+                        // own floor under-costs the plan, and the swap then needs
+                        // more quote than it was given.
+                        if (matched_base_quantity < cur_quantity) break;
+                    };
                 } else {
                     // Ask takers have the fee deducted from the quote proceeds,
                     // so the full base input matches; the fee is netted off the
@@ -311,9 +438,13 @@ module triex::book {
                         cur_price,
                         self.price_scaling,
                     );
-                    matched_quote = matched_quote + matched_quote_quantity;
-                    quantity_out = quantity_out + matched_quote_quantity;
-                    quantity_in_left = quantity_in_left - matched_base_quantity;
+                    // As above: a maker worth no quote is stepped over, not treated as
+                    // the end of the book.
+                    if (matched_base_quantity == 0 || matched_quote_quantity > 0) {
+                        matched_quote = matched_quote + matched_quote_quantity;
+                        quantity_out = quantity_out + matched_quote_quantity;
+                        quantity_in_left = quantity_in_left - matched_base_quantity;
+                    };
                 };
 
                 if (matched_base_quantity == 0) break;
@@ -373,7 +504,8 @@ module triex::book {
     }
 
     /// Modifies an order given order_id and new_quantity.
-    /// New quantity must be less than the original quantity.
+    /// New quantity must be less than the original quantity, and must leave a
+    /// remainder at or above the order's zero-quote bound — see `order::modify`.
     /// Order must not have already expired.
     /// #ref:order_modify
     public(package) fun modify_order(
@@ -382,13 +514,50 @@ module triex::book {
         new_quantity: u64,
         timestamp: u64,
     ): (u64, &Order) {
+        let price_scaling = self.price_scaling;
         let order = self.borrow_order_mut(order_id);
         assert!(new_quantity < order.quantity(), new_quantity_must_be_less_than_original());
         let cancel_quantity = order.quantity() - new_quantity;
-        order.modify(new_quantity, timestamp);
+        order.modify(new_quantity, timestamp, price_scaling);
 
         (cancel_quantity, order)
     }
+
+    /// #ref:order_query
+    public(package) fun get_order(self: &Book, order_id: u128): Order {
+        let (is_bid, _, _) = utils::decode_order_id(order_id);
+        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
+        let at = hot_find(hot, order_id);
+        if (at.is_some()) {
+            return hot.borrow(at.destroy_some()).copy_order()
+        };
+
+        self.book_side(order_id).borrow(order_id).copy_order()
+    }
+
+
+    /// The multicoin book: `price_scaling = 1` and the smaller hot buffer. Coin
+    /// pools use `empty`.
+    public(package) fun empty_multicoin(ctx: &mut TxContext): Book {
+        Book {
+            bids: big_vector::empty(
+                constants::max_slice_size(),
+                constants::max_fan_out(),
+                ctx,
+            ),
+            asks: big_vector::empty(
+                constants::max_slice_size(),
+                constants::max_fan_out(),
+                ctx,
+            ),
+            hot_bids: vector[],
+            hot_asks: vector[],
+            next_bid_order_id: constants::start_bid_order_id(),
+            next_ask_order_id: constants::start_ask_order_id(),
+            price_scaling: 1,
+        }
+    }
+
 
     /// Returns the mid price of the order book.
     /// #ref:mid_price
@@ -422,6 +591,7 @@ module triex::book {
 
         math::mul(best_ask_price + best_bid_price, constants::half())
     }
+
 
     /// Returns the best bids and asks.
     /// The number of ticks is the number of price levels to return.
@@ -501,103 +671,29 @@ module triex::book {
         (price_vec, quantity_vec)
     }
 
-    /// #ref:order_query
-    public(package) fun get_order(self: &Book, order_id: u128): Order {
-        let (is_bid, _, _) = utils::decode_order_id(order_id);
-        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
-        let at = hot_find(hot, order_id);
-        if (at.is_some()) {
-            return hot.borrow(at.destroy_some()).copy_order()
-        };
-
-        self.book_side(order_id).borrow(order_id).copy_order()
-    }
-
-    // === Cursor ===
-    public(package) fun cursor_is_null(self: &Cursor): bool {
-        !self.in_hot && self.tree.is_none()
-    }
-
-    /// The best-priced order of a side: the back of the hot buffer, or the tree's
-    /// own best when the buffer is empty.
-    public(package) fun cursor_begin(self: &Book, is_bid: bool): Cursor {
-        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
-        let n = hot.length();
-        if (n > 0) {
-            return Cursor { hot_ix: n - 1, in_hot: true, tree: option::none(), offset: 0 }
-        };
-        self.cursor_tree_begin(is_bid)
-    }
-
-    public(package) fun cursor_next(self: &Book, is_bid: bool, cur: Cursor): Cursor {
-        if (cur.in_hot) {
-            if (cur.hot_ix > 0) {
-                return Cursor {
-                    hot_ix: cur.hot_ix - 1,
-                    in_hot: true,
-                    tree: option::none(),
-                    offset: 0,
-                }
-            };
-            // Off the front of the buffer; continue into the tree behind it.
-            return self.cursor_tree_begin(is_bid)
-        };
-        if (cur.tree.is_none()) return cursor_exhausted();
-
-        let r = *cur.tree.borrow();
-        let cold = if (is_bid) &self.bids else &self.asks;
-        let (nr, no) = if (is_bid) {
-            cold.prev_slice(r, cur.offset)
-        } else {
-            cold.next_slice(r, cur.offset)
-        };
-        if (nr.is_null()) {
-            cursor_exhausted()
-        } else {
-            Cursor { hot_ix: 0, in_hot: false, tree: option::some(nr), offset: no }
-        }
-    }
-
-    public(package) fun cursor_borrow(self: &Book, is_bid: bool, cur: &Cursor): &Order {
-        if (cur.in_hot) {
-            let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
-            return hot.borrow(cur.hot_ix)
-        };
-        let cold = if (is_bid) &self.bids else &self.asks;
-        slice_borrow(cold.borrow_slice(*cur.tree.borrow()), cur.offset)
-    }
-
-    fun cursor_exhausted(): Cursor {
-        Cursor { hot_ix: 0, in_hot: false, tree: option::none(), offset: 0 }
-    }
-
-    fun cursor_tree_begin(self: &Book, is_bid: bool): Cursor {
-        let cold = if (is_bid) &self.bids else &self.asks;
-        let (r, o) = if (is_bid) cold.max_slice() else cold.min_slice();
-        if (r.is_null()) {
-            cursor_exhausted()
-        } else {
-            Cursor { hot_ix: 0, in_hot: false, tree: option::some(r), offset: o }
-        }
-    }
-
-    fun cursor_borrow_mut(self: &mut Book, is_bid: bool, cur: &Cursor): &mut Order {
-        if (cur.in_hot) {
-            let hot = if (is_bid) &mut self.hot_bids else &mut self.hot_asks;
-            return hot.borrow_mut(cur.hot_ix)
-        };
-        let cold = if (is_bid) &mut self.bids else &mut self.asks;
-        slice_borrow_mut(cold.borrow_slice_mut(*cur.tree.borrow()), cur.offset)
-    }
-
     /// === Private Functions ===
-    /// Book order: a bid is better the higher its key, an ask the lower.
+    /// Hot-buffer size for this book's pool kind. Derived from `price_scaling`
+    /// (1 only for multicoin pools) rather than stored, so `Book`'s BCS layout —
+    /// which off-chain decoders skip over byte by byte — stays unchanged.
+    fun hot_capacity(self: &Book): u64 {
+        if (self.price_scaling == 1) MULTICOIN_HOT_CAPACITY else COIN_HOT_CAPACITY
+    }
+
+    /// The level an overflowing buffer spills back down to; see `hot_capacity`.
+    fun hot_spill_target(self: &Book): u64 {
+        if (self.price_scaling == 1) MULTICOIN_HOT_SPILL_TARGET else COIN_HOT_SPILL_TARGET
+    }
+
+    /// Book order: a bid is better the higher its key, an ask the lower. Both hot
+    /// buffers are sorted by this, worst first.
     fun better(is_bid: bool, a: u128, b: u128): bool {
         if (is_bid) a > b else a < b
     }
 
-    /// Position of `order_id` in a hot buffer, if it is there at all. Linear, but
-    /// over at most `HOT_CAPACITY` elements already inline in the object.
+    /// Position of `order_id` in a hot buffer, if it is there.
+    ///
+    /// Scanned best-first because the callers that matter — retiring the makers a
+    /// taker just consumed — are always working at the best-priced end.
     fun hot_find(hot: &vector<Order>, order_id: u128): Option<u64> {
         let mut i = hot.length();
         while (i > 0) {
@@ -610,7 +706,8 @@ module triex::book {
         option::none()
     }
 
-    /// Index in a worst-first hot buffer at which `key` keeps it sorted.
+    /// Index in a worst-first hot buffer at which `key` keeps it sorted. A new best
+    /// price — the common case — walks nothing and lands at the end.
     fun hot_insert_pos(hot: &vector<Order>, is_bid: bool, key: u128): u64 {
         let mut i = hot.length();
         while (i > 0 && better(is_bid, hot.borrow(i - 1).order_id(), key)) {
@@ -620,12 +717,17 @@ module triex::book {
         i
     }
 
-    /// Remove an order from whichever store holds it.
+    /// Remove an order from whichever store holds it. Does not refill the buffer:
+    /// spill is one-way, and the buffer repopulates from new placements.
+    ///
+    /// An id on neither store still aborts with `big_vector`'s `ENotFound`, as it did
+    /// when the tree was the only store.
     fun remove_order(self: &mut Book, order_id: u128): Order {
         let (is_bid, _, _) = utils::decode_order_id(order_id);
         let at = hot_find(if (is_bid) &self.hot_bids else &self.hot_asks, order_id);
         if (at.is_some()) {
             let ix = at.destroy_some();
+            // At the best-priced end `ix` is the last element, so this moves nothing.
             return if (is_bid) self.hot_bids.remove(ix) else self.hot_asks.remove(ix)
         };
 
@@ -647,17 +749,19 @@ module triex::book {
         if (is_bid) self.bids.borrow_mut(order_id) else self.asks.borrow_mut(order_id)
     }
 
-    /// Push the worst orders out of a genuinely overflowing hot buffer into the
-    /// tree, down to `HOT_SPILL_TARGET`.
+    /// Push the worst orders out of an overflowing hot buffer and into the tree,
+    /// down to `hot_spill_target`. Spilling past capacity rather than back to it is
+    /// what stops a run of top-of-book placements paying a tree insert every time.
     ///
-    /// Gated on real overflow. Without the gate the buffer is pinned at
-    /// `HOT_SPILL_TARGET` and every placement above that depth pays a tree insert,
-    /// which is the cache paying both structures' costs and keeping neither's
-    /// benefit.
+    /// Gated on *genuine* overflow. Without the gate the buffer is pinned at
+    /// `hot_spill_target` — every placement above that depth pays a tree insert and
+    /// the headroom up to `hot_capacity` is never used, which is the cache paying
+    /// both structures' costs and keeping neither's benefit.
     fun spill(self: &mut Book, is_bid: bool) {
         let mut len = if (is_bid) self.hot_bids.length() else self.hot_asks.length();
-        if (len <= HOT_CAPACITY) return;
-        while (len > HOT_SPILL_TARGET) {
+        if (len <= self.hot_capacity()) return;
+        let target = self.hot_spill_target();
+        while (len > target) {
             let order = if (is_bid) self.hot_bids.remove(0) else self.hot_asks.remove(0);
             let key = order.order_id();
             if (is_bid) self.bids.insert(key, order) else self.asks.insert(key, order);
@@ -688,16 +792,20 @@ module triex::book {
         let max_fills = constants::max_fills();
         let mut current_fills = 0;
 
-        while (!cur.cursor_is_null() && current_fills < max_fills) {
+        while (!cur.cursor_is_null() &&
+            current_fills < max_fills) {
             let maker_order = self.cursor_borrow_mut(maker_is_bid, &cur);
-            if (!order_info.match_maker(maker_order, timestamp)) break;
+            // Only a `Stopped` outcome ends the walk. A maker that cannot settle for
+            // a non-zero quote is skipped or retired, and the orders behind it stay
+            // reachable — treating that as terminal wedged the whole side.
+            if (!order_info.match_maker(maker_order, timestamp).continues()) break;
             cur = self.cursor_next(maker_is_bid, cur);
             current_fills = current_fills + 1;
         };
 
         // Resting orders this match consumed or expired leave the book. Removal is
-        // keyed, so this costs one descent per retired order rather than the flat
-        // vector's whole-side scan per fill. Nothing refills the buffer behind them.
+        // by key, so unlike the old flat vector book there is no index bookkeeping to keep
+        // valid across removals.
         order_info.fills_ref().do_ref!(|fill| {
             if (fill.expired() || fill.completed()) {
                 self.remove_order(fill.maker_order_id());
@@ -742,7 +850,7 @@ module triex::book {
             // to hold the hot-over-tree invariant is to admit inline exactly those
             // orders that beat the whole tree, and send the rest behind it. Reading
             // the tree's best key is the one structural cost of removing the return
-            // path, and it prices as computation, which did not move when measured.
+            // path, and it prices as computation.
             let best_cold = if (is_bid) {
                 let (r, o) = self.bids.max_slice();
                 slice_borrow(self.bids.borrow_slice(r), o).order_id()
@@ -777,6 +885,35 @@ module triex::book {
 
     // === Test Helpers ===
     #[test_only]
+    /// Build a book with explicit `BigVector` geometry so a benchmark can vary slice
+    /// size against a fixed workload. Production always takes the geometry from
+    /// `constants`; nothing outside tests may choose it.
+    ///
+    /// `price_scaling` is overridable too, so a benchmark can neutralise the
+    /// arithmetic difference between this book and the multicoin one. Coin pools
+    /// always use `FLOAT_SCALING`, whose `qty_to_quote` is a u128 multiply *and* a
+    /// divide; multicoin uses 1, a bare multiply. Comparing the two engines without
+    /// matching this measures the conversion math as well as the storage.
+    public fun empty_with_geometry_scaled(
+        max_slice_size: u64,
+        max_fan_out: u64,
+        price_scaling: u64,
+        ctx: &mut TxContext,
+    ): Book {
+        Book {
+            bids: big_vector::empty(max_slice_size, max_fan_out, ctx),
+            asks: big_vector::empty(max_slice_size, max_fan_out, ctx),
+            hot_bids: vector[],
+            hot_asks: vector[],
+            next_bid_order_id: constants::start_bid_order_id(),
+            next_ask_order_id: constants::start_ask_order_id(),
+            price_scaling,
+        }
+    }
+
+    #[test_only]
+    /// Tear down a book built by `empty_with_geometry_scaled`. `Order` is droppable, so the
+    /// slices can be released without draining them order by order.
     public fun drop_for_testing(self: Book) {
         let Book {
             bids,
@@ -792,8 +929,10 @@ module triex::book {
     }
 
     #[test_only]
-    /// `(bid tree depth, bids on the side, ask tree depth, asks on the side)` — for
-    /// tests asserting where orders landed across the buffer/tree seam.
+    /// Tree geometry, for asserting which regime a benchmark actually exercised.
+    /// Tree depth per side, and the side's *total* length across the hot buffer and
+    /// the tree — a caller asking how deep the book is means the book, not the cold
+    /// half of it.
     public fun shape(self: &Book): (u8, u64, u8, u64) {
         (self.bids.depth(), self.side_length(true), self.asks.depth(), self.side_length(false))
     }

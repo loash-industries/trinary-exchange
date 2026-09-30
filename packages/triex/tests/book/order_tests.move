@@ -316,7 +316,7 @@ module triex::order_tests {
         let ts = order.expire_timestamp();
 
         let new_quantity = 5 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == 5 * constants::sui_unit(), 0);
         assert!(order.filled_quantity() == 0, 0);
         assert!(order.status() == constants::live(), 0);
@@ -327,7 +327,7 @@ module triex::order_tests {
         assert!(order.status() == constants::partially_filled(), 0);
 
         let new_quantity = 2 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == 2 * constants::sui_unit(), 0);
         assert!(order.filled_quantity() == 1 * constants::sui_unit(), 0);
         assert!(order.status() == constants::partially_filled(), 0);
@@ -353,34 +353,34 @@ module triex::order_tests {
         let ts = order.expire_timestamp();
 
         let new_quantity = 9 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 8 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 7 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 6 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 5 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 4 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 3 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 2 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 1 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
         assert!(order.quantity() == new_quantity, 0);
         let new_quantity = 0 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
 
         abort (0)
     }
@@ -397,7 +397,7 @@ module triex::order_tests {
         let ts = order.expire_timestamp();
 
         let new_quantity = 10 * constants::sui_unit();
-        order.modify(new_quantity, ts);
+        order.modify(new_quantity, ts, 1);
 
         abort (0)
     }
@@ -425,7 +425,7 @@ module triex::order_tests {
         );
 
         let new_quantity = 5 * constants::sui_unit();
-        order.modify(new_quantity, expire_timestamp + 1);
+        order.modify(new_quantity, expire_timestamp + 1, 1);
 
         abort (0)
     }

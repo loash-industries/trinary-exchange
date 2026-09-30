@@ -229,7 +229,7 @@ module triex::coin_book_zero_quote_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = ::triex::coin_order_info::EOrderBelowMinimumSize)]
+    #[expected_failure(abort_code = ::triex::order_info::EOrderBelowMinimumSize)]
     /// An order too small to ever yield a non-zero fill is refused rather than left
     /// to rest as permanently unfillable dust.
     fun test_placing_sub_lot_order_is_rejected() {

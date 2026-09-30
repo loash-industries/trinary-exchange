@@ -12,17 +12,18 @@ module triex::pool {
     use token::cred::CRED;
     use triex::{
         big_vector::BigVector,
-        coin_account::Account,
-        coin_book::{Self, Book},
-        coin_order::Order,
-        coin_order_info::{Self, OrderInfo},
-        coin_state::{Self, State},
+        account::Account,
+        book::{Self, Book},
+        order::Order,
+        order_info::{Self, OrderInfo},
+        state::{Self, State},
         coin_vault::{Self, Vault},
         constants,
         fee_policy::{Self, FeePolicy},
         fee_schedule::FeeSchedule,
         registry::{TriexAdminCap, Registry},
-        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap}
+        trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
+        vault
     };
 
     // use fun df::add as UID.add;
@@ -1020,7 +1021,7 @@ module triex::pool {
     ): Coin<QuoteAsset> {
         let pool_inner = self.load_inner_mut();
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
-        coin_vault::emit_pool_fees_withdrawn<QuoteAsset>(
+        vault::emit_pool_fees_withdrawn<QuoteAsset>(
             pool_inner.pool_id,
             amount,
             clock.timestamp_ms(),
@@ -1464,8 +1465,8 @@ module triex::pool {
         let pool_inner = PoolInner<BaseAsset, QuoteAsset> {
             allowed_versions: registry.allowed_versions(),
             pool_id: pool_id.to_inner(),
-            book: coin_book::empty(ctx),
-            state: coin_state::empty(ctx),
+            book: book::empty(ctx),
+            state: state::empty(ctx),
             vault: coin_vault::empty(),
             registered_pool: true,
             fee_class,
@@ -1504,7 +1505,7 @@ module triex::pool {
         assert!(gap <= MAX_DECIMAL_GAP, EInvalidDecimalPair);
     }
 
-    /// The cold tree of a side. Not the whole side — see `coin_book::bids`.
+    /// The cold tree of a side. Not the whole side — see `book::bids`.
     public(package) fun bids<BaseAsset, QuoteAsset>(
         self: &PoolInner<BaseAsset, QuoteAsset>,
     ): &BigVector<Order> {
@@ -1606,7 +1607,7 @@ module triex::pool {
                 turnover,
                 ctx.epoch(),
             );
-            let mut order_info = coin_order_info::new(
+            let mut order_info = order_info::new(
                 pool_inner.pool_id,
                 trading_account.id(),
                 ctx.sender(),
@@ -1661,7 +1662,7 @@ module triex::pool {
             };
             let fee_deposit = if (taker_fee_amount + maker_fee_amount > 0) {
                 option::some(
-                    coin_vault::new_quote_fee_deposit(
+                    vault::new_quote_fee_deposit(
                         pool_inner.pool_id,
                         trading_account.id(),
                         taker_fee_amount,

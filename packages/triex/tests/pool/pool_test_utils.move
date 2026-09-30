@@ -10,11 +10,12 @@ module triex::pool_test_utils {
     };
     use token::cred::CRED;
     use triex::{
-        coin_book,
-        coin_fill::Fill,
-        coin_order::{Self, Order},
-        coin_order_info::{Self, OrderInfo},
+        book,
+        fill::Fill,
+        order::{Self, Order},
+        order_info::{Self, OrderInfo},
         coin_vault,
+        vault,
         constants,
         fee_policy::{Self, FeePolicy},
         math,
@@ -6521,7 +6522,7 @@ module triex::pool_test_utils {
             pool.cancel_order(&mut trading_account, &trade_proof, new_order_id, &clock, test.ctx());
 
             // 100% retention: nothing to unlock, so no refund event at all.
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 0, 2);
 
             return_shared(trading_account);
@@ -6589,9 +6590,9 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
             assert!(amount == escrow, 1);
 
             // The reserve is empty: nothing traded and nothing was retained.
@@ -6743,18 +6744,18 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
                 &refunds[0],
             );
             assert!(refund_order_id == order_id, 1);
             assert!(refund_amount == expected_refund, 2);
             assert!(refund_bm == trading_account_id_alice, 3);
 
-            let cancels = event::events_by_type<coin_order::OrderCanceled>();
+            let cancels = event::events_by_type<order::OrderCanceled>();
             assert!(cancels.length() == 1, 4);
-            let (cancel_order_id, fee_refunded, fee_retained) = coin_order::canceled_event_parts(
+            let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
                 &cancels[0],
             );
             // Same order, same refund: the two events describe one release.
@@ -6847,9 +6848,9 @@ module triex::pool_test_utils {
             );
             return_shared(policy);
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
                 &refunds[0],
             );
             // Bob sent the transaction; Alice owns the refund.
@@ -6858,13 +6859,13 @@ module triex::pool_test_utils {
             assert!(refund_order_id == alice_order_id, 3);
             assert!(refund_amount == expected_refund, 4);
 
-            let expiries = event::events_by_type<coin_order_info::OrderExpired>();
+            let expiries = event::events_by_type<order_info::OrderExpired>();
             assert!(expiries.length() == 1, 5);
             let (
                 expired_order_id,
                 fee_refunded,
                 fee_retained,
-            ) = coin_order_info::expired_event_parts(
+            ) = order_info::expired_event_parts(
                 &expiries[0],
             );
             assert!(expired_order_id == refund_order_id, 6);
@@ -7249,10 +7250,10 @@ module triex::pool_test_utils {
             return_shared(policy);
 
             // Two refunds, one per expired maker, each naming its own order.
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 2, 0);
-            let (id_a, amount_a, ta_a) = coin_vault::refunded_event_parts(&refunds[0]);
-            let (id_b, amount_b, ta_b) = coin_vault::refunded_event_parts(&refunds[1]);
+            let (id_a, amount_a, ta_a) = vault::refunded_event_parts(&refunds[0]);
+            let (id_b, amount_b, ta_b) = vault::refunded_event_parts(&refunds[1]);
             assert!(ta_a != ta_b, 1);
             // Neither is attributed to Bob, who merely triggered the expiries.
             assert!(ta_a != trading_account_id_bob, 2);
@@ -7351,15 +7352,15 @@ module triex::pool_test_utils {
             return_shared(policy);
 
             // The stale ask escrowed nothing, so nothing is refunded.
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 0, 1);
 
             // And the expiry event must not claim otherwise. Nothing moves funds
             // on this path, so a non-zero split here would be visible only in the
             // event — an indexer would book a refund that never happened.
-            let expiries = event::events_by_type<coin_order_info::OrderExpired>();
+            let expiries = event::events_by_type<order_info::OrderExpired>();
             assert!(expiries.length() == 1, 9);
-            let (_id, fee_refunded, fee_retained) = coin_order_info::expired_event_parts(
+            let (_id, fee_refunded, fee_retained) = order_info::expired_event_parts(
                 &expiries[0],
             );
             assert!(fee_refunded == 0, 10);
@@ -7454,9 +7455,9 @@ module triex::pool_test_utils {
             );
             return_shared(policy);
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 0);
-            let (refund_order_id, refund_amount, refund_bm) = coin_vault::refunded_event_parts(
+            let (refund_order_id, refund_amount, refund_bm) = vault::refunded_event_parts(
                 &refunds[0],
             );
             assert!(refund_order_id == bid_order_id, 1);
@@ -7465,9 +7466,9 @@ module triex::pool_test_utils {
 
             // A self-match cancel emits OrderCanceled rather than OrderExpired,
             // and it has to carry the same split.
-            let cancels = event::events_by_type<coin_order::OrderCanceled>();
+            let cancels = event::events_by_type<order::OrderCanceled>();
             assert!(cancels.length() == 1, 4);
-            let (cancel_order_id, fee_refunded, fee_retained) = coin_order::canceled_event_parts(
+            let (cancel_order_id, fee_refunded, fee_retained) = order::canceled_event_parts(
                 &cancels[0],
             );
             assert!(cancel_order_id == bid_order_id, 5);
@@ -7555,12 +7556,12 @@ module triex::pool_test_utils {
             pool.cancel_all_orders(&mut trading_account, &trade_proof, &clock, test.ctx());
 
             // One refund per bid; the ask escrowed nothing and contributes none.
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 3, 1);
             let mut summed = 0;
             let mut r = 0;
             while (r < refunds.length()) {
-                let (_id, amount, ta) = coin_vault::refunded_event_parts(&refunds[r]);
+                let (_id, amount, ta) = vault::refunded_event_parts(&refunds[r]);
                 assert!(ta == trading_account_id_alice, 2);
                 summed = summed + amount;
                 r = r + 1;
@@ -7654,13 +7655,13 @@ module triex::pool_test_utils {
             let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 1);
-            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
             assert!(amount == expected_refund, 2);
 
-            let cancels = event::events_by_type<coin_order::OrderCanceled>();
-            let (_cid, fee_refunded, fee_retained) = coin_order::canceled_event_parts(&cancels[0]);
+            let cancels = event::events_by_type<order::OrderCanceled>();
+            let (_cid, fee_refunded, fee_retained) = order::canceled_event_parts(&cancels[0]);
             assert!(fee_refunded == expected_refund, 3);
             assert!(fee_retained == expected_retained, 4);
             // The halves still sum exactly, so the escrow counter can reach zero.
@@ -7756,14 +7757,14 @@ module triex::pool_test_utils {
                 test.ctx(),
             );
 
-            let refunds = event::events_by_type<coin_vault::PoolFeesRefunded>();
+            let refunds = event::events_by_type<vault::PoolFeesRefunded>();
             assert!(refunds.length() == 1, 1);
-            let (_id, amount, _bm) = coin_vault::refunded_event_parts(&refunds[0]);
+            let (_id, amount, _bm) = vault::refunded_event_parts(&refunds[0]);
             assert!(amount == expected_refund, 2);
 
-            let modifies = event::events_by_type<coin_order::OrderModified>();
+            let modifies = event::events_by_type<order::OrderModified>();
             assert!(modifies.length() == 1, 3);
-            let (_mid, fee_refunded, fee_retained) = coin_order::modified_event_parts(
+            let (_mid, fee_refunded, fee_retained) = order::modified_event_parts(
                 &modifies[0],
             );
             assert!(fee_refunded == expected_refund, 4);

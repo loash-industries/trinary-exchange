@@ -493,7 +493,7 @@ module triex::multicoin_vault {
     }
 
     /// Release bid-maker escrow back to the pool balance so it can settle out to
-    /// the maker. Mirror of `vault::unlock_quote_fees`; see there for why the
+    /// the maker. Mirror of `coin_vault::unlock_quote_fees`; see there for why the
     /// funds must move buckets rather than just crediting settled balances.
     public(package) fun unlock_quote_fees<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,

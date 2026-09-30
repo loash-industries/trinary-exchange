@@ -1,18 +1,24 @@
 /// Order module defines the order struct and its methods.
 /// All order matching happens in this module.
+///
+/// Serves both pool kinds. The events here are emitted by coin and multicoin
+/// pools alike; `pool_id` says which pool produced one.
 module triex::order_info {
     use sui::event;
     use triex::{
         balances::{Self, Balances},
-        constants,
         fill::Fill,
-        math,
         order::{Self, Order},
+        constants,
+        math,
         quote_fee
     };
 
     // === Errors ===
     const EOrderInvalidPrice: u64 = 0;
+    /// Reuses the code DeepBook assigns the same condition, though the bound here is
+    /// derived from the order's own price rather than a per-pool constant.
+    const EOrderBelowMinimumSize: u64 = 1;
     const EInvalidExpireTimestamp: u64 = 3;
     const EInvalidOrderType: u64 = 4;
     const EPOSTOrderCrossesOrderbook: u64 = 5;
@@ -21,6 +27,25 @@ module triex::order_info {
     const ESelfMatchingCancelTaker: u64 = 8;
 
     // === Structs ===
+    /// The result of offering one resting maker to a taker.
+    ///
+    /// The three cases are kept apart deliberately. Collapsing "this maker cannot
+    /// trade" into "the book cannot trade" is what once let a single unfillable
+    /// order at the best price make every order behind it unreachable, so the walk
+    /// is told whether to stop or to step over rather than inferring it from a
+    /// boolean that meant both.
+    public enum MatchOutcome has copy, drop {
+        /// A fill — or a retirement, which settles as a refund — was recorded
+        /// against this maker. Keep walking.
+        Filled,
+        /// Nothing could be done with this maker, but the makers behind it are
+        /// still reachable. Leave it resting and keep walking.
+        Skipped,
+        /// The book has nothing further for this taker: the price no longer
+        /// crosses, or the taker is fully filled. Stop.
+        Stopped,
+    }
+
     /// OrderInfo struct represents all order information.
     /// This objects gets created at the beginning of the order lifecycle and
     /// gets updated until it is completed or placed in the book.
@@ -440,6 +465,20 @@ module triex::order_info {
         order_info.price <= constants::max_price(),
             EOrderInvalidPrice,
         );
+        // A resting order smaller than one quote unit's worth of base at its own
+        // price can never produce a non-zero fill, since the matcher quantizes to
+        // exactly this bound — it would sit on the book forever as unfillable dust.
+        // Reject it at placement instead. The bound is read off the price, so it
+        // needs no per-pool minimum size: it is 1 for a base priced at or above one
+        // quote unit and scales up automatically as the price falls.
+        //
+        // Market orders returned above: they match at each maker's price, not at the
+        // sentinel price they carry, and they never rest.
+        assert!(
+            order_info.original_quantity >=
+        math::min_qty_for_nonzero_quote(order_info.price, order_info.price_scaling),
+            EOrderBelowMinimumSize,
+        );
     }
 
     /// Assert order types after partial fill against the order book.
@@ -490,11 +529,26 @@ module triex::order_info {
         )
     }
 
-    /// Matches an `OrderInfo` with an `Order` from the book. Appends a `Fill` to fills.
-    /// If the book order is expired, the `Fill` will have the expired flag set to true.
-    /// Funds for the match or an expired order are returned to the maker as settled.
-    public(package) fun match_maker(self: &mut OrderInfo, maker: &mut Order, timestamp: u64): bool {
-        if (!self.can_match(maker)) return false;
+    /// Offers one resting maker to this taker and reports what the book walk should
+    /// do next — see `MatchOutcome`.
+    ///
+    /// `Filled` appends a `Fill`. An expired maker, a `cancel_maker` self-match and a
+    /// maker retired for being permanently unfillable all take the same path: the
+    /// `Fill` carries the expired flag, no quote moves, and the maker's own principal
+    /// is returned to them as settled.
+    ///
+    /// `Skipped` appends nothing. It means only that this maker could not trade —
+    /// the taker's residue converts to zero quote at this maker's price — and the
+    /// makers behind it are still reachable.
+    ///
+    /// `Stopped` is the only terminal answer: the price no longer crosses, or the
+    /// taker is fully filled.
+    public(package) fun match_maker(
+        self: &mut OrderInfo,
+        maker: &mut Order,
+        timestamp: u64,
+    ): MatchOutcome {
+        if (!self.can_match(maker)) return MatchOutcome::Stopped;
 
         if (self.self_matching_option() == constants::cancel_taker()) {
             assert!(
@@ -505,22 +559,73 @@ module triex::order_info {
         let expire_maker =
             self.self_matching_option() == constants::cancel_maker() &&
         maker.trading_account_id() == self.trading_account_id();
+        let maker_remaining = maker.quantity() - maker.filled_quantity();
+        // A maker whose *entire* remaining quantity still converts to zero quote can
+        // never settle for anything again at its own price — a partial fill or a
+        // modify-down left it under the bound. Leaving it to rest would block every
+        // order behind it, so it is retired on sight along the path an expiry already
+        // takes: no quote moves, the maker gets their own principal back, and the book
+        // self-cleans instead of accumulating permanent blockers. The test is read off
+        // the maker alone, never off the crossing amount, so a healthy maker is never
+        // retired because some taker happened to arrive with a small residue.
+        let unfillable =
+            math::qty_to_quote(maker_remaining, maker.price(), self.price_scaling) == 0;
+        let retire = expire_maker || unfillable;
+        let expired = timestamp > maker.expire_timestamp() || retire;
+        // Decline a live fill that would settle for no quote at all. `qty_to_quote`
+        // floors, so a small enough fill converts to zero: the taker would receive
+        // base without paying for it while the maker's `filled_quantity` advanced
+        // uncompensated. The threshold is read off the maker's price, so it costs no
+        // configured minimum and holds whatever the base is worth.
+        //
+        // Only the zero case is refused — fills are deliberately *not* rounded to a
+        // whole multiple of that threshold. Quantizing would also truncate ordinary
+        // fills, which matters because a quote with few decimals puts normal prices
+        // well below `FLOAT_SCALING`. Flooring the quote instead leaves the taker a
+        // rounding benefit under one raw quote unit per fill, which is what every
+        // fixed-point book does.
+        //
+        // An expiry is exempt: it moves no quote, it hands the maker their own
+        // principal back. That also keeps expired orders reachable for cleanup when
+        // the crossing amount is below the threshold.
+        //
+        // Reaching the check below means the maker itself is healthy, so the shortfall
+        // is the taker's own residue. That says nothing about the makers behind this
+        // one — a bid taker walks ascending asks, where the same residue converts to
+        // more quote, not less — so this maker is stepped over rather than ending the
+        // walk.
+        if (!expired) {
+            let matchable = self.remaining_quantity().min(maker_remaining);
+            if (math::qty_to_quote(matchable, maker.price(), self.price_scaling) == 0) {
+                return MatchOutcome::Skipped
+            };
+        };
         let fill = maker.generate_fill(
             timestamp,
             self.remaining_quantity(),
             self.is_bid,
-            expire_maker,
+            retire,
             self.price_scaling,
         );
         self.fills.push_back(fill);
-        if (fill.expired()) return true;
+        if (fill.expired()) return MatchOutcome::Filled;
 
         self.executed_quantity = self.executed_quantity + fill.base_quantity();
         self.cumulative_quote_quantity = self.cumulative_quote_quantity + fill.quote_quantity();
         self.status = constants::partially_filled();
         if (self.remaining_quantity() == 0) self.status = constants::filled();
 
-        true
+        MatchOutcome::Filled
+    }
+
+    /// True when the book walk should advance to the next maker. Only `Stopped`
+    /// ends the walk; a skipped or retired maker leaves the orders behind it
+    /// reachable.
+    public(package) fun continues(self: &MatchOutcome): bool {
+        match (self) {
+            MatchOutcome::Stopped => false,
+            _ => true,
+        }
     }
 
     /// Emit all fills for this order in a vector of `OrderFilled` events.
