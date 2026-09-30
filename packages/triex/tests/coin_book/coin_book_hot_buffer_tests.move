@@ -23,10 +23,10 @@ module triex::coin_book_hot_buffer_tests {
 
     const OWNER: address = @0x1;
 
-    /// Mirror `coin_book`'s private buffer constants. A test that silently tracked
+    /// Mirror `book`'s private buffer constants. A test that silently tracked
     /// a changed capacity would stop testing the boundary it names.
-    const HOT_CAPACITY: u64 = 32;
-    const HOT_SPILL_TARGET: u64 = 24;
+    const HOT_CAPACITY: u64 = 16;
+    const HOT_SPILL_TARGET: u64 = 12;
 
     fun scaling(): u64 { constants::float_scaling() }
 

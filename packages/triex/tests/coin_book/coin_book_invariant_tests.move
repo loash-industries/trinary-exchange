@@ -31,8 +31,8 @@ module triex::coin_book_invariant_tests {
     };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 32;
-    const HOT_SPILL_TARGET: u64 = 24;
+    const HOT_CAPACITY: u64 = 16;
+    const HOT_SPILL_TARGET: u64 = 12;
 
     fun scaling(): u64 { constants::float_scaling() }
 

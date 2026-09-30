@@ -30,13 +30,13 @@ module triex::coin_book_priority_tests {
     use triex::{book::{Self, Book}, order_info::{Self, OrderInfo}, constants};
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 32;
-    const HOT_SPILL_TARGET: u64 = 24;
+    const HOT_CAPACITY: u64 = 16;
+    const HOT_SPILL_TARGET: u64 = 12;
 
     /// Depths are derived from `HOT_CAPACITY`, never written as literals. A test
     /// that names the buffer/tree seam and then builds a book smaller than the
     /// buffer goes on passing while testing nothing — which is exactly what
-    /// happened to several of these when the capacity moved from 16 to 32.
+    /// happened to several of these when the capacity moved from 16 to 32 and back.
     fun deep(): u64 { HOT_CAPACITY * 2 }
 
     /// Positions that bracket the seam wherever it lands. Enumerating all `deep()`

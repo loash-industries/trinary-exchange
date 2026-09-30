@@ -316,16 +316,15 @@ module triex::coin_book_workload_tests {
     #[test]
     fun workload_shallow_slice_64() { run(64, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
-    // The inline top-of-book buffer holds the best `HOT_CAPACITY` (32) orders of the
-    // side, so a ~26-order shallow book leaves very little in the tree at all — one
-    // leaf at slice 32 *and* at slice 16, where the whole 26 once needed two. Only
-    // slice 8 still splits. These expectations track the buffer size: raising
-    // `HOT_CAPACITY` moves orders out of the tree and flattens it.
+    // The inline top-of-book buffer holds the best `HOT_CAPACITY` (16) orders of the
+    // side, so what is left of a shallow book in the tree fits one leaf at slice 32
+    // but splits at slices 16 and 8. These expectations track the buffer size:
+    // raising `HOT_CAPACITY` moves orders out of the tree and flattens it.
     #[test]
     fun workload_shallow_slice_32() { run(32, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
     #[test]
-    fun workload_shallow_slice_16() { run(16, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
+    fun workload_shallow_slice_16() { run(16, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }
 
     #[test]
     fun workload_shallow_slice_8() { run(8, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }

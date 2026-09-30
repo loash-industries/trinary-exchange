@@ -40,7 +40,7 @@ module triex::pool_deep_book_tests {
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
 
-    /// Comfortably past the coin book's hot capacity (32), and inside `MAX_OPEN_ORDERS`
+    /// Comfortably past the book's hot capacity (16), and inside `MAX_OPEN_ORDERS`
     /// (100) so one account can hold the whole side.
     const DEEP: u64 = 80;
 

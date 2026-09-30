@@ -5,13 +5,16 @@
 /// All order book operations are defined in this module.
 ///
 /// One book serves both pool kinds. Coin pools build it with `empty`
-/// (`price_scaling = FLOAT_SCALING`, a 32/24 hot buffer); multicoin pools with
-/// `empty_multicoin` (`price_scaling = 1`, a 16/12 hot buffer). Everything else —
-/// storage, matching, validation and the dry-run quote — is the same code. The
-/// coin-only guards (the zero-quote size bound, `MatchOutcome::Skipped`, the
-/// dry-run step-over) reduce to no-ops at `price_scaling = 1`, where
-/// `min_qty_for_nonzero_quote` is 1 and every non-empty fill converts to non-zero
-/// quote.
+/// (`price_scaling = FLOAT_SCALING`); multicoin pools with `empty_multicoin`
+/// (`price_scaling = 1`). Everything else — storage, matching, validation, the
+/// dry-run quote and the hot-buffer size — is the same code.
+///
+/// The zero-quote guards (the placement size bound, `MatchOutcome::Skipped`, the
+/// dry-run step-over) exist for coin pools, where a fractional price times a
+/// small quantity can floor to zero quote. A multicoin quantity is a whole number
+/// of indivisible units and its price is a whole number of quote units, so every
+/// non-empty fill is worth at least one quote unit: at `price_scaling = 1`,
+/// `min_qty_for_nonzero_quote` is 1 and the guards never fire.
 ///
 /// Orders live in a `BigVector<Order>` keyed by an encoded `u128` order id, with
 /// the best orders of each side held inline in the pool object. Insert, cancel,
@@ -60,7 +63,7 @@ module triex::book {
     public fun new_quantity_must_be_less_than_original(): u64 { ENewQuantityMustBeLessThanOriginal }
 
     /// === Top-of-book buffer ===
-    /// Each side keeps its best `hot_capacity` orders inline in the `Book` and the
+    /// Each side keeps its best `HOT_CAPACITY` orders inline in the `Book` and the
     /// rest in the `BigVector` behind it. One invariant ties the two stores together:
     ///
     ///   *every order in a side's hot buffer is better-priced than every order in
@@ -86,27 +89,20 @@ module triex::book {
     /// write each time — precisely the cost it exists to avoid. The gap to capacity
     /// sets how *lumpy* spilling is, not how much it costs.
     ///
-    /// Capacity is per pool kind, because each inline order is rewritten on every
-    /// transaction that touches the pool (~7.1k MIST) while the benefit of keeping
-    /// churn off the tree saturates quickly:
-    ///
-    /// - Multicoin: 16 / 12. The storage experiment measured a 64-order buffer at
-    ///   74% more per churn operation, and a 32-order one worse than 16 at depths
-    ///   30/150/300 on multicoin synthetic flow.
-    /// - Coin: 32 / 24, a deliberate departure. Mainnet coin flow puts 85.5% of maker
-    ///   placements within ~28 of the touch, which a 16-buffer misses and a
-    ///   32-buffer catches. Untested either way; it needs a coin-pool driver to
-    ///   settle (see commit 1a70602).
-    const COIN_HOT_CAPACITY: u64 = 32;
-    const COIN_HOT_SPILL_TARGET: u64 = 24;
-    const MULTICOIN_HOT_CAPACITY: u64 = 16;
-    const MULTICOIN_HOT_SPILL_TARGET: u64 = 12;
+    /// The capacity is deliberately small, and the same for both pool kinds. Each
+    /// inline order is rewritten on every transaction that touches the pool, at
+    /// ~7.1k MIST, while the benefit of keeping churn off the tree saturates at
+    /// about a dozen orders: the storage experiment measured a 64-order buffer at
+    /// 74% more per churn operation, and a 32-order one worse than 16 at depths
+    /// 30/150/300. A hot cache is an asset only while it is small.
+    const HOT_CAPACITY: u64 = 16;
+    const HOT_SPILL_TARGET: u64 = 12;
 
     /// === Structs ===
     public struct Book has store {
         bids: BigVector<Order>, // keyed ascending by price; best bid is the max key
         asks: BigVector<Order>, // keyed ascending by price; best ask is the min key
-        // Inline top-of-book buffers: the best `hot_capacity` orders of each side,
+        // Inline top-of-book buffers: the best `HOT_CAPACITY` orders of each side,
         // held in the pool object itself rather than behind a dynamic field. A trade
         // at the inside market — which is nearly all of them — then reads and writes
         // no dynamic field at all.
@@ -123,8 +119,6 @@ module triex::book {
         // Divisor used in qty ↔ quote conversions: FLOAT_SCALING (1e9) for coin
         // pools, where price = human × QUOTE_UNIT × FLOAT_SCALING / BASE_UNIT, and 1
         // for multicoin pools, where price = human × QUOTE_UNIT with no division.
-        // It also identifies the pool kind, which is what sizes the hot buffer —
-        // see `hot_capacity`.
         price_scaling: u64,
     }
 
@@ -147,7 +141,7 @@ module triex::book {
 
     /// === Public-Package Functions ===
     /// The cold tree for a side. This is **not** the whole side: its best
-    /// `hot_capacity` orders are in `hot_bids` / `hot_asks`. Callers that need to see
+    /// `HOT_CAPACITY` orders are in `hot_bids` / `hot_asks`. Callers that need to see
     /// a side whole must go through `Cursor`, `get_order` or `side_length`.
     public(package) fun bids(self: &Book): &BigVector<Order> {
         &self.bids
@@ -291,8 +285,8 @@ module triex::book {
         slice_borrow_mut(cold.borrow_slice_mut(*cur.tree.borrow()), cur.offset)
     }
 
-    /// The coin-pool book: `price_scaling = FLOAT_SCALING` and the larger hot
-    /// buffer. Multicoin pools use `empty_multicoin`.
+    /// The coin-pool book: `price_scaling = FLOAT_SCALING`. Multicoin pools use
+    /// `empty_multicoin`.
     public(package) fun empty(ctx: &mut TxContext): Book {
         Book {
             bids: big_vector::empty(
@@ -536,8 +530,7 @@ module triex::book {
     }
 
 
-    /// The multicoin book: `price_scaling = 1` and the smaller hot buffer. Coin
-    /// pools use `empty`.
+    /// The multicoin book: `price_scaling = 1`. Coin pools use `empty`.
     public(package) fun empty_multicoin(ctx: &mut TxContext): Book {
         Book {
             bids: big_vector::empty(
@@ -672,18 +665,6 @@ module triex::book {
     }
 
     /// === Private Functions ===
-    /// Hot-buffer size for this book's pool kind. Derived from `price_scaling`
-    /// (1 only for multicoin pools) rather than stored, so `Book`'s BCS layout —
-    /// which off-chain decoders skip over byte by byte — stays unchanged.
-    fun hot_capacity(self: &Book): u64 {
-        if (self.price_scaling == 1) MULTICOIN_HOT_CAPACITY else COIN_HOT_CAPACITY
-    }
-
-    /// The level an overflowing buffer spills back down to; see `hot_capacity`.
-    fun hot_spill_target(self: &Book): u64 {
-        if (self.price_scaling == 1) MULTICOIN_HOT_SPILL_TARGET else COIN_HOT_SPILL_TARGET
-    }
-
     /// Book order: a bid is better the higher its key, an ask the lower. Both hot
     /// buffers are sorted by this, worst first.
     fun better(is_bid: bool, a: u128, b: u128): bool {
@@ -750,18 +731,17 @@ module triex::book {
     }
 
     /// Push the worst orders out of an overflowing hot buffer and into the tree,
-    /// down to `hot_spill_target`. Spilling past capacity rather than back to it is
+    /// down to `HOT_SPILL_TARGET`. Spilling past capacity rather than back to it is
     /// what stops a run of top-of-book placements paying a tree insert every time.
     ///
     /// Gated on *genuine* overflow. Without the gate the buffer is pinned at
-    /// `hot_spill_target` — every placement above that depth pays a tree insert and
-    /// the headroom up to `hot_capacity` is never used, which is the cache paying
+    /// `HOT_SPILL_TARGET` — every placement above that depth pays a tree insert and
+    /// the headroom up to `HOT_CAPACITY` is never used, which is the cache paying
     /// both structures' costs and keeping neither's benefit.
     fun spill(self: &mut Book, is_bid: bool) {
         let mut len = if (is_bid) self.hot_bids.length() else self.hot_asks.length();
-        if (len <= self.hot_capacity()) return;
-        let target = self.hot_spill_target();
-        while (len > target) {
+        if (len <= HOT_CAPACITY) return;
+        while (len > HOT_SPILL_TARGET) {
             let order = if (is_bid) self.hot_bids.remove(0) else self.hot_asks.remove(0);
             let key = order.order_id();
             if (is_bid) self.bids.insert(key, order) else self.asks.insert(key, order);
