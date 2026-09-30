@@ -16,8 +16,7 @@ module triex::order_info {
 
     // === Errors ===
     const EOrderInvalidPrice: u64 = 0;
-    /// Reuses the code DeepBook assigns the same condition, though the bound here is
-    /// derived from the order's own price rather than a per-pool constant.
+    /// Bound derived from the order's own price rather than a per-pool constant.
     const EOrderBelowMinimumSize: u64 = 1;
     const EInvalidExpireTimestamp: u64 = 3;
     const EInvalidOrderType: u64 = 4;

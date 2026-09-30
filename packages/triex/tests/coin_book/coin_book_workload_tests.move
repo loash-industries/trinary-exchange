@@ -1,5 +1,3 @@
-/// Slice-size benchmark against the *measured* DeepBook v3 mainnet workload.
-///
 /// Every distribution below was taken from live mainnet on 2026-09-14: 25,000
 /// `OrderInfo` events (order creations) over a 19-minute window, plus the complete
 /// SUI/USDC book reconstructed from its `BigVector` slices. Nothing here is guessed.
