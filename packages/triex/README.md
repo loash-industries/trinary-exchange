@@ -227,11 +227,22 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 ## Deployments
 
-Environments are declared in `Move.toml` under `[environments]`. triex is
-pending a fresh publish to `testnet_stillness` (Sui testnet, chain id
-`4c78adac`); `Published.toml` is recreated by that publish. The earlier
-`testnet_stillness`, `testnet_utopia` and `testnet_wip` publications are
-retired.
+Environments are declared in `Move.toml` under `[environments]`. The live
+publication is `testnet_stillness` (Sui testnet, chain id `4c78adac`), cycle 7;
+see `Published.toml`. The earlier `testnet_stillness`, `testnet_utopia` and
+`testnet_wip` publications are retired.
+
+| Item | ID |
+|---|---|
+| Package (original = current) | `0xa9dfa639b89afcec3a206398510f2a3dee80478a765d238a2d33b58d14bdc8b4` |
+| `Registry` (shared, isv `924520405`) | `0xc777162427090072d3034565544f285131ae6a23909dd237d51677504d65469b` |
+| `FeePolicy` (shared, isv `924520405`) | `0x3285b29bb35ed4feae7b921413122e2f82a809e8a398216b47d9915531e24551` |
+| `TriexAdminCap` | `0x2a5c8e66ce9eb38b3e0ce8141d71a4551877d52d05e2b6a89f57a45c7a71ba4b` |
+| `UpgradeCap` | `0x0532ab5f55fc1ae984c42aae9af0e906c4eb7bf787df8c1da57891480e887f28` |
+| Publish digest | `96psg7KVymC1o1ekjbLUZbBFht5nBL7BzVsdH4CkkkPm` (checkpoint `389479625`) |
+| Caps held by | `0xe788b6ce6a6d972a6cf1fdc30f508de6ab76ccdd182c3f3de7d6663c4243aeab` |
+| multicoin (linked, not republished) | `0xdbb778cba30e7deccf61169fbfbcd10a867654e1e2822facd789a99bd2c4e2ba` |
+| token / CRED (linked, not republished) | `0xfbcbd9155669e157ce3999e073930b4c4b67255c3cf88d0d80c76342a31e6710` |
 
 ## License
 
