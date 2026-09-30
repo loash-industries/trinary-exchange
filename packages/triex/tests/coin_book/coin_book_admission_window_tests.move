@@ -60,20 +60,20 @@
 /// and `min_slice` on asks and compares under an inverted `better` — a swap between
 /// the two would be invisible on one side.
 ///
-/// This is the `triex::book` module ported to the coin stack, at `HOT_CAPACITY` 32.
+/// This is the `triex::book` module run at coin-pool price scaling.
 #[test_only]
 module triex::coin_book_admission_window_tests {
     use sui::test_scenario::{begin, Scenario};
     use triex::{
         big_vector::slice_borrow,
-        coin_book::{Self, Book},
-        coin_order_info::{Self, OrderInfo},
-        constants
+        book::{Self, Book},
+        constants,
+        order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 32;
-    const HOT_SPILL_TARGET: u64 = 24;
+    const HOT_CAPACITY: u64 = 16;
+    const HOT_SPILL_TARGET: u64 = 12;
 
     /// Prices are laid out on a grid so that a "strictly between two adjacent
     /// ranks" price always exists. Coin pools price through `FLOAT_SCALING`, so the
@@ -112,7 +112,7 @@ module triex::coin_book_admission_window_tests {
     // === Book helpers ===
 
     fun order(order_type: u8, price: u64, quantity: u64, is_bid: bool): OrderInfo {
-        coin_order_info::new(
+        order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -248,7 +248,7 @@ module triex::coin_book_admission_window_tests {
     /// is asserted, because a construction that spilled would not produce the
     /// occupancy it claims.
     fun build(test: &mut Scenario, is_bid: bool, h: u64, t: u64): (Book, vector<u128>) {
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
         let mut keys = vector[];
 
         let mut i = h;
@@ -431,9 +431,8 @@ module triex::coin_book_admission_window_tests {
 
     /// One row of the grid: a fixed buffer occupancy, every tree depth, every price
     /// class, both window entry paths. Split per occupancy rather than run as one
-    /// test because at `HOT_CAPACITY` 32 each cell builds a much larger book than the
-    /// multicoin grid does, and a single test over the whole grid exceeds the Move
-    /// harness's per-test time budget.
+    /// test because a single test over the whole grid exceeds the Move harness's
+    /// per-test time budget.
     fun run_row(is_bid: bool, h: u64) {
         // 17 puts the tree past one 16-slot leaf slice, so `max_slice` / `min_slice`
         // have to descend rather than read the only leaf.
@@ -505,7 +504,7 @@ module triex::coin_book_admission_window_tests {
     /// which is what keeps branch W reachable only from removals.
     fun spill_never_opens_the_window() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let mut i = 0;
         while (i < 200) {
@@ -528,7 +527,7 @@ module triex::coin_book_admission_window_tests {
         let mut is_bid = false;
         while (true) {
             let mut test = begin(OWNER);
-            let mut book = coin_book::empty(test.ctx());
+            let mut book = book::empty(test.ctx());
 
             // A tree deep enough that later cycles descend it.
             let mut i = 60;

@@ -9,7 +9,7 @@
 #[test_only]
 module triex::pool_tests {
     use sui::{object::ID, test_scenario::Scenario};
-    use triex::{coin_order_info::OrderInfo, pool_test_utils};
+    use triex::{order_info::OrderInfo, pool_test_utils};
 
     /// The rates a coin pool resolves at the entry rung, and the cancel-retention
     /// share, re-exported so the integration suites can build expectations

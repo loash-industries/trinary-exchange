@@ -15,8 +15,7 @@
 /// ```
 ///
 /// Branch **W** is the promotion window: the only place in the module that reads
-/// the tree in order to decide buffer membership, and the branch that does not
-/// exist in `coin_book`, which refills instead. It opens whenever the buffer
+/// the tree in order to decide buffer membership. It opens whenever the buffer
 /// drains while the tree is still stocked — by a sweep, by cancels, or by a mix —
 /// and it stays open until something is admitted through it.
 ///

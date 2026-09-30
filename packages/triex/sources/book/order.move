@@ -12,6 +12,7 @@ module triex::order {
     /// `triex::fee_policy`; these are the backstop that keeps the encoding total.
     const EMakerFeeRateTooWide: u64 = 2;
     const ECancelRetentionTooWide: u64 = 3;
+    const EOrderBelowMinimumSize: u64 = 4;
 
     /// Widths of the two snapshotted rates. A resting order is stored inside the
     /// pool object and the whole object is rewritten on every transaction that
@@ -215,11 +216,21 @@ module triex::order {
     /// Modify the order with a new quantity. The new quantity must be greater
     /// than the filled quantity and less than the original quantity. The
     /// timestamp must be less than the expire timestamp.
-    public(package) fun modify(self: &mut Order, new_quantity: u64, timestamp: u64) {
+    public(package) fun modify(
+        self: &mut Order,
+        new_quantity: u64,
+        timestamp: u64,
+        price_scaling: u64,
+    ) {
         assert!(
             new_quantity > self.filled_quantity &&
         new_quantity < self.quantity,
             EInvalidNewQuantity,
+        );
+        assert!(
+            new_quantity - self.filled_quantity >=
+                math::min_qty_for_nonzero_quote(self.price, price_scaling),
+            EOrderBelowMinimumSize,
         );
         assert!(timestamp <= self.expire_timestamp, EOrderExpired);
         self.quantity = new_quantity;

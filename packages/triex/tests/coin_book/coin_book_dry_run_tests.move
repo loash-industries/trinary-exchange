@@ -12,19 +12,13 @@
 #[test_only]
 module triex::coin_book_dry_run_tests {
     use sui::{object::id_from_address, test_scenario::begin};
-    use triex::{
-        coin_book::{Self, Book},
-        coin_order_info::{Self, OrderInfo},
-        constants,
-        math,
-        quote_fee
-    };
+    use triex::{book::{Self, Book}, constants, math, order_info::{Self, OrderInfo}, quote_fee};
 
     const OWNER: address = @0xF;
     const ALICE: address = @0xA;
 
     fun rest(b: &mut Book, price: u64, qty: u64, is_bid: bool) {
-        let mut oi = coin_order_info::new(
+        let mut oi = order_info::new(
             id_from_address(@0x1),
             id_from_address(@0xA1),
             ALICE,
@@ -39,7 +33,7 @@ module triex::coin_book_dry_run_tests {
             constants::max_u64(),
             false,
             0,
-            coin_book::price_scaling(b),
+            book::price_scaling(b),
         );
         b.create_order(&mut oi, 0);
         assert!(oi.order_inserted(), 0);
@@ -58,7 +52,7 @@ module triex::coin_book_dry_run_tests {
     /// that does not exist.
     fun bid_dry_run_reserves_exactly_the_fee_that_settles() {
         let mut test = begin(OWNER);
-        let mut b = coin_book::empty(test.ctx());
+        let mut b = book::empty(test.ctx());
         // One deep ask at human price 1.00 (price = 1e6 for a 6-decimal quote
         // against a 9-decimal base), so a single level absorbs the whole input.
         rest(&mut b, 1_000_000, 10_000_000_000_000, false);
@@ -68,7 +62,7 @@ module triex::coin_book_dry_run_tests {
         let (base_out, quote_left) = b.get_quantity_out(0, input, taker_rate, 0);
 
         // What settlement charges for the base this quote says it buys.
-        let quote_spent = math::qty_to_quote(base_out, 1_000_000, coin_book::price_scaling(&b));
+        let quote_spent = math::qty_to_quote(base_out, 1_000_000, book::price_scaling(&b));
         let fee = quote_fee::fee_from_scaled_rate(taker_rate, quote_spent);
 
         // Nothing is left undeployed beyond the input the level's own price
@@ -92,7 +86,7 @@ module triex::coin_book_dry_run_tests {
     /// no one collected — a phantom half-spread on the bid side.
     fun a_round_trip_costs_exactly_two_taker_fees() {
         let mut test = begin(OWNER);
-        let mut b = coin_book::empty(test.ctx());
+        let mut b = book::empty(test.ctx());
         rest(&mut b, 1_000_000, 10_000_000_000_000, false);
 
         let taker_rate = 22_000_000; // 2.20%, where the old gap was widest
@@ -100,14 +94,14 @@ module triex::coin_book_dry_run_tests {
         let (base_out, quote_left) = b.get_quantity_out(0, input, taker_rate, 0);
 
         // Sell the base straight back into a bid at the same price.
-        let mut b2 = coin_book::empty(test.ctx());
+        let mut b2 = book::empty(test.ctx());
         rest(&mut b2, 1_000_000, 10_000_000_000_000, true);
         let (base_left, quote_out) = b2.get_quantity_out(base_out, 0, taker_rate, 0);
         assert!(base_left == 0, 0);
 
         let leg = quote_fee::fee_from_scaled_rate(
             taker_rate,
-            math::qty_to_quote(base_out, 1_000_000, coin_book::price_scaling(&b)),
+            math::qty_to_quote(base_out, 1_000_000, book::price_scaling(&b)),
         );
         // Everything the round trip did not return is fee, and it is exactly two
         // of them. Under the multiplier the bid leg also held back 0.25x its fee
@@ -137,7 +131,7 @@ module triex::coin_book_dry_run_tests {
     /// Cross the book at the levels' own price with an immediate-or-cancel taker
     /// and settle it the way `place_order_int` does.
     fun take(b: &mut Book, qty: u64, is_bid: bool): OrderInfo {
-        let mut oi = coin_order_info::new(
+        let mut oi = order_info::new(
             id_from_address(@0x1),
             id_from_address(@0xB1),
             @0xB,
@@ -152,7 +146,7 @@ module triex::coin_book_dry_run_tests {
             constants::max_u64(),
             false,
             0,
-            coin_book::price_scaling(b),
+            book::price_scaling(b),
         );
         b.create_order(&mut oi, 0);
         oi.calculate_partial_fill_balances(DUST_RATE, 9_000_000);
@@ -170,7 +164,7 @@ module triex::coin_book_dry_run_tests {
     /// floored fees, and the per-fill amounts the events report add up to it.
     fun a_sweep_of_small_fills_pays_the_fee_on_their_sum() {
         let mut test = begin(OWNER);
-        let mut b = coin_book::empty(test.ctx());
+        let mut b = book::empty(test.ctx());
         rest_dust_levels(&mut b, false);
 
         let oi = take(&mut b, DUST_LEVELS * DUST_LEVEL_BASE, true);
@@ -199,7 +193,7 @@ module triex::coin_book_dry_run_tests {
     /// floors to 88.
     fun bid_dry_run_on_fragmented_liquidity_matches_settlement() {
         let mut test = begin(OWNER);
-        let mut b = coin_book::empty(test.ctx());
+        let mut b = book::empty(test.ctx());
         rest_dust_levels(&mut b, false);
 
         let input = 2_000;
@@ -224,7 +218,7 @@ module triex::coin_book_dry_run_tests {
     /// out exactly that.
     fun ask_dry_run_on_fragmented_liquidity_matches_settlement() {
         let mut test = begin(OWNER);
-        let mut b = coin_book::empty(test.ctx());
+        let mut b = book::empty(test.ctx());
         rest_dust_levels(&mut b, true);
 
         let input = DUST_LEVELS * DUST_LEVEL_BASE;

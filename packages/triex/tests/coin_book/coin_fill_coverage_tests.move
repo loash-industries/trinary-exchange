@@ -2,7 +2,7 @@
 module triex::coin_fill_coverage_tests {
     use std::unit_test::assert_eq;
     use sui::object::id_from_address;
-    use triex::{balances, coin_fill::{Self as fill, Fill}, quote_fee};
+    use triex::{balances, fill::{Self, Fill}, quote_fee};
 
     const MAKER_FEE_RATE: u64 = 18_000_000;
     const RETENTION_BPS: u64 = 2_500;

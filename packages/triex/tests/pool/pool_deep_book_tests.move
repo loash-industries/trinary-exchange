@@ -4,7 +4,7 @@
 /// whole side lives inline and the `BigVector` behind it is never touched. That is
 /// fine for what those suites test — fee arithmetic, escrow, settlement — but it
 /// means the layer where money moves has no coverage of the buffer/tree seam at
-/// all. A probe confirms it: instrumenting `coin_book::spill` to abort makes no
+/// all. A probe confirms it: instrumenting `book::spill` to abort makes no
 /// `tests/pool/` test fail, at any buffer capacity.
 ///
 /// This module closes that gap, and it does so by asserting one property rather
@@ -40,7 +40,7 @@ module triex::pool_deep_book_tests {
     const ALICE: address = @0xAAAA;
     const BOB: address = @0xBBBB;
 
-    /// Comfortably past `coin_book`'s `HOT_CAPACITY`, and inside `MAX_OPEN_ORDERS`
+    /// Comfortably past the book's hot capacity (16), and inside `MAX_OPEN_ORDERS`
     /// (100) so one account can hold the whole side.
     const DEEP: u64 = 80;
 

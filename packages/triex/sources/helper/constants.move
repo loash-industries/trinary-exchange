@@ -58,16 +58,15 @@ module triex::constants {
     // Maximum number of open orders per trading account
     const MAX_OPEN_ORDERS: u64 = 100;
 
-    // Big vector params, used by the coin pool book (`triex::coin_book`).
+    // Big vector params for `triex::book` (both pool kinds).
     const MAX_SLICE_SIZE: u64 = 16;
     const MAX_FAN_OUT: u64 = 64;
 
-    // Per-side order-id sequence seeds for the coin pool book. Key order is what
+    // Per-side order-id sequence seeds for `triex::book`. Key order is what
     // gives `BigVector` iteration price-time priority, so the two counters run in
     // opposite directions: bids descend from the top of the range (the bid side is
     // walked from `max_slice` backwards, so an older order must sort higher),
-    // asks ascend from the bottom. Multicoin pools use a single ascending serial
-    // instead and ignore both.
+    // asks ascend from the bottom.
     const START_BID_ORDER_ID: u64 = ((1u128 << 64) - 1) as u64;
     const START_ASK_ORDER_ID: u64 = 1;
 

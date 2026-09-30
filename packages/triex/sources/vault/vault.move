@@ -1,12 +1,10 @@
 /// Quote fee-reserve bookkeeping shared by the pool vaults: the deposit
 /// descriptor a placement hands to settlement, and the three reserve events.
 ///
-/// The coin `Vault` that used to live here moved to `triex::coin_vault` when the
-/// coin pool stack forked; `triex::multicoin_vault` holds the multicoin one. What
-/// remains is the part both genuinely share, so a reserve movement looks the same
-/// to an indexer whichever pool produced it. Order ids on these events are `u64`:
-/// they are emitted for multicoin pools, which use opaque serials. The coin stack
-/// emits the `u128`-keyed equivalents from `triex::coin_vault`.
+/// The vaults themselves live in `triex::coin_vault` and
+/// `triex::multicoin_vault`. What remains here is the part both share, so a
+/// reserve movement looks the same to an indexer whichever pool produced it.
+/// Order ids on these events are the `u128` keys of `triex::book`.
 module triex::vault {
     use std::type_name::{Self, TypeName};
     use sui::event;

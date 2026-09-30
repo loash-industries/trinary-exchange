@@ -7,8 +7,7 @@
 // `triex::`. Treat this file as a frozen dependency: upstream fixes are pulled
 // in wholesale, and any triex-local edit must be called out in review.
 //
-// Used by the coin pool stack (`triex::coin_book`) only. Multicoin pools store
-// orders in a plain `vector<Order>` and never reach this module.
+// Backs `triex::book`, the order book of both coin and multicoin pools.
 
 /// BigVector is an arbitrary sized vector-like data structure,
 /// implemented using an on-chain B+ Tree to support almost constant

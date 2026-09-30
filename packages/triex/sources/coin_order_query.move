@@ -1,12 +1,10 @@
 /// This module defines the OrderPage struct and its methods to iterate over orders in a pool.
 ///
-/// Coin-pool fork of the former `triex::order_query`, which was coin-only to
-/// begin with (multicoin pools answer order queries inline in
+/// Coin pools only (multicoin pools answer order queries inline in
 /// `triex::multicoin_pool`). Pagination walks `BigVector` slices by key, so
-/// seeking to an anchor is O(log n) rather than the linear scan the vector book
-/// needed.
+/// seeking to an anchor is O(log n).
 module triex::coin_order_query {
-    use triex::{coin_order::Order, pool::Pool};
+    use triex::{order::Order, pool::Pool};
 
     /// === Structs ===
     public struct OrderPage has drop {
@@ -37,7 +35,7 @@ module triex::coin_order_query {
     /// page: there is no position past it to resume from. Unlike the vector
     /// implementation, no anchor ever restarts from the top of the book.
     ///
-    /// The walk runs on `coin_book::Cursor`, which spans the inline top-of-book
+    /// The walk runs on `book::Cursor`, which spans the inline top-of-book
     /// buffer and the `BigVector` behind it as one sequence, so a page that starts at
     /// the best price reads no dynamic field until it runs past the buffer.
     ///

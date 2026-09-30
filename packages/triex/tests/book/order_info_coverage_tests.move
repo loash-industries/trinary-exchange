@@ -223,7 +223,7 @@ module triex::order_info_coverage_tests {
             constants::live(),
             constants::max_u64(),
         );
-        assert!(info.match_maker(&mut maker, 0));
+        assert!(info.match_maker(&mut maker, 0).continues());
         assert_eq!(info.executed_quantity(), QUANTITY);
         assert_eq!(info.status(), constants::filled());
         assert_eq!(info.fills().length(), 1);

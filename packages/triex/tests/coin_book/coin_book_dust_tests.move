@@ -16,7 +16,7 @@
 #[test_only]
 module triex::coin_book_dust_tests {
     use sui::test_scenario::{begin, Scenario};
-    use triex::{coin_book::{Self, Book}, coin_order_info::{Self, OrderInfo}, constants, math};
+    use triex::{book::{Self, Book}, constants, math, order_info::{Self, OrderInfo}};
 
     const OWNER: address = @0x1;
 
@@ -37,7 +37,7 @@ module triex::coin_book_dust_tests {
         market_order: bool,
         ts: u64,
     ): OrderInfo {
-        coin_order_info::new(
+        order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -107,7 +107,7 @@ module triex::coin_book_dust_tests {
     /// healthy liquidity resting behind it.
     fun dust_residue_does_not_block_the_orders_behind_it() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         // 1_999 - lot() leaves 999 resting, one unit under the bound.
         rest_dust_ask(&mut book, 1_999, &mut test);
@@ -126,7 +126,7 @@ module triex::coin_book_dust_tests {
     /// silted up with permanent blockers faster than takers clear them.
     fun an_unfillable_maker_is_retired_from_the_book() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         rest_dust_ask(&mut book, 1_999, &mut test);
         let (_, _, _, asks_before) = book.shape();
@@ -151,7 +151,7 @@ module triex::coin_book_dust_tests {
     /// stopped outright, so every worse level went with it.
     fun dust_at_the_touch_does_not_hide_worse_price_levels() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         rest_dust_ask(&mut book, 1_999, &mut test);
         rest(&mut book, CHEAP_PRICE * 10, 5_000, false, 0);
@@ -170,7 +170,7 @@ module triex::coin_book_dust_tests {
     /// direction, so this pins that the fix is not one-sided.
     fun dust_does_not_block_the_bid_side() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let _ = rest(&mut book, CHEAP_PRICE, 1_999, true, 0);
         let filled = take(&mut book, CHEAP_PRICE, lot(), false, 0);
@@ -193,7 +193,7 @@ module triex::coin_book_dust_tests {
     /// only declines to trade with it.
     fun a_healthy_maker_survives_a_taker_carrying_a_sub_bound_residue() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         rest(&mut book, CHEAP_PRICE, 1 * scaling(), false, 0);
 
@@ -217,7 +217,7 @@ module triex::coin_book_dust_tests {
     /// blocker that settlement would have filled straight through.
     fun the_quote_agrees_with_what_settlement_fills_across_dust() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         rest_dust_ask(&mut book, 1_999, &mut test);
         rest(&mut book, CHEAP_PRICE, 5_000, false, 0);
@@ -237,13 +237,13 @@ module triex::coin_book_dust_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = ::triex::coin_order::EOrderBelowMinimumSize)]
+    #[expected_failure(abort_code = ::triex::order::EOrderBelowMinimumSize)]
     /// The cheap deliberate route. `modify` used to check only that the new
     /// quantity sat between the filled and original quantities, so one modify could
     /// turn a healthy order into a blocker without waiting for a partial fill.
     fun modify_down_below_the_bound_is_rejected() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let id = rest(&mut book, CHEAP_PRICE, 2_000, false, 0);
         book.modify_order(id, 1, 0);
@@ -257,7 +257,7 @@ module triex::coin_book_dust_tests {
     /// still a legal order.
     fun modify_down_to_exactly_the_bound_is_allowed() {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty(test.ctx());
+        let mut book = book::empty(test.ctx());
 
         let id = rest(&mut book, CHEAP_PRICE, 2_000, false, 0);
         book.modify_order(id, lot(), 0);

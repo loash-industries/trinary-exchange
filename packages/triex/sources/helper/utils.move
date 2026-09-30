@@ -1,9 +1,7 @@
 /// Shared utility functions.
 ///
-/// The order-id codec here serves both pool stacks: `triex::coin_book` and
-/// `triex::book` each key their `BigVector` order storage by an encoded `u128`.
-/// It was coin-only until multicoin adopted the same layout; the two now agree on
-/// the id format, though the books themselves remain forked.
+/// The order-id codec here keys `triex::book`'s `BigVector` order storage by an
+/// encoded `u128`, for coin and multicoin pools alike.
 /// `pop_until` / `pop_n` back `triex::big_vector`.
 module triex::utils {
     /// Pop elements from the back of `v` until its length equals `n`,
@@ -37,8 +35,7 @@ module triex::utils {
     /// last 64 bits are the per-side sequence number
     ///
     /// Key order is what gives the book price-time priority, so the sequence
-    /// counters run in opposite directions per side — see `coin_book::get_order_id`
-    /// and `book::get_order_id`.
+    /// counters run in opposite directions per side — see `book::get_order_id`.
     public(package) fun encode_order_id(is_bid: bool, price: u64, order_id: u64): u128 {
         if (is_bid) {
             ((price as u128) << 64) + (order_id as u128)

@@ -1,5 +1,3 @@
-/// Slice-size benchmark against the *measured* DeepBook v3 mainnet workload.
-///
 /// Every distribution below was taken from live mainnet on 2026-09-14: 25,000
 /// `OrderInfo` events (order creations) over a 19-minute window, plus the complete
 /// SUI/USDC book reconstructed from its `BigVector` slices. Nothing here is guessed.
@@ -26,7 +24,7 @@
 #[test_only]
 module triex::coin_book_workload_tests {
     use sui::test_scenario::begin;
-    use triex::{coin_book::{Self, Book}, coin_order_info, constants};
+    use triex::{book::{Self, Book}, constants, order_info};
 
     const OWNER: address = @0x1;
 
@@ -103,7 +101,7 @@ module triex::coin_book_workload_tests {
     }
 
     fun place(book: &mut Book, price: u64, quantity: u64, is_bid: bool, ts: u64, ps: u64): u128 {
-        let mut info = coin_order_info::new(
+        let mut info = order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -128,7 +126,7 @@ module triex::coin_book_workload_tests {
     /// An ask priced through the live surface, sized to consume exactly `reach`
     /// makers. IOC so any unmatched remainder never rests.
     fun take(book: &mut Book, reach: u64, ts: u64, ps: u64) {
-        let mut info = coin_order_info::new(
+        let mut info = order_info::new(
             object::id_from_address(@0xB00C),
             object::id_from_address(@0xACC7),
             OWNER,
@@ -232,7 +230,7 @@ module triex::coin_book_workload_tests {
         price_scaling: u64,
     ) {
         let mut test = begin(OWNER);
-        let mut book = coin_book::empty_with_geometry_scaled(
+        let mut book = book::empty_with_geometry_scaled(
             max_slice_size,
             max_fan_out,
             price_scaling,
@@ -316,16 +314,15 @@ module triex::coin_book_workload_tests {
     #[test]
     fun workload_shallow_slice_64() { run(64, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
-    // The inline top-of-book buffer holds the best `HOT_CAPACITY` (32) orders of the
-    // side, so a ~26-order shallow book leaves very little in the tree at all — one
-    // leaf at slice 32 *and* at slice 16, where the whole 26 once needed two. Only
-    // slice 8 still splits. These expectations track the buffer size: raising
-    // `HOT_CAPACITY` moves orders out of the tree and flattens it.
+    // The inline top-of-book buffer holds the best `HOT_CAPACITY` (16) orders of the
+    // side, so what is left of a shallow book in the tree fits one leaf at slice 32
+    // but splits at slices 16 and 8. These expectations track the buffer size:
+    // raising `HOT_CAPACITY` moves orders out of the tree and flattens it.
     #[test]
     fun workload_shallow_slice_32() { run(32, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
 
     #[test]
-    fun workload_shallow_slice_16() { run(16, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 0) }
+    fun workload_shallow_slice_16() { run(16, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }
 
     #[test]
     fun workload_shallow_slice_8() { run(8, 64, SHALLOW_TAIL, SHALLOW_BAND, OPS, 1) }
