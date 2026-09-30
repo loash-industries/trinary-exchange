@@ -2140,4 +2140,25 @@ module triex::trading_account_tests {
         owner_uid.delete();
         test.end();
     }
+
+    /// TRIEX-158: nobody can sign as an object's address, so the caps on a UID-owned
+    /// account cannot be revoked.
+    #[test, expected_failure(abort_code = trading_account::EInvalidOwner)]
+    fun test_new_with_uid_owner_and_caps_caps_not_revocable() {
+        let mut test = begin(OWNER);
+
+        test.next_tx(ALICE);
+        let mut owner_uid = object::new(test.ctx());
+        let (mut trading_account, deposit_cap, withdraw_cap, trade_cap) =
+            trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+
+        trading_account.revoke_trade_cap(&object::id(&trade_cap), test.ctx());
+
+        destroy(deposit_cap);
+        destroy(withdraw_cap);
+        destroy(trade_cap);
+        destroy(trading_account);
+        owner_uid.delete();
+        test.end();
+    }
 }

@@ -193,11 +193,16 @@ module triex::trading_account {
     }
 
     /// Create a new trading account owned by the object `owner`, and return it with
-    /// a `DepositCap`, `WithdrawCap` and `TradeCap`. Only the module that defines an
-    /// object can lend out `&mut UID` to it, and receiving caps sent to that object
-    /// needs the same `&mut UID`, so returning them here gives the caller no more
-    /// power than `new_with_custom_owner_and_caps` would. It saves the second
-    /// transaction that receiving the caps would take.
+    /// a `DepositCap`, `WithdrawCap` and `TradeCap`. Whoever holds `&mut UID` to an
+    /// object can already take caps sent to it (`transfer::public_receive`), so
+    /// returning them here gives the caller no more power than
+    /// `new_with_custom_owner_and_caps` would. It saves the second transaction that
+    /// receiving the caps would take.
+    ///
+    /// Nobody can sign as an object's address, so owner-only functions (`revoke_trade_cap`,
+    /// `mint_*_cap`, `withdraw`, ...) can never be called on this account. The returned
+    /// caps are the only way to control it and cannot be revoked or replaced: store
+    /// them where only the owning module can reach them.
     /// #ref:functions
     public fun new_with_uid_owner_and_caps(
         owner: &mut UID,
