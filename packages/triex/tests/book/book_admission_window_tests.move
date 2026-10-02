@@ -5,14 +5,19 @@
 ///
 /// Under one-way spill an order may travel buffer → tree and never back. The
 /// buffer is therefore populated only by *admission* of newly placed orders, and
-/// `inject_limit_order` is the whole of that logic. It has three branches:
+/// `inject_limit_order` is the whole of that logic. It has four branches:
 ///
 /// ```text
 ///   hot_len == 0 && tree empty      -> ADMIT                        (branch A)
 ///   hot_len == 0 && tree non-empty  -> ADMIT iff better(key, best_cold)   (W)
 ///   hot_len >  0                    -> ADMIT iff better(key, worst_hot)   (branch C)
 ///                                      then spill if now over capacity
+///   otherwise, tree empty and room  -> ADMIT at the worst end        (branch B)
 /// ```
+///
+/// Branch **B** keeps a thin book entirely inline: with nothing behind the buffer,
+/// an order behind its worst still beats the (empty) tree, so admitting it at
+/// index 0 is sound and saves minting the side's first tree slice.
 ///
 /// Branch **W** is the promotion window: the only place in the module that reads
 /// the tree in order to decide buffer membership. It opens whenever the buffer
@@ -236,10 +241,13 @@ module triex::book_admission_window_tests {
     /// ranks `h .. h+t-1`, so adjacent ranks are always `STRIDE` apart.
     ///
     /// The buffer is built worst-price-first so every placement beats the current
-    /// worst resident and is admitted; the tree is then built from prices worse
-    /// than all of them, so each goes straight behind. Neither step spills, which
-    /// is asserted, because a construction that spilled would not produce the
-    /// occupancy it claims.
+    /// worst resident and is admitted. A tree order only goes behind once the
+    /// buffer is full or the tree is already stocked (branch B admits it inline
+    /// otherwise), so the buffer is first topped up to capacity with fillers priced
+    /// between ranks `h-1` and `h`, the tree is built from prices worse than all of
+    /// them, and the fillers are cancelled. Every step goes through the public
+    /// placement and cancel paths, and none spills, which is asserted, because a
+    /// construction that spilled would not produce the occupancy it claims.
     fun build(test: &mut Scenario, is_bid: bool, h: u64, t: u64): (Book, vector<u128>) {
         let mut book = book::empty_multicoin(test.ctx());
         let mut keys = vector[];
@@ -251,12 +259,24 @@ module triex::book_admission_window_tests {
         };
         assert!(hot_len(&book, is_bid) == h);
         assert!(tree_len(&book, is_bid) == 0);
+        if (t == 0) return (book, keys);
+
+        // One unit apart, so they sit strictly between ranks `h-1` and `h`.
+        let mut fillers = vector[];
+        while (hot_len(&book, is_bid) < HOT_CAPACITY) {
+            let offset = fillers.length() + 1;
+            fillers.push_back(rest(&mut book, worsen(is_bid, px(is_bid, h - 1), offset), is_bid));
+        };
 
         let mut j = 0;
         while (j < t) {
             keys.push_back(rest(&mut book, px(is_bid, h + j), is_bid));
             j = j + 1;
         };
+        assert!(hot_len(&book, is_bid) == HOT_CAPACITY);
+        assert!(tree_len(&book, is_bid) == t);
+
+        fillers.do!(|id| book.cancel_order(id));
         assert!(hot_len(&book, is_bid) == h);
         assert!(tree_len(&book, is_bid) == t);
 
@@ -345,14 +365,16 @@ module triex::book_admission_window_tests {
 
     /// The specification, written from the invariant rather than from the code: an
     /// order belongs inline exactly when it beats everything already inline, or —
-    /// with an empty buffer — when it beats the whole tree. Equal price means later
-    /// arrival, which is strictly worse, so every comparison here is strict.
+    /// with an empty buffer — when it beats the whole tree, or when there is no
+    /// tree at all and the buffer has room for it. Equal price means later arrival,
+    /// which is strictly worse, so every comparison here is strict.
     fun spec_admits(book: &Book, is_bid: bool, h: u64, t: u64, price: u64): bool {
         if (h == 0 && t == 0) return true;
         if (h == 0) {
             let tree = tree_ids(book, is_bid);
             return better_px(is_bid, price, book.get_order(tree[0]).price())
         };
+        if (t == 0 && h < HOT_CAPACITY) return true;
         let hot = hot_ids(book, is_bid);
 
         better_px(is_bid, price, book.get_order(hot[0]).price())

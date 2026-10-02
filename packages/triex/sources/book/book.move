@@ -83,6 +83,15 @@ module triex::book {
     /// path was the largest single improvement in the multicoin storage experiment
     /// (42–47% off a 10-order sweep).
     ///
+    /// **A side with no tree stays inline.** While a side's tree is empty, an order
+    /// behind the buffer's worst still beats the whole (empty) tree, so it joins the
+    /// buffer's worst end as long as there is room. A side therefore holds its first
+    /// `HOT_CAPACITY` orders inline whatever order they arrive in — they are by rank
+    /// the orders nearest the touch, the ones the buffer exists for — and only starts
+    /// a tree on its first overflow. Sending them to the tree instead would mint the
+    /// side's first slice, a whole dynamic-field object, to hold an order the buffer
+    /// had room for.
+    ///
     /// On genuine overflow a side spills down to its spill target rather than back to
     /// capacity, leaving headroom for the placements that follow. Held exactly *at*
     /// capacity the buffer would spill on every top-of-book placement, paying a tree
@@ -844,14 +853,25 @@ module triex::book {
         };
 
         // The buffer holds the best orders of the side, so anything not better than
-        // its worst belongs behind it, in the tree.
+        // its worst belongs at or behind the seam.
         let worst_hot = if (is_bid) {
             self.hot_bids.borrow(0).order_id()
         } else {
             self.hot_asks.borrow(0).order_id()
         };
         if (!better(is_bid, key, worst_hot)) {
-            if (is_bid) self.bids.insert(key, order) else self.asks.insert(key, order);
+            // With nothing behind the buffer and room in it, the new worst order
+            // still beats the (empty) tree, so it joins the buffer's worst end.
+            // Sending it to the tree instead would mint the side's first slice, a
+            // whole dynamic-field object, to hold a single order the buffer had
+            // space for. Keys are unique and this one is no better than the worst,
+            // so index 0 keeps the buffer sorted and puts it behind equal prices.
+            let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
+            if (cold_empty && hot_len < HOT_CAPACITY) {
+                if (is_bid) self.hot_bids.insert(order, 0) else self.hot_asks.insert(order, 0);
+            } else {
+                if (is_bid) self.bids.insert(key, order) else self.asks.insert(key, order);
+            };
             return
         };
 

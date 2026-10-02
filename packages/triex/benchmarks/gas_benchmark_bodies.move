@@ -349,6 +349,60 @@ module triex::gas_benchmark_bodies {
 
     public(package) fun bench_depth_10() { bench_place_bids(10) }
 
+    /// Rest `count` bids at *descending* prices from one account: the first is the
+    /// best bid and every later one lands behind it. The opposite of
+    /// `bench_place_bids`, and the placement a thin book actually sees — a second
+    /// quote behind the touch. Differencing 2 against 1 prices the first order
+    /// behind the best on a one-order book, the case that used to mint the side's
+    /// first tree slice; 10 against 2 prices each further one.
+    fun bench_place_bids_behind(count: u64) {
+        let mut test = begin(OWNER);
+        let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
+        let trading_account_id_alice = create_acct_and_share_with_funds(
+            ALICE,
+            1000000 * constants::float_scaling(),
+            &mut test,
+        );
+        let pool_id = pool_test_utils::setup_pool_with_default_fees_and_reference_pool<
+            SUI,
+            USDC,
+            SUI,
+            CRED,
+        >(
+            ALICE,
+            registry_id,
+            trading_account_id_alice,
+            &mut test,
+        );
+        create_acct_and_share_with_funds(BOB, 1000000 * constants::float_scaling(), &mut test);
+
+        let quantity = 1 * constants::float_scaling();
+        let mut i = 0;
+        while (i < count) {
+            pool_test_utils::place_limit_order<SUI, USDC>(
+                ALICE,
+                pool_id,
+                trading_account_id_alice,
+                constants::no_restriction(),
+                constants::self_matching_allowed(),
+                (count - i) * constants::float_scaling(),
+                quantity,
+                true,
+                constants::max_u64(),
+                &mut test,
+            );
+            i = i + 1;
+        };
+
+        end(test);
+    }
+
+    public(package) fun bench_behind_best_1() { bench_place_bids_behind(1) }
+
+    public(package) fun bench_behind_best_2() { bench_place_bids_behind(2) }
+
+    public(package) fun bench_behind_best_10() { bench_place_bids_behind(10) }
+
     public(package) fun bench_depth_40() { bench_place_bids(40) }
 
     public(package) fun bench_depth_80() { bench_place_bids(80) }

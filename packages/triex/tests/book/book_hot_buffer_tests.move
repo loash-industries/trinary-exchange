@@ -215,8 +215,10 @@ module triex::book_hot_buffer_tests {
     }
 
     #[test]
-    /// The mirror case: every placement is worse than the last, so after the first
-    /// the buffer is never the destination and orders go straight to the tree.
+    /// The mirror case: every placement is worse than the last. While the tree is
+    /// empty each one joins the buffer's worst end; once the buffer is full they go
+    /// straight to the tree, and stay there — after that the tree is no longer
+    /// empty, so nothing behind the seam can be admitted inline.
     fun worsening_prices_land_behind_the_buffer() {
         let mut test = begin(OWNER);
         let mut book = book::empty_multicoin(test.ctx());
@@ -229,9 +231,71 @@ module triex::book_hot_buffer_tests {
         };
 
         assert_ordered(&book, true, 40);
-        // Nothing ever beat the first order, so the buffer never grew past it —
-        // the "worst-price-last" build.
-        assert!(hot_len(&book, true) == 1);
+        // The buffer filled to capacity from the back and never spilled: nothing
+        // overflowed it, the 17th order simply had no room.
+        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(book.bids().length() == 40 - HOT_CAPACITY);
+
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// The thin-book case this admission rule exists for: a second order behind the
+    /// best, on a side whose tree is empty. It must rest inline rather than create
+    /// the side's first tree slice, on both sides and including an equal price,
+    /// which arrives later and so sits behind the order it ties with.
+    fun behind_the_best_on_an_empty_tree_stays_inline() {
+        let mut test = begin(OWNER);
+        let mut book = book::empty_multicoin(test.ctx());
+
+        let best_bid = rest(&mut book, price_at(10), true);
+        let behind_bid = rest(&mut book, price_at(5), true);
+        let tied_bid = rest(&mut book, price_at(5), true);
+        assert!(hot_len(&book, true) == 3);
+        assert!(book.bids().is_empty());
+        assert!(read_side(&book, true) == vector[best_bid, behind_bid, tied_bid]);
+        assert_invariant(&book, true);
+
+        let best_ask = rest(&mut book, price_at(20), false);
+        let behind_ask = rest(&mut book, price_at(30), false);
+        let tied_ask = rest(&mut book, price_at(30), false);
+        assert!(hot_len(&book, false) == 3);
+        assert!(book.asks().is_empty());
+        assert!(read_side(&book, false) == vector[best_ask, behind_ask, tied_ask]);
+        assert_invariant(&book, false);
+
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// Once the tree holds anything, a placement behind the buffer goes to the tree
+    /// even with room inline: admitting it would need the tree's best key to prove
+    /// it still beats the tree, a read this path deliberately does not pay.
+    fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree() {
+        let mut test = begin(OWNER);
+        let mut book = book::empty_multicoin(test.ctx());
+
+        // Fill the buffer from the back, then one more lands in the tree.
+        let mut i = HOT_CAPACITY + 1;
+        while (i > 0) {
+            rest(&mut book, price_at(100 + i), true);
+            i = i - 1;
+        };
+        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(book.bids().length() == 1);
+
+        // Free a slot by cancelling the best order, then quote behind the buffer.
+        let best = book.hot_bids()[HOT_CAPACITY - 1].order_id();
+        book.cancel_order(best);
+        assert!(hot_len(&book, true) == HOT_CAPACITY - 1);
+
+        rest(&mut book, price_at(0), true);
+        assert!(hot_len(&book, true) == HOT_CAPACITY - 1);
+        assert!(book.bids().length() == 2);
+        assert_invariant(&book, true);
+        assert_ordered(&book, true, HOT_CAPACITY + 1);
 
         book.drop_for_testing();
         test.end();

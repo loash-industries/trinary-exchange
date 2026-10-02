@@ -310,8 +310,9 @@ module triex::coin_book_invariant_tests {
     }
 
     #[test]
-    /// The same depth built the other way, which leaves the buffer holding one
-    /// order and the whole side served from the tree.
+    /// The same depth built the other way: each order is behind the last, so the
+    /// buffer fills from its worst end while the tree is empty, and the remaining
+    /// orders all go behind it once it is full.
     fun deep_side_worst_price_last() {
         let mut test = begin(OWNER);
         let mut book = book::empty(test.ctx());
@@ -324,7 +325,8 @@ module triex::coin_book_invariant_tests {
 
         assert_side(&book, false);
         assert!(book.side_length(false) == 300);
-        assert!(book.hot_asks().length() == 1);
+        assert!(book.hot_asks().length() == 16);
+        assert!(book.asks().length() == 300 - 16);
 
         book.drop_for_testing();
         test.end();

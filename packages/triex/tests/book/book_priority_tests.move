@@ -182,17 +182,14 @@ module triex::book_priority_tests {
         assert!(side(&book, true) == bids);
         assert!(side(&book, false) == asks);
 
-        // And the queue really does span the seam, though not where one might
-        // guess. At a single price no newcomer can beat the buffer's resident, so
-        // the buffer holds exactly *one* order and everything after it goes to the
-        // tree — the extreme of the "worst-price-last" build.
-        // A market where everyone quotes the same price gets no benefit from the
-        // inline buffer at all, which is worth knowing and is asserted rather than
-        // assumed.
-        assert!(book.hot_bids().length() == 1);
-        assert!(book.bids().length() == 24);
-        assert!(book.hot_asks().length() == 1);
-        assert!(book.asks().length() == 24);
+        // And the queue really does span the seam. At a single price no newcomer
+        // beats the buffer's worst, but while the tree is empty each one still
+        // joins the buffer's worst end, so the first 16 arrivals queue inline and
+        // only the rest go to the tree — behind them, in arrival order.
+        assert!(book.hot_bids().length() == 16);
+        assert!(book.bids().length() == 9);
+        assert!(book.hot_asks().length() == 16);
+        assert!(book.asks().length() == 9);
 
         book.drop_for_testing();
         test.end();
@@ -200,8 +197,8 @@ module triex::book_priority_tests {
 
     #[test]
     /// Time priority within a level, with a *full* buffer sitting in front of it.
-    /// The previous test leaves the buffer holding one order; this one fills the
-    /// buffer with better prices first, so the whole same-price queue forms inside
+    /// The previous test splits one same-price queue across the seam; this one fills
+    /// the buffer with better prices first, so the whole same-price queue forms inside
     /// the tree and its ordering is decided entirely by `big_vector` key order
     /// rather than by the inline vector's insert position.
     fun same_price_queue_behind_a_full_buffer_keeps_arrival_order() {
