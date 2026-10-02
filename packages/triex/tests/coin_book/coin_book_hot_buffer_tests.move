@@ -164,8 +164,9 @@ module triex::coin_book_hot_buffer_tests {
     }
 
     #[test]
-    /// The mirror case: every placement is worse than the last, so after the first
-    /// the buffer is never the destination and orders go straight to the tree.
+    /// The mirror case: every placement is worse than the last. While the tree is
+    /// empty each one joins the buffer's worst end; once the buffer is full they go
+    /// straight to the tree.
     fun worsening_prices_land_behind_the_buffer() {
         let mut test = begin(OWNER);
         let mut book = book::empty(test.ctx());
@@ -178,6 +179,36 @@ module triex::coin_book_hot_buffer_tests {
         };
 
         assert_ordered(&book, true, 40);
+        assert!(book.hot_bids().length() == HOT_CAPACITY);
+        assert!(book.bids().length() == 40 - HOT_CAPACITY);
+
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
+    /// A second quote behind the touch on a side whose tree is empty rests inline
+    /// rather than creating the side's first tree slice — on both sides, and for an
+    /// equal price, which arrives later and so queues behind the order it ties.
+    fun behind_the_best_on_an_empty_tree_stays_inline() {
+        let mut test = begin(OWNER);
+        let mut book = book::empty(test.ctx());
+
+        let best_bid = rest(&mut book, price_at(10), true);
+        let behind_bid = rest(&mut book, price_at(5), true);
+        let tied_bid = rest(&mut book, price_at(5), true);
+        assert!(book.hot_bids().length() == 3);
+        assert!(book.bids().is_empty());
+        assert!(read_side(&book, true) == vector[best_bid, behind_bid, tied_bid]);
+        assert_invariant(&book, true);
+
+        let best_ask = rest(&mut book, price_at(20), false);
+        let behind_ask = rest(&mut book, price_at(30), false);
+        let tied_ask = rest(&mut book, price_at(30), false);
+        assert!(book.hot_asks().length() == 3);
+        assert!(book.asks().is_empty());
+        assert!(read_side(&book, false) == vector[best_ask, behind_ask, tied_ask]);
+        assert_invariant(&book, false);
 
         book.drop_for_testing();
         test.end();
