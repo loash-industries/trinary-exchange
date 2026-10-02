@@ -15,6 +15,9 @@ module triex::fee_policy_event_tests {
             FeePolicy,
             DefaultFeeClassSet,
             DefaultOperatorShareClassSet,
+            OperatorBeneficiaryChanged,
+            OperatorBeneficiaryDestroyed,
+            OperatorBeneficiaryRegistered,
             OperatorShareClassUpdated,
             PoolFeeClassSet
         },
@@ -208,6 +211,53 @@ module triex::fee_policy_event_tests {
         return_shared(policy);
         destroy(cap);
         destroy(collection_cap);
+        end(test);
+    }
+
+    /// Stands in for the audited adapter package's witness.
+    public struct Adapter has drop {}
+
+    /// A collection's payout history must read off the event stream alone:
+    /// registration, every rotation with both ends, and an admin destroy.
+    #[test]
+    fun the_beneficiary_lifecycle_is_on_the_event_stream() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let collection = object::id_from_address(@0xC0FFEE);
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(collection, @0xB0B, Adapter {});
+        // A no-op second registration announces nothing.
+        policy.register_operator_beneficiary_with_witness(collection, @0xBAD, Adapter {});
+        policy.update_operator_beneficiary_with_witness(collection, @0xCAFE, Adapter {});
+        policy.update_operator_beneficiary_with_witness(collection, @0xD00D, Adapter {});
+        policy.destroy_operator_beneficiary(collection, &cap);
+        // Destroying an absent mapping announces nothing either.
+        policy.destroy_operator_beneficiary(collection, &cap);
+
+        let registered = event::events_by_type<OperatorBeneficiaryRegistered>();
+        assert_eq!(registered.length(), 1);
+        let (registered_collection, beneficiary) = registered[0].operator_beneficiary_registered_parts();
+        assert_eq!(registered_collection, collection);
+        assert_eq!(beneficiary, @0xB0B);
+
+        let changed = event::events_by_type<OperatorBeneficiaryChanged>();
+        assert_eq!(changed.length(), 2);
+        let (changed_collection, previous, beneficiary) = changed[0].operator_beneficiary_changed_parts();
+        assert_eq!(changed_collection, collection);
+        assert_eq!(previous, @0xB0B);
+        assert_eq!(beneficiary, @0xCAFE);
+        let (_, previous, beneficiary) = changed[1].operator_beneficiary_changed_parts();
+        assert_eq!(previous, @0xCAFE);
+        assert_eq!(beneficiary, @0xD00D);
+
+        let destroyed = event::events_by_type<OperatorBeneficiaryDestroyed>();
+        assert_eq!(destroyed.length(), 1);
+        assert_eq!(destroyed[0].operator_beneficiary_destroyed_collection_id(), collection);
+
+        destroy(cap);
+        destroy(policy);
         end(test);
     }
 }
