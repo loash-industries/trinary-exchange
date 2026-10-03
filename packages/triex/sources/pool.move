@@ -563,6 +563,7 @@ module triex::pool {
         self
             .vault
             .settle_trading_account(settled, owed, trading_account, trade_proof, option::none());
+        self.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
         // A modify-down retains its share on the same terms as a cancel, so
         // requoting down cannot dodge the retention.
         self.vault.recognize_locked_maker_fees(fee_release.release_retained());
@@ -615,6 +616,7 @@ module triex::pool {
         self
             .vault
             .settle_trading_account(settled, owed, trading_account, trade_proof, option::none());
+        self.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
         // The retained share stops being a user claim and becomes revenue the
         // admin may sweep.
         self.vault.recognize_locked_maker_fees(fee_release.release_retained());
@@ -676,6 +678,10 @@ module triex::pool {
     }
 
     /// Withdraw settled amounts to the `trading_account`.
+    ///
+    /// Does not fold pending maker turnover, unlike its `multicoin_pool` twin:
+    /// it takes no `TxContext`, and adding one would break upgrade
+    /// compatibility. A cancel, modify or trade on this pool folds instead.
     /// #ref:functions
     public fun withdraw_settled_amounts<BaseAsset, QuoteAsset>(
         self: &mut Pool<BaseAsset, QuoteAsset>,
@@ -1701,6 +1707,10 @@ module triex::pool {
             // their own trading_account, after pricing, so the order never discounts
             // itself.
             trading_account.record_fee_turnover<QuoteAsset>(order_info.paid_fees(), ctx);
+            // Maker credits this order earned against its own resting orders were
+            // queued like any maker's; the trading_account is right here, so land
+            // them now rather than leave them to the next touch of this pool.
+            pool_inner.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
             order_info.emit_order_info();
             order_info.emit_orders_filled(clock.timestamp_ms());
             order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());
