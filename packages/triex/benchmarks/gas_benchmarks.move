@@ -91,4 +91,15 @@ module triex::gas_benchmarks {
 
     #[test]
     fun bench_cancel_all_at_depth_80() { gas_benchmark_bodies::bench_cancel_all_at_depth_80() }
+
+    // Placement behind the best bid on a thin book. Spelled out rather than numbered
+    // because `gas-benchmark.sh` filters by substring, and "_1" would match "_10".
+    #[test]
+    fun bench_behind_best_one() { gas_benchmark_bodies::bench_behind_best_1() }
+
+    #[test]
+    fun bench_behind_best_two() { gas_benchmark_bodies::bench_behind_best_2() }
+
+    #[test]
+    fun bench_behind_best_ten() { gas_benchmark_bodies::bench_behind_best_10() }
 }

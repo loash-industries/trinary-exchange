@@ -83,6 +83,15 @@ module triex::book {
     /// path was the largest single improvement in the multicoin storage experiment
     /// (42–47% off a 10-order sweep).
     ///
+    /// **A side with no tree stays inline.** While a side's tree is empty, an order
+    /// behind the buffer's worst still beats the whole (empty) tree, so it joins the
+    /// buffer's worst end as long as there is room. A side therefore holds its first
+    /// `HOT_CAPACITY` orders inline whatever order they arrive in — they are by rank
+    /// the orders nearest the touch, the ones the buffer exists for — and only starts
+    /// a tree on its first overflow. Sending them to the tree instead would mint the
+    /// side's first slice, a whole dynamic-field object, to hold an order the buffer
+    /// had room for.
+    ///
     /// On genuine overflow a side spills down to its spill target rather than back to
     /// capacity, leaving headroom for the placements that follow. Held exactly *at*
     /// capacity the buffer would spill on every top-of-book placement, paying a tree
@@ -815,14 +824,21 @@ module triex::book {
         let is_bid = order_info.is_bid();
 
         let hot_len = if (is_bid) self.hot_bids.length() else self.hot_asks.length();
-        if (hot_len == 0) {
-            let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
-            if (cold_empty) {
-                // First order on this side.
-                if (is_bid) self.hot_bids.push_back(order) else self.hot_asks.push_back(order);
-                return
-            };
+        let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
+        if (cold_empty && hot_len < HOT_CAPACITY) {
+            // With nothing behind the buffer and room in it, every order beats the
+            // (empty) tree, so it goes inline at its sorted position — the first
+            // order on a side, a new best, or one behind the worst alike. Sending a
+            // behind-the-worst order to the tree instead would mint the side's first
+            // slice, a whole dynamic-field object, to hold a single order the buffer
+            // had space for. Keys are unique, so an equal price sorts behind the
+            // orders it ties, and the buffer cannot overflow, so nothing spills.
+            let at = hot_insert_pos(if (is_bid) &self.hot_bids else &self.hot_asks, is_bid, key);
+            if (is_bid) self.hot_bids.insert(order, at) else self.hot_asks.insert(order, at);
+            return
+        };
 
+        if (hot_len == 0) {
             // Buffer drained but the tree is not. Spill is one-way, so the only way
             // to hold the hot-over-tree invariant is to admit inline exactly those
             // orders that beat the whole tree, and send the rest behind it. Reading
@@ -843,8 +859,8 @@ module triex::book {
             return
         };
 
-        // The buffer holds the best orders of the side, so anything not better than
-        // its worst belongs behind it, in the tree.
+        // The tree is stocked or the buffer is full. The buffer holds the best orders
+        // of the side, so anything not better than its worst belongs behind the seam.
         let worst_hot = if (is_bid) {
             self.hot_bids.borrow(0).order_id()
         } else {
@@ -861,6 +877,15 @@ module triex::book {
     }
 
     // === Test Helpers ===
+    #[test_only]
+    /// `HOT_CAPACITY`, for tests that probe the buffer's boundaries. Read from here
+    /// rather than mirrored, so retuning the constant moves every test with it.
+    public fun hot_capacity(): u64 { HOT_CAPACITY }
+
+    #[test_only]
+    /// `HOT_SPILL_TARGET`, for the same reason as `hot_capacity`.
+    public fun hot_spill_target(): u64 { HOT_SPILL_TARGET }
+
     #[test_only]
     /// Build a book with explicit `BigVector` geometry so a benchmark can vary slice
     /// size against a fixed workload. Production always takes the geometry from

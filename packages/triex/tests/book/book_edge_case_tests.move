@@ -12,11 +12,13 @@
 #[test_only]
 module triex::book_edge_case_tests {
     use sui::test_scenario::begin;
-    use triex::{book::{Self, Book}, constants, order_info::{Self, OrderInfo}};
+    use triex::{
+        book::{Self, Book, hot_capacity, hot_spill_target},
+        constants,
+        order_info::{Self, OrderInfo}
+    };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     const ACCOUNT: address = @0xACC7;
     const OTHER_ACCOUNT: address = @0xACC8;
@@ -146,20 +148,20 @@ module triex::book_edge_case_tests {
         let mut book = book::empty_multicoin(test.ctx());
 
         let mut i = 0;
-        while (i < HOT_CAPACITY - 1) {
+        while (i < hot_capacity() - 1) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
-        assert!(hot_len(&book, true) == HOT_CAPACITY - 1);
+        assert!(hot_len(&book, true) == hot_capacity() - 1);
         assert!(tree_len(&book, true) == 0);
 
-        rest(&mut book, price_at(HOT_CAPACITY - 1), true);
-        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        rest(&mut book, price_at(hot_capacity() - 1), true);
+        assert!(hot_len(&book, true) == hot_capacity());
         assert!(tree_len(&book, true) == 0, tree_len(&book, true));
 
-        rest(&mut book, price_at(HOT_CAPACITY), true);
-        assert!(hot_len(&book, true) == HOT_SPILL_TARGET);
-        assert!(tree_len(&book, true) == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+        rest(&mut book, price_at(hot_capacity()), true);
+        assert!(hot_len(&book, true) == hot_spill_target());
+        assert!(tree_len(&book, true) == hot_capacity() + 1 - hot_spill_target());
 
         book.drop_for_testing();
         test.end();
@@ -174,15 +176,15 @@ module triex::book_edge_case_tests {
         let mut book = book::empty_multicoin(test.ctx());
 
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
-        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(hot_len(&book, true) == hot_capacity());
 
         // Worse than everything inline.
         rest(&mut book, 1, true);
-        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(hot_len(&book, true) == hot_capacity());
         assert!(tree_len(&book, true) == 1);
 
         book.drop_for_testing();

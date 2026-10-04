@@ -64,8 +64,13 @@ module triex::gas_benchmark_bodies {
         end(test);
     }
 
-    /// Rest `count` bids at ascending prices from one account.
-    fun bench_place_bids(count: u64) {
+    /// Rest `count` bids at ascending prices from one account, so each one is the
+    /// new best bid.
+    fun bench_place_bids(count: u64) { place_bids(count, false) }
+
+    /// Rest `count` bids from one account, at ascending prices or, if `descending`,
+    /// with the first as the best bid and every later one landing behind it.
+    fun place_bids(count: u64, descending: bool) {
         let mut test = begin(OWNER);
         let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
         let trading_account_id_alice = create_acct_and_share_with_funds(
@@ -95,7 +100,7 @@ module triex::gas_benchmark_bodies {
                 trading_account_id_alice,
                 constants::no_restriction(),
                 constants::self_matching_allowed(),
-                (i + 1) * constants::float_scaling(),
+                (if (descending) count - i else i + 1) * constants::float_scaling(),
                 quantity,
                 true,
                 constants::max_u64(),
@@ -348,6 +353,16 @@ module triex::gas_benchmark_bodies {
     public(package) fun bench_churn_at_depth_300_x40() { bench_top_of_book_churn(300, 40) }
 
     public(package) fun bench_depth_10() { bench_place_bids(10) }
+
+    /// Descending placement, the one a thin book actually sees — a second quote
+    /// behind the touch. Differencing 2 against 1 prices the first order behind the
+    /// best on a one-order book, the case that used to mint the side's first tree
+    /// slice; 10 against 2 prices each further one.
+    public(package) fun bench_behind_best_1() { place_bids(1, true) }
+
+    public(package) fun bench_behind_best_2() { place_bids(2, true) }
+
+    public(package) fun bench_behind_best_10() { place_bids(10, true) }
 
     public(package) fun bench_depth_40() { bench_place_bids(40) }
 

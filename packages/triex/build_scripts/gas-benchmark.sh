@@ -78,6 +78,9 @@ BENCHES=(
   bench_swap_base_for_quote_10
   bench_ladder_1_tier
   bench_ladder_8_tiers
+  bench_behind_best_one
+  bench_behind_best_two
+  bench_behind_best_ten
 )
 
 if ! command -v sui >/dev/null 2>&1; then
@@ -139,10 +142,15 @@ for bench in "${BENCHES[@]}"; do
   NAMES+=("$bench"); RESULTS+=("$hi")
 done
 
+# A result of -1 means the bench exceeded CEILING. It reads back as unmeasured, so
+# the differentials below skip it instead of subtracting a sentinel.
 get() {
   local want="$1" i
   for i in "${!NAMES[@]}"; do
-    if [[ "${NAMES[$i]}" == "$want" ]]; then printf '%s' "${RESULTS[$i]}"; return; fi
+    if [[ "${NAMES[$i]}" == "$want" ]]; then
+      if (( RESULTS[i] >= 0 )); then printf '%s' "${RESULTS[$i]}"; fi
+      return 0
+    fi
   done
   printf ''
 }
@@ -166,6 +174,8 @@ mkt10="$(get bench_market_sweeps_10)"
 swap10="$(get bench_swap_base_for_quote_10)"
 s1="$(get bench_taker_sweeps_01)"; s10="$(get bench_taker_sweeps_10)"
 l1="$(get bench_ladder_1_tier)"; l8="$(get bench_ladder_8_tiers)"
+bb1="$(get bench_behind_best_one)"; bb2="$(get bench_behind_best_two)"
+bb10="$(get bench_behind_best_ten)"
 
 echo
 echo "derived"
@@ -202,6 +212,15 @@ if [[ -n "$m10" ]]; then
   [[ -n "$s10"   ]] && printf '  crossing limit order       %10d\n' $(( s10 - m10 ))
   [[ -n "$mkt10" ]] && printf '  market order               %10d\n' $(( mkt10 - m10 ))
   [[ -n "$swap10" ]] && printf '  manager-less swap          %10d\n' $(( swap10 - m10 ))
+fi
+
+if [[ -n "$bb1" && -n "$bb2" ]]; then
+  echo
+  echo "resting behind the best bid on a thin book:"
+  printf '  first order behind a 1-order book  %10d\n' $(( bb2 - bb1 ))
+  if [[ -n "$bb10" ]]; then
+    printf '  each of the next 8                 %10d\n' $(( (bb10 - bb2) / 8 ))
+  fi
 fi
 
 if [[ -n "$l1" && -n "$l8" ]]; then

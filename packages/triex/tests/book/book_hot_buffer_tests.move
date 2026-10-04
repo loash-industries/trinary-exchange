@@ -11,28 +11,24 @@
 /// The multicoin book spills **one way**: orders leave the buffer for the tree on
 /// overflow and never travel back. That makes an empty buffer in front of a
 /// populated tree a legal resting state rather than a missed refill, and it moves
-/// the whole burden of the invariant onto three places — the admission test in
-/// `inject_limit_order`, `spill`, and the empty-buffer-over-populated-tree branch.
-/// Nothing repairs the invariant if one of them is wrong, because there is no
-/// refill to shuffle orders back into place, so every case below re-checks it
-/// after every single operation rather than at the end.
+/// the whole burden of the invariant onto four places — the admission test in
+/// `inject_limit_order`, the tree-empty admission, `spill`, and the
+/// empty-buffer-over-populated-tree branch. Nothing repairs the invariant if one of
+/// them is wrong, because there is no refill to shuffle orders back into place, so
+/// every case below re-checks it after every single operation rather than at the
+/// end. The admission cases themselves are shared with the coin book and live in
+/// `admission_window_test_utils`.
 #[test_only]
 module triex::book_hot_buffer_tests {
     use sui::test_scenario::begin;
     use triex::{
         big_vector::slice_borrow,
-        book::{Self, Book},
+        book::{Self, Book, hot_capacity, hot_spill_target},
         constants,
         order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;
-
-    /// Mirrors `book::HOT_CAPACITY` and `book::HOT_SPILL_TARGET`, both private. A
-    /// test that silently tracked a changed capacity would stop testing the
-    /// boundary it names.
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     fun qty(): u64 { 1_000_000 }
 
@@ -117,7 +113,7 @@ module triex::book_hot_buffer_tests {
     /// arrives to repopulate it.
     fun assert_invariant(book: &Book, is_bid: bool) {
         let hot = if (is_bid) book.hot_bids() else book.hot_asks();
-        assert!(hot.length() <= HOT_CAPACITY);
+        assert!(hot.length() <= hot_capacity());
 
         // The buffer is stored worst-first, so keys must improve along it.
         let mut i = 1;
@@ -187,27 +183,27 @@ module triex::book_hot_buffer_tests {
 
         // Up to capacity, nothing should reach the tree at all.
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
-        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(hot_len(&book, true) == hot_capacity());
         assert!(book.bids().is_empty());
 
         // The next one overflows and spills down to the target.
-        rest(&mut book, price_at(HOT_CAPACITY), true);
-        assert!(hot_len(&book, true) == HOT_SPILL_TARGET);
-        assert!(book.bids().length() == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+        rest(&mut book, price_at(hot_capacity()), true);
+        assert!(hot_len(&book, true) == hot_spill_target());
+        assert!(book.bids().length() == hot_capacity() + 1 - hot_spill_target());
 
         // And then the buffer refills up to capacity again from placements alone,
         // reaching capacity before it spills a second time.
         let mut j = 1;
-        while (j <= HOT_CAPACITY - HOT_SPILL_TARGET) {
-            rest(&mut book, price_at(HOT_CAPACITY + j), true);
-            assert!(hot_len(&book, true) == HOT_SPILL_TARGET + j);
+        while (j <= hot_capacity() - hot_spill_target()) {
+            rest(&mut book, price_at(hot_capacity() + j), true);
+            assert!(hot_len(&book, true) == hot_spill_target() + j);
             j = j + 1;
         };
-        assert!(hot_len(&book, true) == HOT_CAPACITY);
+        assert!(hot_len(&book, true) == hot_capacity());
 
         assert_invariant(&book, true);
         book.drop_for_testing();
@@ -215,8 +211,10 @@ module triex::book_hot_buffer_tests {
     }
 
     #[test]
-    /// The mirror case: every placement is worse than the last, so after the first
-    /// the buffer is never the destination and orders go straight to the tree.
+    /// The mirror case: every placement is worse than the last. While the tree is
+    /// empty each one joins the buffer's worst end; once the buffer is full they go
+    /// straight to the tree, and stay there — after that the tree is no longer
+    /// empty, so nothing behind the seam can be admitted inline.
     fun worsening_prices_land_behind_the_buffer() {
         let mut test = begin(OWNER);
         let mut book = book::empty_multicoin(test.ctx());
@@ -229,9 +227,10 @@ module triex::book_hot_buffer_tests {
         };
 
         assert_ordered(&book, true, 40);
-        // Nothing ever beat the first order, so the buffer never grew past it —
-        // the "worst-price-last" build.
-        assert!(hot_len(&book, true) == 1);
+        // The buffer filled to capacity from the back and never spilled: nothing
+        // overflowed it, the 17th order simply had no room.
+        assert!(hot_len(&book, true) == hot_capacity());
+        assert!(book.bids().length() == 40 - hot_capacity());
 
         book.drop_for_testing();
         test.end();
@@ -516,7 +515,7 @@ module triex::book_hot_buffer_tests {
 
         // Quote successively better than the tree's best; all of it lands inline.
         let mut j = 1;
-        while (j <= HOT_CAPACITY) {
+        while (j <= hot_capacity()) {
             rest(&mut book, best_tree_price - j * 100, false);
             assert!(hot_len(&book, false) == j);
             assert!(book.asks().length() == tree_after_sweep);

@@ -27,11 +27,13 @@
 #[test_only]
 module triex::book_priority_tests {
     use sui::test_scenario::begin;
-    use triex::{book::{Self, Book}, constants, order_info::{Self, OrderInfo}};
+    use triex::{
+        book::{Self, Book, hot_capacity, hot_spill_target},
+        constants,
+        order_info::{Self, OrderInfo}
+    };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     fun qty(): u64 { 1_000_000 }
 
@@ -182,17 +184,14 @@ module triex::book_priority_tests {
         assert!(side(&book, true) == bids);
         assert!(side(&book, false) == asks);
 
-        // And the queue really does span the seam, though not where one might
-        // guess. At a single price no newcomer can beat the buffer's resident, so
-        // the buffer holds exactly *one* order and everything after it goes to the
-        // tree — the extreme of the "worst-price-last" build.
-        // A market where everyone quotes the same price gets no benefit from the
-        // inline buffer at all, which is worth knowing and is asserted rather than
-        // assumed.
-        assert!(book.hot_bids().length() == 1);
-        assert!(book.bids().length() == 24);
-        assert!(book.hot_asks().length() == 1);
-        assert!(book.asks().length() == 24);
+        // And the queue really does span the seam. At a single price no newcomer
+        // beats the buffer's worst, but while the tree is empty each one still
+        // joins the buffer's worst end, so the first 16 arrivals queue inline and
+        // only the rest go to the tree — behind them, in arrival order.
+        assert!(book.hot_bids().length() == 16);
+        assert!(book.bids().length() == 9);
+        assert!(book.hot_asks().length() == 16);
+        assert!(book.asks().length() == 9);
 
         book.drop_for_testing();
         test.end();
@@ -200,8 +199,8 @@ module triex::book_priority_tests {
 
     #[test]
     /// Time priority within a level, with a *full* buffer sitting in front of it.
-    /// The previous test leaves the buffer holding one order; this one fills the
-    /// buffer with better prices first, so the whole same-price queue forms inside
+    /// The previous test splits one same-price queue across the seam; this one fills
+    /// the buffer with better prices first, so the whole same-price queue forms inside
     /// the tree and its ordering is decided entirely by `big_vector` key order
     /// rather than by the inline vector's insert position.
     fun same_price_queue_behind_a_full_buffer_keeps_arrival_order() {
@@ -210,7 +209,7 @@ module triex::book_priority_tests {
 
         // Improving prices fill and overflow the buffer.
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, level() - (i + 1) * 100, true);
             i = i + 1;
         };
@@ -324,7 +323,7 @@ module triex::book_priority_tests {
 
         // Fill the buffer exactly, best price last.
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
@@ -332,13 +331,13 @@ module triex::book_priority_tests {
         let before = side(&book, true);
 
         // One more order overflows it.
-        let placed = rest(&mut book, price_at(HOT_CAPACITY), true);
+        let placed = rest(&mut book, price_at(hot_capacity()), true);
         let after = side(&book, true);
         assert_placement_kept_order(&before, &after, placed);
 
         // Exactly the tail of the old buffer moved to the tree, in order.
         let spilled = book.bids().length();
-        assert!(spilled == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+        assert!(spilled == hot_capacity() + 1 - hot_spill_target());
         let mut k = 0;
         while (k < spilled) {
             // The worst `spilled` orders were the last entries of `before`.

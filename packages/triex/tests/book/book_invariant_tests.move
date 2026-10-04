@@ -25,14 +25,12 @@ module triex::book_invariant_tests {
     use sui::test_scenario::begin;
     use triex::{
         big_vector::slice_borrow,
-        book::{Self, Book},
+        book::{Self, Book, hot_capacity, hot_spill_target},
         constants,
         order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     fun qty(): u64 { 1_000_000 }
 
@@ -97,7 +95,7 @@ module triex::book_invariant_tests {
     /// concatenation of the two with nothing lost or duplicated.
     fun assert_side(book: &Book, is_bid: bool) {
         let hot = if (is_bid) book.hot_bids() else book.hot_asks();
-        assert!(hot.length() <= HOT_CAPACITY);
+        assert!(hot.length() <= hot_capacity());
 
         let mut i = 1;
         while (i < hot.length()) {
@@ -173,7 +171,7 @@ module triex::book_invariant_tests {
             } else {
                 // Sweep. Sized to straddle the buffer boundary so some sweeps end
                 // inside it and some run off into the tree.
-                let n = 1 + draw(&mut seed, HOT_CAPACITY + 8);
+                let n = 1 + draw(&mut seed, hot_capacity() + 8);
                 let taker_is_bid = draw(&mut seed, 2) == 0;
                 let target = if (taker_is_bid) &mut live_asks else &mut live_bids;
                 if (!target.is_empty()) {
@@ -262,7 +260,7 @@ module triex::book_invariant_tests {
         // band — between the spill target it drops to and the capacity it
         // overflows at — rather than being pinned at either end.
         let hot = book.hot_asks().length();
-        assert!(hot >= HOT_SPILL_TARGET && hot <= HOT_CAPACITY, hot);
+        assert!(hot >= hot_spill_target() && hot <= hot_capacity(), hot);
         assert!(book.asks().length() == 300 - hot);
 
         book.drop_for_testing();
@@ -270,8 +268,9 @@ module triex::book_invariant_tests {
     }
 
     #[test]
-    /// The same depth built the other way, which leaves the buffer holding one
-    /// order and the whole side served from the tree.
+    /// The same depth built the other way: each order is behind the last, so the
+    /// buffer fills from its worst end while the tree is empty, and the remaining
+    /// orders all go behind it once it is full.
     fun deep_side_worst_price_last() {
         let mut test = begin(OWNER);
         let mut book = book::empty_multicoin(test.ctx());
@@ -284,7 +283,8 @@ module triex::book_invariant_tests {
 
         assert_side(&book, false);
         assert!(book.side_length(false) == 300);
-        assert!(book.hot_asks().length() == 1);
+        assert!(book.hot_asks().length() == 16);
+        assert!(book.asks().length() == 300 - 16);
 
         book.drop_for_testing();
         test.end();
