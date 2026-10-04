@@ -16,17 +16,12 @@ module triex::coin_book_hot_buffer_tests {
     use sui::test_scenario::begin;
     use triex::{
         big_vector::slice_borrow,
-        book::{Self, Book},
+        book::{Self, Book, hot_capacity, hot_spill_target},
         constants,
         order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;
-
-    /// Mirror `book`'s private buffer constants. A test that silently tracked
-    /// a changed capacity would stop testing the boundary it names.
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     fun scaling(): u64 { constants::float_scaling() }
 
@@ -103,7 +98,7 @@ module triex::coin_book_hot_buffer_tests {
     /// Everything the split must guarantee, checked directly against both stores.
     fun assert_invariant(book: &Book, is_bid: bool) {
         let hot = if (is_bid) book.hot_bids() else book.hot_asks();
-        assert!(hot.length() <= HOT_CAPACITY);
+        assert!(hot.length() <= hot_capacity());
 
         // The buffer is stored worst-first, so keys must improve along it.
         let mut i = 1;
@@ -179,68 +174,8 @@ module triex::coin_book_hot_buffer_tests {
         };
 
         assert_ordered(&book, true, 40);
-        assert!(book.hot_bids().length() == HOT_CAPACITY);
-        assert!(book.bids().length() == 40 - HOT_CAPACITY);
-
-        book.drop_for_testing();
-        test.end();
-    }
-
-    #[test]
-    /// A second quote behind the touch on a side whose tree is empty rests inline
-    /// rather than creating the side's first tree slice — on both sides, and for an
-    /// equal price, which arrives later and so queues behind the order it ties.
-    fun behind_the_best_on_an_empty_tree_stays_inline() {
-        let mut test = begin(OWNER);
-        let mut book = book::empty(test.ctx());
-
-        let best_bid = rest(&mut book, price_at(10), true);
-        let behind_bid = rest(&mut book, price_at(5), true);
-        let tied_bid = rest(&mut book, price_at(5), true);
-        assert!(book.hot_bids().length() == 3);
-        assert!(book.bids().is_empty());
-        assert!(read_side(&book, true) == vector[best_bid, behind_bid, tied_bid]);
-        assert_invariant(&book, true);
-
-        let best_ask = rest(&mut book, price_at(20), false);
-        let behind_ask = rest(&mut book, price_at(30), false);
-        let tied_ask = rest(&mut book, price_at(30), false);
-        assert!(book.hot_asks().length() == 3);
-        assert!(book.asks().is_empty());
-        assert!(read_side(&book, false) == vector[best_ask, behind_ask, tied_ask]);
-        assert_invariant(&book, false);
-
-        book.drop_for_testing();
-        test.end();
-    }
-
-    #[test]
-    /// Once the tree holds anything, a placement behind the buffer goes to the tree
-    /// even with room inline: admitting it would need the tree's best key to prove
-    /// it still beats the tree, a read this path deliberately does not pay.
-    fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree() {
-        let mut test = begin(OWNER);
-        let mut book = book::empty(test.ctx());
-
-        // Fill the buffer from the back, then one more lands in the tree.
-        let mut i = HOT_CAPACITY + 1;
-        while (i > 0) {
-            rest(&mut book, price_at(100 + i), true);
-            i = i - 1;
-        };
-        assert!(book.hot_bids().length() == HOT_CAPACITY);
-        assert!(book.bids().length() == 1);
-
-        // Free a slot by cancelling the best order, then quote behind the buffer.
-        let best = book.hot_bids()[HOT_CAPACITY - 1].order_id();
-        book.cancel_order(best);
-        assert!(book.hot_bids().length() == HOT_CAPACITY - 1);
-
-        rest(&mut book, price_at(0), true);
-        assert!(book.hot_bids().length() == HOT_CAPACITY - 1);
-        assert!(book.bids().length() == 2);
-        assert_invariant(&book, true);
-        assert_ordered(&book, true, HOT_CAPACITY + 1);
+        assert!(book.hot_bids().length() == hot_capacity());
+        assert!(book.bids().length() == 40 - hot_capacity());
 
         book.drop_for_testing();
         test.end();
@@ -348,7 +283,7 @@ module triex::coin_book_hot_buffer_tests {
 
         // Quote successively better than the tree's best; all of it lands inline.
         let mut j = 1;
-        while (j <= HOT_CAPACITY) {
+        while (j <= hot_capacity()) {
             rest(&mut book, best_tree_px - j * scaling() / 4, false);
             assert!(book.hot_asks().length() == j);
             assert!(book.asks().length() == tree_after_sweep);
@@ -370,16 +305,16 @@ module triex::coin_book_hot_buffer_tests {
         let mut book = book::empty(test.ctx());
 
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
-        assert!(book.hot_bids().length() == HOT_CAPACITY);
+        assert!(book.hot_bids().length() == hot_capacity());
         assert!(book.bids().is_empty());
 
-        rest(&mut book, price_at(HOT_CAPACITY), true);
-        assert!(book.hot_bids().length() == HOT_SPILL_TARGET);
-        assert!(book.bids().length() == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+        rest(&mut book, price_at(hot_capacity()), true);
+        assert!(book.hot_bids().length() == hot_spill_target());
+        assert!(book.bids().length() == hot_capacity() + 1 - hot_spill_target());
 
         assert_invariant(&book, true);
         book.drop_for_testing();
@@ -469,7 +404,7 @@ module triex::coin_book_hot_buffer_tests {
         let mut test = begin(OWNER);
         let mut book = book::empty(test.ctx());
 
-        let deep = HOT_CAPACITY * 2;
+        let deep = hot_capacity() * 2;
         let mut i = 0;
         while (i < deep) {
             rest(&mut book, price_at(i), true);
@@ -483,7 +418,7 @@ module triex::coin_book_hot_buffer_tests {
         assert!(taker.executed_quantity() == qty() * deep);
         assert!(book.side_is_empty(true));
 
-        let rebuild = HOT_CAPACITY + 8;
+        let rebuild = hot_capacity() + 8;
         let mut j = 0;
         while (j < rebuild) {
             rest(&mut book, price_at(j), true);

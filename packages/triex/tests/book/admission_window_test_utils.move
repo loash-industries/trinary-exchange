@@ -8,24 +8,23 @@
 ///
 /// Under one-way spill an order may travel buffer → tree and never back. The
 /// buffer is therefore populated only by *admission* of newly placed orders, and
-/// `inject_limit_order` is the whole of that logic. It has four branches:
+/// `inject_limit_order` is the whole of that logic. It has three branches, taken
+/// in this order:
 ///
 /// ```text
-///   hot_len == 0 && tree empty      -> ADMIT                               (branch A)
+///   tree empty && hot_len < HOT_CAPACITY
+///                                   -> ADMIT at its sorted position        (branch E)
 ///   hot_len == 0 && tree non-empty  -> ADMIT iff better(key, best_cold)    (W)
-///   hot_len >  0 && better(key, worst_hot)
-///                                   -> ADMIT, then spill if over capacity  (branch C)
-///   hot_len >  0 && !better(key, worst_hot)
-///                                   -> ADMIT at index 0 iff tree empty
-///                                      and hot_len < HOT_CAPACITY          (branch B)
+///   better(key, worst_hot)          -> ADMIT, then spill if over capacity  (branch C)
 /// ```
 ///
 /// Anything not admitted goes to the tree.
 ///
-/// Branch **B** keeps a thin book entirely inline: with nothing behind the buffer,
-/// an order behind its worst still beats the (empty) tree, so admitting it at
-/// index 0 is sound and saves minting the side's first tree slice. Once the tree
-/// holds anything, B is closed and a not-better order goes behind the buffer.
+/// Branch **E** keeps a thin book entirely inline: with nothing behind the buffer,
+/// every order — a side's first, a new best, or one behind the worst — beats the
+/// (empty) tree, so admitting it is sound and saves minting the side's first tree
+/// slice. Once the tree holds anything E is closed, and reopens only when the tree
+/// drains back to empty.
 ///
 /// Branch **W** is the promotion window: the only place in the module that reads
 /// the tree in order to decide buffer membership. It opens whenever the buffer
@@ -40,7 +39,7 @@
 /// admitting an order that does not beat `best_cold` would put a worse order inline
 /// in front of a better one, and nothing downstream would repair it.
 ///
-/// Branch C then inherits soundness from W by induction: `worst_hot` beats
+/// Branch C then inherits soundness from E and W by induction: `worst_hot` beats
 /// `best_cold`, so anything beating `worst_hot` beats the whole tree.
 ///
 /// Rejection with a stocked tree is *conservative*: an order worse than
@@ -51,8 +50,8 @@
 ///
 /// ## Promotion is structurally impossible
 ///
-/// Every write into a hot buffer in `book.move` is one of four `push_back` /
-/// `insert` calls in `inject_limit_order` (branches A, W, B and C), and all four
+/// Every write into a hot buffer in `book.move` is one of three `push_back` /
+/// `insert` calls in `inject_limit_order` (branches E, W and C), and all three
 /// write the same local `order`, bound once from `order_info.to_order()`. No value
 /// read out of a `BigVector` ever reaches a hot-buffer write: `spill` moves buffer
 /// → tree, `remove_order` returns to its caller, and `borrow_mut` mutates in place.
@@ -76,14 +75,12 @@ module triex::admission_window_test_utils {
     use sui::test_scenario::{begin, Scenario};
     use triex::{
         big_vector::slice_borrow,
-        book::{Self, Book},
+        book::{Self, Book, hot_capacity, hot_spill_target},
         constants,
         order_info::{Self, OrderInfo}
     };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     /// Which book is under test and the price grid it is driven on. Prices are laid
     /// out on a grid `stride` apart so that a "strictly between two adjacent ranks"
@@ -107,8 +104,6 @@ module triex::admission_window_test_utils {
         let s = constants::float_scaling();
         Fixture { coin: true, scaling: s, base: 1_000 * s, stride: s, qty: s }
     }
-
-    public fun hot_capacity(): u64 { HOT_CAPACITY }
 
     fun new_book(f: Fixture, ctx: &mut TxContext): Book {
         if (f.coin) book::empty(ctx) else book::empty_multicoin(ctx)
@@ -227,7 +222,7 @@ module triex::admission_window_test_utils {
     fun assert_side_matches(book: &Book, is_bid: bool, expected: &vector<u128>, case: u64) {
         let hot = hot_ids(book, is_bid);
         let tree = tree_ids(book, is_bid);
-        assert!(hot.length() <= HOT_CAPACITY, case);
+        assert!(hot.length() <= hot_capacity(), case);
 
         // Buffer is worst-first and internally ordered.
         let mut i = 1;
@@ -272,7 +267,7 @@ module triex::admission_window_test_utils {
     ///
     /// The buffer is built worst-price-first so every placement beats the current
     /// worst resident and is admitted. A tree order only goes behind once the
-    /// buffer is full or the tree is already stocked (branch B admits it inline
+    /// buffer is full or the tree is already stocked (branch E admits it inline
     /// otherwise), so the buffer is first topped up to capacity with fillers priced
     /// just better than rank `h`, the tree is built from prices worse than all of
     /// them, and the fillers are cancelled. Every step goes through the public
@@ -295,7 +290,7 @@ module triex::admission_window_test_utils {
         // every tree order and sit behind every inline one. Measured up from rank
         // `h` rather than down from rank `h-1`, so `h == 0` needs no special case.
         let mut fillers = vector[];
-        while (hot_len(&book, is_bid) < HOT_CAPACITY) {
+        while (hot_len(&book, is_bid) < hot_capacity()) {
             let offset = fillers.length() + 1;
             let price = improve(is_bid, px(f, is_bid, h), f.stride - offset);
             fillers.push_back(rest(f, &mut book, price, is_bid));
@@ -306,7 +301,7 @@ module triex::admission_window_test_utils {
             keys.push_back(rest(f, &mut book, px(f, is_bid, h + j), is_bid));
             j = j + 1;
         };
-        assert!(hot_len(&book, is_bid) == HOT_CAPACITY);
+        assert!(hot_len(&book, is_bid) == hot_capacity());
         assert!(tree_len(&book, is_bid) == t);
 
         fillers.do!(|id| book.cancel_order(id));
@@ -409,7 +404,7 @@ module triex::admission_window_test_utils {
             let tree = tree_ids(book, is_bid);
             return better_px(is_bid, price, book.get_order(tree[0]).price())
         };
-        if (t == 0 && h < HOT_CAPACITY) return true;
+        if (t == 0 && h < hot_capacity()) return true;
         let hot = hot_ids(book, is_bid);
 
         better_px(is_bid, price, book.get_order(hot[0]).price())
@@ -459,13 +454,13 @@ module triex::admission_window_test_utils {
         assert!(hot_after + tree_after == h + t + 1, case);
 
         if (expect_hot) {
-            if (h + 1 > HOT_CAPACITY) {
+            if (h + 1 > hot_capacity()) {
                 // Admission overflowed the buffer, so the spill fired. The spilled
                 // orders are the buffer's worst, which may include the newcomer
                 // itself — `assert_side_matches` has already confirmed the result is
                 // correctly ordered either way.
-                assert!(hot_after == HOT_SPILL_TARGET, case);
-                assert!(tree_after == h + t + 1 - HOT_SPILL_TARGET, case);
+                assert!(hot_after == hot_spill_target(), case);
+                assert!(tree_after == h + t + 1 - hot_spill_target(), case);
             } else {
                 assert!(hot_after == h + 1, case);
                 assert!(tree_after == t, case);
@@ -513,7 +508,7 @@ module triex::admission_window_test_utils {
 
     /// The whole grid for one side: every buffer occupancy, via `run_row`.
     public fun run_grid(f: Fixture, is_bid: bool) {
-        let occupancies = vector[0u64, 1, 2, HOT_CAPACITY - 1, HOT_CAPACITY];
+        let occupancies = vector[0u64, 1, 2, hot_capacity() - 1, hot_capacity()];
         occupancies.do!(|h| run_row(f, is_bid, h));
     }
 
@@ -530,7 +525,7 @@ module triex::admission_window_test_utils {
         while (i < 200) {
             rest(f, &mut book, px(f, false, 200 - i), false);
             assert!(hot_len(&book, false) > 0, i);
-            assert!(hot_len(&book, false) >= HOT_SPILL_TARGET || tree_len(&book, false) == 0, i);
+            assert!(hot_len(&book, false) >= hot_spill_target() || tree_len(&book, false) == 0, i);
             i = i + 1;
             if (i % 64 == 0) { test.next_tx(OWNER); };
         };
@@ -652,7 +647,7 @@ module triex::admission_window_test_utils {
     /// where "admitted" and "ends up in the buffer" differ.
     public fun a_placement_can_spill_itself(f: Fixture) {
         let mut test = begin(OWNER);
-        let (mut book, mut keys) = build(f, &mut test, false, HOT_CAPACITY, 0);
+        let (mut book, mut keys) = build(f, &mut test, false, hot_capacity(), 0);
 
         let hot = hot_ids(&book, false);
         // Just better than the buffer's worst, so it is admitted at index 1 and
@@ -661,7 +656,7 @@ module triex::admission_window_test_utils {
         let placed = rest(f, &mut book, price, false);
         keys.push_back(placed);
 
-        assert!(hot_len(&book, false) == HOT_SPILL_TARGET);
+        assert!(hot_len(&book, false) == hot_spill_target());
         assert!(tree_ids(&book, false).contains(&placed));
         assert_side_matches(&book, false, &keys, 0);
 
@@ -706,6 +701,139 @@ module triex::admission_window_test_utils {
 
                 if (sweep) break;
                 sweep = true;
+            };
+            if (is_bid) break;
+            is_bid = true;
+        };
+    }
+
+    // === Branch E ===
+
+    /// The thin-book case branch E exists for: orders behind the best, on a side
+    /// whose tree is empty, rest inline rather than creating the side's first tree
+    /// slice — including an equal price, which arrives later and so sits behind the
+    /// order it ties with.
+    public fun behind_the_best_on_an_empty_tree_stays_inline(f: Fixture) {
+        let mut is_bid = false;
+        while (true) {
+            let mut test = begin(OWNER);
+            let mut book = new_book(f, test.ctx());
+
+            let best = rest(f, &mut book, px(f, is_bid, 0), is_bid);
+            let behind = rest(f, &mut book, px(f, is_bid, 5), is_bid);
+            let tied = rest(f, &mut book, px(f, is_bid, 5), is_bid);
+            let keys = vector[best, behind, tied];
+            assert!(hot_len(&book, is_bid) == 3);
+            assert!(tree_len(&book, is_bid) == 0);
+            assert!(side(&book, is_bid) == keys);
+            assert_side_matches(&book, is_bid, &keys, 0);
+
+            book.drop_for_testing();
+            test.end();
+
+            if (is_bid) break;
+            is_bid = true;
+        };
+    }
+
+    /// Once the tree holds anything, a placement behind the buffer goes to the tree
+    /// even with room inline: admitting it would need the tree's best key to prove
+    /// it still beats the tree, a read this path deliberately does not pay.
+    public fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree(f: Fixture) {
+        let mut is_bid = false;
+        while (true) {
+            let mut test = begin(OWNER);
+            let mut book = new_book(f, test.ctx());
+            let mut keys = vector[];
+
+            // Worsening prices fill the buffer from the back, then one more lands in
+            // the tree.
+            let mut rank = 0;
+            while (rank <= hot_capacity()) {
+                keys.push_back(rest(f, &mut book, px(f, is_bid, rank), is_bid));
+                rank = rank + 1;
+            };
+            assert!(hot_len(&book, is_bid) == hot_capacity());
+            assert!(tree_len(&book, is_bid) == 1);
+
+            // Free a slot by cancelling the best order, then quote behind the buffer.
+            let best = keys.remove(0);
+            book.cancel_order(best);
+            assert!(hot_len(&book, is_bid) == hot_capacity() - 1);
+
+            let placed = rest(f, &mut book, px(f, is_bid, 2 * hot_capacity()), is_bid);
+            keys.push_back(placed);
+            assert!(hot_len(&book, is_bid) == hot_capacity() - 1);
+            assert!(tree_len(&book, is_bid) == 2);
+            assert!(tree_ids(&book, is_bid)[1] == placed);
+            assert_side_matches(&book, is_bid, &keys, 0);
+
+            book.drop_for_testing();
+            test.end();
+
+            if (is_bid) break;
+            is_bid = true;
+        };
+    }
+
+    /// Branch E reopening. Every other E case starts from a side whose tree was
+    /// never used; here the tree first grows past one leaf slice, so it has a root
+    /// above its leaves, and is then drained back to empty — by cancelling every
+    /// tree order under a stocked buffer, or by a taker sweep through both stores.
+    /// The tree's `is_empty` has to report the drained tree as empty, or orders
+    /// behind the worst would keep minting tree slices; on the swept side a stale
+    /// emptiness would send the first new order to W, to read the best key of a
+    /// tree with nothing in it.
+    public fun a_drained_tree_reopens_branch_e(f: Fixture) {
+        let mut is_bid = false;
+        while (true) {
+            let mut by_sweep = false;
+            while (true) {
+                let mut test = begin(OWNER);
+                let (mut book, keys) = build(f, &mut test, is_bid, 2, 40);
+                let (bid_depth, _, ask_depth, _) = book.shape();
+                assert!((if (is_bid) bid_depth else ask_depth) > 0);
+
+                if (by_sweep) {
+                    let total = keys.length() * f.qty;
+                    let mut taker = order(
+                        f,
+                        constants::immediate_or_cancel(),
+                        if (is_bid) constants::min_price() else constants::max_price(),
+                        total,
+                        !is_bid,
+                    );
+                    book.create_order(&mut taker, 0);
+                    assert!(taker.executed_quantity() == total);
+                    assert!(hot_len(&book, is_bid) == 0);
+                } else {
+                    tree_ids(&book, is_bid).do!(|id| book.cancel_order(id));
+                    assert!(hot_len(&book, is_bid) == 2);
+                };
+                assert!(tree_len(&book, is_bid) == 0);
+                assert!((if (is_bid) book.bids() else book.asks()).is_empty());
+
+                // Behind everything still resting, then a tie with that: both inline.
+                let mut keys = hot_ids(&book, is_bid);
+                let h = keys.length();
+                let behind_px = if (h == 0) px(f, is_bid, 0)
+                else worsen(is_bid, book.get_order(keys[0]).price(), f.stride);
+                let behind = rest(f, &mut book, behind_px, is_bid);
+                let tied = rest(f, &mut book, behind_px, is_bid);
+                keys.push_back(behind);
+                keys.push_back(tied);
+
+                assert!(hot_len(&book, is_bid) == h + 2);
+                assert!(tree_len(&book, is_bid) == 0);
+                let read = side(&book, is_bid);
+                assert!(read[h] == behind && read[h + 1] == tied);
+                assert_side_matches(&book, is_bid, &keys, 0);
+
+                book.drop_for_testing();
+                test.end();
+
+                if (by_sweep) break;
+                by_sweep = true;
             };
             if (is_bid) break;
             is_bid = true;

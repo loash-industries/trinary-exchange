@@ -4,7 +4,7 @@
 /// module only picks the coin fixture.
 #[test_only]
 module triex::coin_book_admission_window_tests {
-    use triex::admission_window_test_utils::{Self as utils, coin, hot_capacity};
+    use triex::{admission_window_test_utils::{Self as utils, coin}, book::hot_capacity};
 
     // The grid is split per buffer occupancy rather than run as one test because a
     // single test over the whole grid at coin scaling exceeds the Move harness's
@@ -66,4 +66,19 @@ module triex::coin_book_admission_window_tests {
 
     #[test]
     fun window_over_a_single_tree_order() { utils::window_over_a_single_tree_order(coin()) }
+
+    // === Branch E: the thin book kept inline while its tree is empty ===
+
+    #[test]
+    fun behind_the_best_on_an_empty_tree_stays_inline() {
+        utils::behind_the_best_on_an_empty_tree_stays_inline(coin())
+    }
+
+    #[test]
+    fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree() {
+        utils::behind_the_buffer_with_a_stocked_tree_goes_to_the_tree(coin())
+    }
+
+    #[test]
+    fun a_drained_tree_reopens_branch_e() { utils::a_drained_tree_reopens_branch_e(coin()) }
 }

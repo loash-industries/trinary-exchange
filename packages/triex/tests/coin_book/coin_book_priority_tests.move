@@ -27,17 +27,19 @@
 #[test_only]
 module triex::coin_book_priority_tests {
     use sui::test_scenario::begin;
-    use triex::{book::{Self, Book}, constants, order_info::{Self, OrderInfo}};
+    use triex::{
+        book::{Self, Book, hot_capacity, hot_spill_target},
+        constants,
+        order_info::{Self, OrderInfo}
+    };
 
     const OWNER: address = @0x1;
-    const HOT_CAPACITY: u64 = 16;
-    const HOT_SPILL_TARGET: u64 = 12;
 
     /// Depths are derived from `HOT_CAPACITY`, never written as literals. A test
     /// that names the buffer/tree seam and then builds a book smaller than the
     /// buffer goes on passing while testing nothing — which is exactly what
     /// happened to several of these when the capacity moved from 16 to 32 and back.
-    fun deep(): u64 { HOT_CAPACITY * 2 }
+    fun deep(): u64 { hot_capacity() * 2 }
 
     /// Positions that bracket the seam wherever it lands. Enumerating all `deep()`
     /// of them is O(n^2) in book size and blows the harness's per-test budget once
@@ -47,11 +49,11 @@ module triex::coin_book_priority_tests {
         vector[
             0,
             1,
-            HOT_SPILL_TARGET - 1,
-            HOT_SPILL_TARGET,
-            HOT_CAPACITY - 1,
-            HOT_CAPACITY,
-            HOT_CAPACITY + 1,
+            hot_spill_target() - 1,
+            hot_spill_target(),
+            hot_capacity() - 1,
+            hot_capacity(),
+            hot_capacity() + 1,
             deep() - 1,
         ]
     }
@@ -247,7 +249,7 @@ module triex::coin_book_priority_tests {
 
         // Improving prices fill and overflow the buffer.
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, level() - (i + 1) * 100, true);
             i = i + 1;
         };
@@ -361,7 +363,7 @@ module triex::coin_book_priority_tests {
 
         // Fill the buffer exactly, best price last.
         let mut i = 0;
-        while (i < HOT_CAPACITY) {
+        while (i < hot_capacity()) {
             rest(&mut book, price_at(i), true);
             i = i + 1;
         };
@@ -369,13 +371,13 @@ module triex::coin_book_priority_tests {
         let before = side(&book, true);
 
         // One more order overflows it.
-        let placed = rest(&mut book, price_at(HOT_CAPACITY), true);
+        let placed = rest(&mut book, price_at(hot_capacity()), true);
         let after = side(&book, true);
         assert_placement_kept_order(&before, &after, placed);
 
         // Exactly the tail of the old buffer moved to the tree, in order.
         let spilled = book.bids().length();
-        assert!(spilled == HOT_CAPACITY + 1 - HOT_SPILL_TARGET);
+        assert!(spilled == hot_capacity() + 1 - hot_spill_target());
         let mut k = 0;
         while (k < spilled) {
             // The worst `spilled` orders were the last entries of `before`.

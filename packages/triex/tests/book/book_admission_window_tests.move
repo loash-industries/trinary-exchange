@@ -36,4 +36,19 @@ module triex::book_admission_window_tests {
 
     #[test]
     fun window_over_a_single_tree_order() { utils::window_over_a_single_tree_order(multicoin()) }
+
+    // === Branch E: the thin book kept inline while its tree is empty ===
+
+    #[test]
+    fun behind_the_best_on_an_empty_tree_stays_inline() {
+        utils::behind_the_best_on_an_empty_tree_stays_inline(multicoin())
+    }
+
+    #[test]
+    fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree() {
+        utils::behind_the_buffer_with_a_stocked_tree_goes_to_the_tree(multicoin())
+    }
+
+    #[test]
+    fun a_drained_tree_reopens_branch_e() { utils::a_drained_tree_reopens_branch_e(multicoin()) }
 }
