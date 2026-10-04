@@ -94,11 +94,11 @@ From `triex::fee_policy`:
 
 Per `FeePolicy` (the pin is permanent on it):
 
-1. Bump the `warehouse_receipts` git rev in Move.toml to the commit carrying the
-   upgraded `Published.toml` (the package with `receipt::new_vault` /
-   `PendingVault`, loash-industries/warehouse-receipts#1).
-   Check that `triex`, `warehouse_receipts`, `world` and `multicoin` resolve to the
-   on-chain packages the deployment uses.
+1. Check that `triex`, `warehouse_receipts`, `world` and `multicoin` resolve to the
+   on-chain packages the deployment uses. `warehouse_receipts` must be v2 or
+   later (`receipt::new_vault` / `PendingVault`,
+   loash-industries/warehouse-receipts#1); Move.toml pins `fe73b95`, the
+   testnet_stillness v2 upgrade.
 2. `sui client publish --build-env testnet_stillness`.
 3. **Make it immutable**: `sui client call --package 0x2 --module package
    --function make_immutable --args <adapter UpgradeCap>`. The pin survives

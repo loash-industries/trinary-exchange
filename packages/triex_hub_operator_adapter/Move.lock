@@ -49,11 +49,11 @@ deps = { multicoin = "multicoin", std = "MoveStdlib", sui = "Sui", token = "toke
 [pinned.testnet_stillness.triex_hub_operator_adapter]
 source = { root = true }
 use_environment = "testnet_stillness"
-manifest_digest = "1AAF0ECDF2381F29C9F5ABE72C8464BF57626DC9F37990D7121FACDFAFE30D27"
+manifest_digest = "EEFE7C4047C772861851F9B269D54DFC5B8163C33FC8298CD1847A2AF7A69A7D"
 deps = { multicoin = "multicoin", std = "MoveStdlib", sui = "Sui", triex = "triex", warehouse_receipts = "warehouse_receipts", world = "world" }
 
 [pinned.testnet_stillness.warehouse_receipts]
-source = { git = "https://github.com/loash-industries/warehouse-receipts.git", subdir = "packages/contracts", rev = "e459b639f397b50f628db4f2effcc0cde7e4b36a" }
+source = { git = "https://github.com/loash-industries/warehouse-receipts.git", subdir = "packages/contracts", rev = "fe73b95a753d440ae3944b71217fb39a07cecac2" }
 use_environment = "testnet_stillness"
 manifest_digest = "EBA158B43BC72D8D7383A9F53ACD1F4C67E5F081C220FBFD5A298D8844FBF0C7"
 deps = { multicoin = "multicoin", std = "MoveStdlib", sui = "Sui", world = "world" }

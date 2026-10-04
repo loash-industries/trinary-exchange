@@ -19,11 +19,10 @@ version = "0.0.1"
 triex = { local = "../triex" }
 world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "d33ff232bd3878e8f9ad0721e18564b21facc925", override = true }
 multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "2772c26d24c02671726d39f167b8f772777875d9", override = true }
-# e459b63 = warehouse-receipts feat/pending-vault-init (`receipt::new_vault` /
-# `PendingVault`, loash-industries/warehouse-receipts#1). Before publishing the
-# adapter: merge that PR, upgrade warehouse_receipts on testnet_stillness, and
-# bump this rev to the commit carrying the upgraded Published.toml.
-warehouse_receipts = { git = "https://github.com/loash-industries/warehouse-receipts.git", subdir = "packages/contracts", rev = "e459b639f397b50f628db4f2effcc0cde7e4b36a", override = true }
+# fe73b95 = warehouse_receipts v2 on testnet_stillness (`receipt::new_vault` /
+# `PendingVault`, loash-industries/warehouse-receipts#1): published-at 0xcfd8ce37…,
+# original-id 0x134dfa96….
+warehouse_receipts = { git = "https://github.com/loash-industries/warehouse-receipts.git", subdir = "packages/contracts", rev = "fe73b95a753d440ae3944b71217fb39a07cecac2", override = true }
 
 [environments]
 testnet_stillness = "4c78adac"
