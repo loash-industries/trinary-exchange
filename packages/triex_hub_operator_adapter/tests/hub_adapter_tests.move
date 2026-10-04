@@ -250,14 +250,19 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         ts::end(sc);
     }
 
-    /// Every `HubOperatorChanged` is a real change.
-    #[test, expected_failure(abort_code = fee_policy::EOperatorBeneficiaryUnchanged)]
-    fun rotating_to_the_current_payee_aborts() {
+    /// Rotating to the current payee succeeds without writing or emitting
+    /// anything, so every `HubOperatorChanged` is a real change.
+    #[test]
+    fun rotating_to_the_current_payee_is_a_no_op() {
         let mut sc = ts::begin(test_world::admin());
         let site = setup(&mut sc);
         test_world::register(&mut sc, OWNER, site.character(), &site, PARTNER);
 
         test_world::update(&mut sc, OWNER, site.character(), &site, PARTNER);
+
+        assert_eq!(event::events_by_type<HubOperatorChanged>().length(), 0);
+        assert_eq!(event::events_by_type<OperatorBeneficiaryChanged>().length(), 0);
+        assert_eq!(test_world::beneficiary(&mut sc, site.collection()), option::some(PARTNER));
         ts::end(sc);
     }
 
@@ -430,11 +435,29 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         test_world::register(&mut sc, OWNER, site.character(), &site, OWNER);
         let buyer_character = test_world::create_character(&mut sc, BUYER, 50);
 
-        test_world::update(&mut sc, OWNER, site.character(), &site, BUYER);
-        test_world::transfer_storage_unit(&mut sc, &mut site, BUYER, buyer_character);
+        test_world::hand_over_storage_unit(&mut sc, &mut site, BUYER, BUYER, buyer_character);
         assert_eq!(test_world::beneficiary(&mut sc, site.collection()), option::some(BUYER));
 
         // And the buyer now controls it.
+        test_world::update(&mut sc, BUYER, buyer_character, &site, PARTNER);
+        assert_eq!(test_world::beneficiary(&mut sc, site.collection()), option::some(PARTNER));
+        ts::end(sc);
+    }
+
+    /// The same hand-over when the buyer is already the payee: the update is a
+    /// no-op, so the cap still transfers in the same transaction.
+    #[test]
+    fun a_hand_over_to_the_current_payee_still_transfers_the_cap() {
+        let mut sc = ts::begin(test_world::admin());
+        let mut site = setup(&mut sc);
+        test_world::register(&mut sc, OWNER, site.character(), &site, BUYER);
+        let buyer_character = test_world::create_character(&mut sc, BUYER, 50);
+
+        test_world::hand_over_storage_unit(&mut sc, &mut site, BUYER, BUYER, buyer_character);
+        assert_eq!(event::events_by_type<HubOperatorChanged>().length(), 0);
+        assert_eq!(test_world::beneficiary(&mut sc, site.collection()), option::some(BUYER));
+
+        // The cap reached the buyer.
         test_world::update(&mut sc, BUYER, buyer_character, &site, PARTNER);
         assert_eq!(test_world::beneficiary(&mut sc, site.collection()), option::some(PARTNER));
         ts::end(sc);

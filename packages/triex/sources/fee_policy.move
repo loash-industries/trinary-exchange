@@ -37,7 +37,6 @@ module triex::fee_policy {
     const EUnauthorizedAdapter: u64 = 10;
     const EAdapterPinned: u64 = 11;
     const EOperatorBeneficiaryNotRegistered: u64 = 12;
-    const EOperatorBeneficiaryUnchanged: u64 = 13;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -1049,11 +1048,14 @@ module triex::fee_policy {
     ///
     /// Only an existing mapping can be rotated, so this is never a second
     /// registration path: an absent mapping (never registered, or destroyed by
-    /// the admin) aborts. So does re-pointing to the current address, so every
-    /// `OperatorBeneficiaryChanged` is a real change. Returns the previous
-    /// address. Accrued `operator_owed` is not split at rotation — the next
-    /// claim pays whoever is configured then, as it always has. Clearing the
-    /// adapter closes this path too.
+    /// the admin) aborts. Re-pointing to the current address is a no-op —
+    /// nothing is written and no event is emitted — so every
+    /// `OperatorBeneficiaryChanged` is a real change, and a seller's hand-over
+    /// PTB never fails just because the buyer is already the payee. Returns the
+    /// previous address (equal to `beneficiary` on a no-op). Accrued
+    /// `operator_owed` is not split at rotation — the next claim pays whoever
+    /// is configured then, as it always has. Clearing the adapter closes this
+    /// path too.
     public fun update_operator_beneficiary_with_witness<W: drop>(
         self: &mut FeePolicy,
         collection_id: ID,
@@ -1069,7 +1071,7 @@ module triex::fee_policy {
         );
         let slot = df::borrow_mut<OperatorBeneficiaryKey, address>(&mut self.id, key);
         let previous = *slot;
-        assert!(previous != beneficiary, EOperatorBeneficiaryUnchanged);
+        if (previous == beneficiary) return previous;
         *slot = beneficiary;
 
         event::emit(OperatorBeneficiaryChanged { collection_id, previous, beneficiary });

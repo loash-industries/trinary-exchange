@@ -49,7 +49,9 @@ with `EAlreadyRegistered`).
 The payout address does not follow the cap. The seller hands over in one PTB:
 borrow the cap → `update_operator(…, buyerAddress)` →
 `world::access::transfer_owner_cap_with_receipt`. Any backlog still unclaimed
-at that point pays the buyer, so the seller claims every pool first. A storage
+at that point pays the buyer, so the seller claims every pool first. If the
+buyer is already the payee, `update_operator` is a no-op (no write, no events)
+rather than an abort, so the PTB needs no pre-check. A storage
 unit can carry several collections (one per `new_vault`); each is rotated
 separately.
 
@@ -88,7 +90,6 @@ From `triex::fee_policy`:
 |---|---|---|
 | 9 | `ENoAuthorizedAdapter` | The admin has not pinned the adapter, or has cleared it |
 | 12 | `EOperatorBeneficiaryNotRegistered` | `update_operator` with nothing to rotate; use `register_operator` |
-| 13 | `EOperatorBeneficiaryUnchanged` | `update_operator` to the current payout address |
 
 ## Deploy
 

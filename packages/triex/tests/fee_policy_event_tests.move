@@ -231,6 +231,8 @@ module triex::fee_policy_event_tests {
         // A no-op second registration announces nothing.
         policy.register_operator_beneficiary_with_witness(collection, @0xBAD, Adapter {});
         policy.update_operator_beneficiary_with_witness(collection, @0xCAFE, Adapter {});
+        // A no-op rotation to the current address announces nothing.
+        policy.update_operator_beneficiary_with_witness(collection, @0xCAFE, Adapter {});
         policy.update_operator_beneficiary_with_witness(collection, @0xD00D, Adapter {});
         policy.destroy_operator_beneficiary(collection, &cap);
         // Destroying an absent mapping announces nothing either.

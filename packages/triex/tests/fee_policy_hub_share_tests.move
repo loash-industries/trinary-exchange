@@ -629,20 +629,29 @@ module triex::fee_policy_operator_share_tests {
         abort 0
     }
 
-    /// Every `OperatorBeneficiaryChanged` is a real change, whichever adapter
-    /// is pinned.
+    /// Re-pointing to the current beneficiary is a no-op rather than an abort,
+    /// so a hand-over PTB doesn't fail when the buyer is already the payee.
+    /// It returns the unchanged address.
     #[test]
-    #[expected_failure(abort_code = triex::fee_policy::EOperatorBeneficiaryUnchanged)]
-    fun rotating_to_the_current_beneficiary_aborts() {
+    fun rotating_to_the_current_beneficiary_is_a_no_op() {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
         policy.set_operator_adapter<Adapter>(&cap);
         policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
-        policy.update_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        let previous = policy.update_operator_beneficiary_with_witness(
+            a_collection(),
+            @0xB0B,
+            Adapter {},
+        );
 
-        abort 0
+        assert_eq!(previous, @0xB0B);
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
     }
 
     #[test]

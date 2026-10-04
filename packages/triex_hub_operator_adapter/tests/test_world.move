@@ -447,6 +447,40 @@ module triex_hub_operator_adapter::test_world {
         site.character = buyer_character;
     }
 
+    /// The seller's hand-over as one transaction: borrow the storage unit's
+    /// cap, `update_operator` to `beneficiary`, and transfer that same
+    /// borrowed cap to character `buyer_character`.
+    public fun hand_over_storage_unit(
+        sc: &mut Scenario,
+        site: &mut Site,
+        beneficiary: address,
+        buyer: address,
+        buyer_character: ID,
+    ) {
+        ts::next_tx(sc, site.owner);
+        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut character = ts::take_shared_by_id<Character>(sc, site.character);
+        let config = ts::take_shared_by_id<VaultConfig>(sc, site.vault_config());
+        let storage_unit = ts::take_shared_by_id<StorageUnit>(sc, site.storage_unit);
+        let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
+
+        hub_adapter::update_operator(&mut policy, &config, &storage_unit, &cap, beneficiary, sc.ctx());
+        access::transfer_owner_cap_with_receipt(
+            cap,
+            receipt,
+            object::id_to_address(&buyer_character),
+            sc.ctx(),
+        );
+
+        ts::return_shared(storage_unit);
+        ts::return_shared(config);
+        ts::return_shared(character);
+        ts::return_shared(policy);
+
+        site.owner = buyer;
+        site.character = buyer_character;
+    }
+
     public fun beneficiary(sc: &mut Scenario, collection_id: ID): Option<address> {
         ts::next_tx(sc, ADMIN);
         let policy = ts::take_shared<FeePolicy>(sc);

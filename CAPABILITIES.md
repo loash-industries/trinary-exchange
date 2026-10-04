@@ -141,7 +141,9 @@ deploy a pool first (pool creation itself writes nothing).
 Registration is first-write-wins; after it, `update_operator_beneficiary_with_witness`
 re-points the mapping. That rotation exists because a storage unit's `OwnerCap`
 is transferable: a write-once mapping would keep paying the previous owner after
-a sale, with the new owner unable to stop it. Every write is on the event stream
+a sale, with the new owner unable to stop it. Re-pointing to the current address
+is a no-op (nothing written, no event), so a hand-over PTB never fails on an
+unchanged payee. Every write is on the event stream
 — `OperatorBeneficiaryRegistered`, `OperatorBeneficiaryChanged` (with the previous
 and new address) and `OperatorBeneficiaryDestroyed` from `fee_policy`, plus the
 adapter's own `HubOperatorRegistered` / `HubOperatorChanged`, which add the

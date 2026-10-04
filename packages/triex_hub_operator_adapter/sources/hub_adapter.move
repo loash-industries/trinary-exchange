@@ -171,8 +171,9 @@ module triex_hub_operator_adapter::hub_adapter {
     /// hands the new owner — and only the new owner — can take over the payee.
     ///
     /// `fee_policy` aborts if nothing is registered (registration is
-    /// `register_operator`), or if `beneficiary` is already the payee, so every
-    /// `HubOperatorChanged` is a real change.
+    /// `register_operator`). If `beneficiary` is already the payee the call is
+    /// a no-op with no events, so every `HubOperatorChanged` is a real change
+    /// and the hand-over PTB above never fails on an unchanged payee.
     public fun update_operator(
         policy: &mut FeePolicy,
         vault_config: &VaultConfig,
@@ -189,6 +190,7 @@ module triex_hub_operator_adapter::hub_adapter {
             beneficiary,
             HubAdapterWitness {},
         );
+        if (previous == beneficiary) return;
 
         event::emit(HubOperatorChanged {
             collection_id,
