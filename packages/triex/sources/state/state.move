@@ -12,7 +12,8 @@ module triex::state {
         fill::Fill,
         history::{Self, History},
         order::Order,
-        order_info::OrderInfo
+        order_info::OrderInfo,
+        trading_account::TradingAccount
     };
 
     // === Errors ===
@@ -173,6 +174,33 @@ module triex::state {
         self.update_account(trading_account_id);
 
         self.accounts[trading_account_id].take_pending_turnover()
+    }
+
+    /// Fold this account's pending maker-fee credits into the exchange-wide ring
+    /// on its `TradingAccount`, off the pricing path.
+    ///
+    /// Pending credits are only visible to trades on the pool holding them, so
+    /// until they fold the trader's tier depends on which pool they trade on.
+    /// Every entry point that holds the trader's `TradingAccount` mutably calls
+    /// this — withdraw, cancel, modify, and the order path after its own fills —
+    /// so credits reach the ring the first time the trader touches the pool for
+    /// any reason, not only when they next trade there.
+    ///
+    /// Unlike `take_pending_turnover` this never creates the account or the ring:
+    /// the permissionless withdraw reaches it on anyone's behalf, and an empty
+    /// fold has nothing to land.
+    public(package) fun fold_pending_turnover<QuoteAsset>(
+        self: &mut State,
+        trading_account: &mut TradingAccount,
+        ctx: &TxContext,
+    ) {
+        let trading_account_id = trading_account.id();
+        if (!self.accounts.contains(trading_account_id)) return;
+
+        let pending = self.accounts[trading_account_id].take_pending_turnover();
+        if (pending.is_empty()) return;
+
+        trading_account.fold_fee_turnover<QuoteAsset>(pending, ctx);
     }
 
     /// Sum of this account's pending credits still inside the window, for views
@@ -610,9 +638,11 @@ module triex::state {
             // Queued at fill, never at placement: a bid maker's escrow is
             // refundable until it trades, so counting it earlier would let resting
             // orders buy tier progress and cancel out. Expired fills charge nothing
-            // and so queue nothing. The maker's `TradingAccount` is not in this
-            // transaction, so the credit waits here until their own next one
-            // against this pool folds it into their ring.
+            // and so queue nothing. The maker's `TradingAccount` is usually not in
+            // this transaction, so the credit waits here until their own next one
+            // against this pool — any trade, withdraw, cancel or modify — folds it
+            // into their ring; see `fold_pending_turnover`. A self-match queues
+            // here too, and the order path folds it before returning.
             account.add_pending_turnover(ctx.epoch(), maker_fee_earned);
 
             i = i + 1;

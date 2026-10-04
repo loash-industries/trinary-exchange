@@ -563,6 +563,7 @@ module triex::pool {
         self
             .vault
             .settle_trading_account(settled, owed, trading_account, trade_proof, option::none());
+        self.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
         // A modify-down retains its share on the same terms as a cancel, so
         // requoting down cannot dodge the retention.
         self.vault.recognize_locked_maker_fees(fee_release.release_retained());
@@ -615,6 +616,7 @@ module triex::pool {
         self
             .vault
             .settle_trading_account(settled, owed, trading_account, trade_proof, option::none());
+        self.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
         // The retained share stops being a user claim and becomes revenue the
         // admin may sweep.
         self.vault.recognize_locked_maker_fees(fee_release.release_retained());
@@ -676,6 +678,11 @@ module triex::pool {
     }
 
     /// Withdraw settled amounts to the `trading_account`.
+    ///
+    /// Does not fold pending maker turnover, unlike its `multicoin_pool` twin:
+    /// it takes no `TxContext`, and adding one would break upgrade
+    /// compatibility. Add `fold_pending_turnover` to the same PTB instead; a
+    /// cancel, modify or trade on this pool folds too.
     /// #ref:functions
     public fun withdraw_settled_amounts<BaseAsset, QuoteAsset>(
         self: &mut Pool<BaseAsset, QuoteAsset>,
@@ -697,6 +704,25 @@ module triex::pool {
         let self = self.load_inner_mut();
         let (settled, owed) = self.state.withdraw_settled_amounts(trading_account.id());
         self.vault.settle_trading_account_permissionless(settled, owed, trading_account);
+    }
+
+    /// Fold the maker-fee credits this pool holds for `trading_account` into its
+    /// exchange-wide turnover ring, so every pool on this quote prices against
+    /// them — not only this one.
+    ///
+    /// For clients that know credits are pending here (see
+    /// `account_pending_fee_turnover`) to add to any PTB that holds the trading
+    /// account. It is also the only fold reachable alongside this pool's
+    /// withdraws, which take no `TxContext`. Permissionless: it only ever credits
+    /// fees the account actually paid, so a third party calling it can only help
+    /// the trader. A no-op, never an abort, when nothing is pending.
+    /// #ref:functions
+    public fun fold_pending_turnover<BaseAsset, QuoteAsset>(
+        self: &mut Pool<BaseAsset, QuoteAsset>,
+        trading_account: &mut TradingAccount,
+        ctx: &TxContext,
+    ) {
+        self.load_inner_mut().state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
     }
 
     // === Public-Mutative Functions * GOVERNANCE * ===
@@ -1404,6 +1430,17 @@ module triex::pool {
         self.load_inner().account_turnover_int(trading_account, ctx)
     }
 
+    /// Maker-fee credits this pool holds for the trading account that have not
+    /// yet folded into its exchange-wide ring — what `fold_pending_turnover`
+    /// would land. Zero means there is nothing to fold here.
+    public fun account_pending_fee_turnover<BaseAsset, QuoteAsset>(
+        self: &Pool<BaseAsset, QuoteAsset>,
+        trading_account: &TradingAccount,
+        ctx: &TxContext,
+    ): u128 {
+        self.load_inner().state.pending_turnover_total(trading_account.id(), ctx)
+    }
+
     public fun account<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
         trading_account: &TradingAccount,
@@ -1701,6 +1738,10 @@ module triex::pool {
             // their own trading_account, after pricing, so the order never discounts
             // itself.
             trading_account.record_fee_turnover<QuoteAsset>(order_info.paid_fees(), ctx);
+            // Maker credits this order earned against its own resting orders were
+            // queued like any maker's; the trading_account is right here, so land
+            // them now rather than leave them to the next touch of this pool.
+            pool_inner.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
             order_info.emit_order_info();
             order_info.emit_orders_filled(clock.timestamp_ms());
             order_info.emit_order_fully_filled_if_filled(clock.timestamp_ms());
