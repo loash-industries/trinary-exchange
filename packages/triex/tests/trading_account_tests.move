@@ -2118,8 +2118,12 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut owner_uid = object::new(test.ctx());
-        let (mut trading_account, deposit_cap, withdraw_cap, trade_cap) =
-            trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+        let (
+            mut trading_account,
+            deposit_cap,
+            withdraw_cap,
+            trade_cap,
+        ) = trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
         assert!(trading_account.owner() == owner_uid.to_address());
 
         trading_account.deposit_with_cap(
@@ -2149,8 +2153,12 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut owner_uid = object::new(test.ctx());
-        let (mut trading_account, deposit_cap, withdraw_cap, trade_cap) =
-            trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+        let (
+            mut trading_account,
+            deposit_cap,
+            withdraw_cap,
+            trade_cap,
+        ) = trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
 
         trading_account.revoke_trade_cap(&object::id(&trade_cap), test.ctx());
 

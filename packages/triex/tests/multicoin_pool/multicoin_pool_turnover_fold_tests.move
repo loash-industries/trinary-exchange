@@ -57,7 +57,12 @@ module triex::multicoin_pool_turnover_fold_tests {
         (gold_pool, silver_pool, alice, bob, collection_cap)
     }
 
-    fun give_gold(cap: &CollectionCap, owner: address, trading_account_id: ID, test: &mut Scenario) {
+    fun give_gold(
+        cap: &CollectionCap,
+        owner: address,
+        trading_account_id: ID,
+        test: &mut Scenario,
+    ) {
         test.next_tx(OWNER);
         {
             let mut collection = test.take_shared<Collection>();
