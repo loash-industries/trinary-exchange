@@ -80,12 +80,15 @@ filter events by package must subscribe to both.
 |---|---|---|
 | 0 | `ENotStorageUnitOwner` | The cap is not the storage unit's recorded owner cap |
 | 1 | `EAlreadyRegistered` | The collection already has a payout address; use `update_operator` |
-| 2 | `ENotRegistered` | Nothing to rotate; use `register_operator` |
-| 3 | `EBeneficiaryUnchanged` | `beneficiary` is already the payout address |
-| 4 | `EStorageUnitMismatch` | The `StorageUnit` is not the one the `VaultConfig` belongs to |
+| 2 | `EStorageUnitMismatch` | The `StorageUnit` is not the one the `VaultConfig` belongs to |
 
-`triex::fee_policy::ENoAuthorizedAdapter` (9) means the admin has not pinned the
-adapter, or has cleared it.
+From `triex::fee_policy`:
+
+| Code | Name | Meaning |
+|---|---|---|
+| 9 | `ENoAuthorizedAdapter` | The admin has not pinned the adapter, or has cleared it |
+| 12 | `EOperatorBeneficiaryNotRegistered` | `update_operator` with nothing to rotate; use `register_operator` |
+| 13 | `EOperatorBeneficiaryUnchanged` | `update_operator` to the current payout address |
 
 ## Deploy
 

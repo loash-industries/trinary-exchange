@@ -579,7 +579,12 @@ module triex::fee_policy_operator_share_tests {
         policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         policy.register_operator_beneficiary_with_witness(another_collection(), @0xD00D, Adapter {});
 
-        policy.update_operator_beneficiary_with_witness(a_collection(), @0xCAFE, Adapter {});
+        let previous = policy.update_operator_beneficiary_with_witness(
+            a_collection(),
+            @0xCAFE,
+            Adapter {},
+        );
+        assert_eq!(previous, @0xB0B);
         assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xCAFE));
         // Rotation is per collection.
         assert_eq!(policy.operator_beneficiary(another_collection()), option::some(@0xD00D));
@@ -620,6 +625,22 @@ module triex::fee_policy_operator_share_tests {
         policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         policy.destroy_operator_beneficiary(a_collection(), &cap);
         policy.update_operator_beneficiary_with_witness(a_collection(), @0xCAFE, Adapter {});
+
+        abort 0
+    }
+
+    /// Every `OperatorBeneficiaryChanged` is a real change, whichever adapter
+    /// is pinned.
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EOperatorBeneficiaryUnchanged)]
+    fun rotating_to_the_current_beneficiary_aborts() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
 
         abort 0
     }

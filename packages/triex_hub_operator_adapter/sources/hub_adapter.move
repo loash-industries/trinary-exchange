@@ -73,9 +73,7 @@ module triex_hub_operator_adapter::hub_adapter {
     // === Errors ===
     const ENotStorageUnitOwner: u64 = 0;
     const EAlreadyRegistered: u64 = 1;
-    const ENotRegistered: u64 = 2;
-    const EBeneficiaryUnchanged: u64 = 3;
-    const EStorageUnitMismatch: u64 = 4;
+    const EStorageUnitMismatch: u64 = 2;
 
     // === Structs ===
 
@@ -172,9 +170,9 @@ module triex_hub_operator_adapter::hub_adapter {
     /// the storage unit's `OwnerCap` can call it, so after the cap changes
     /// hands the new owner — and only the new owner — can take over the payee.
     ///
-    /// Aborts if nothing is registered (registration is `register_operator`),
-    /// or if `beneficiary` is already the payee, so every `HubOperatorChanged`
-    /// is a real change.
+    /// `fee_policy` aborts if nothing is registered (registration is
+    /// `register_operator`), or if `beneficiary` is already the payee, so every
+    /// `HubOperatorChanged` is a real change.
     public fun update_operator(
         policy: &mut FeePolicy,
         vault_config: &VaultConfig,
@@ -186,12 +184,7 @@ module triex_hub_operator_adapter::hub_adapter {
         assert_storage_unit_owner(vault_config, storage_unit, owner_cap);
 
         let collection_id = vault_config.collection_id();
-        let current = policy.operator_beneficiary(collection_id);
-        assert!(current.is_some(), ENotRegistered);
-        let previous = current.destroy_some();
-        assert!(previous != beneficiary, EBeneficiaryUnchanged);
-
-        policy.update_operator_beneficiary_with_witness(
+        let previous = policy.update_operator_beneficiary_with_witness(
             collection_id,
             beneficiary,
             HubAdapterWitness {},

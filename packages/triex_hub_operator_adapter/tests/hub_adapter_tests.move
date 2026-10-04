@@ -241,7 +241,7 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         ts::end(sc);
     }
 
-    #[test, expected_failure(abort_code = hub_adapter::ENotRegistered)]
+    #[test, expected_failure(abort_code = fee_policy::EOperatorBeneficiaryNotRegistered)]
     fun rotating_before_registering_aborts() {
         let mut sc = ts::begin(test_world::admin());
         let site = setup(&mut sc);
@@ -251,7 +251,7 @@ module triex_hub_operator_adapter::hub_adapter_tests {
     }
 
     /// Every `HubOperatorChanged` is a real change.
-    #[test, expected_failure(abort_code = hub_adapter::EBeneficiaryUnchanged)]
+    #[test, expected_failure(abort_code = fee_policy::EOperatorBeneficiaryUnchanged)]
     fun rotating_to_the_current_payee_aborts() {
         let mut sc = ts::begin(test_world::admin());
         let site = setup(&mut sc);
@@ -345,7 +345,7 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         ts::end(sc);
     }
 
-    #[test, expected_failure(abort_code = hub_adapter::ENotRegistered)]
+    #[test, expected_failure(abort_code = fee_policy::EOperatorBeneficiaryNotRegistered)]
     fun rotating_a_destroyed_mapping_aborts() {
         let mut sc = ts::begin(test_world::admin());
         let site = setup(&mut sc);
