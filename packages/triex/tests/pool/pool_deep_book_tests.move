@@ -20,10 +20,11 @@
 /// buffer resident, once against a tree resident — and requires the two to agree.
 ///
 /// Books here are built at one price on purpose. Equal price means a later arrival
-/// is strictly worse, so it never displaces the buffer's resident: the first order
-/// stays inline and every one after it goes to the tree. That gives a buffer
-/// resident and a tree resident that are identical in every respect a fee
-/// calculation can see, which is exactly what store invariance needs.
+/// is strictly worse, so it never displaces an earlier resident: the first
+/// `HOT_CAPACITY` orders fill the buffer in arrival order, and every one after that
+/// goes to the tree behind them. That gives a buffer resident and a tree resident
+/// that are identical in every respect a fee calculation can see, which is exactly
+/// what store invariance needs.
 #[test_only]
 module triex::pool_deep_book_tests {
     use sui::{coin::mint_for_testing, sui::SUI, test_scenario::{begin, return_shared, Scenario}};
@@ -65,8 +66,9 @@ module triex::pool_deep_book_tests {
         (pool_id, trading_account_id)
     }
 
-    /// `DEEP` bids at one price, in placement order. The first is the buffer's only
-    /// resident; every later one is strictly worse in key order and lands behind it.
+    /// `DEEP` bids at one price, in placement order. Each is strictly worse in key
+    /// order than the one before, so the first `HOT_CAPACITY` (16) fill the buffer
+    /// and every later one lands behind them in the tree.
     fun build_one_level(pool_id: ID, trading_account_id: ID, test: &mut Scenario): vector<u128> {
         let mut ids = vector[];
         let mut i = 0;
@@ -92,8 +94,9 @@ module triex::pool_deep_book_tests {
     /// `DEEP` bids on ascending price levels, best price last, so every placement
     /// beats the buffer's worst and is admitted inline — which drives the buffer to
     /// capacity and makes it spill repeatedly. The one-price build above never
-    /// spills (an equal price is strictly worse, so nothing displaces the resident),
-    /// so without this the pool layer would still have no coverage of the spill path.
+    /// spills (an equal price is strictly worse, so it fills the buffer and then
+    /// overflows straight into the tree without displacing any resident), so
+    /// without this the pool layer would still have no coverage of the spill path.
     fun build_ladder(pool_id: ID, trading_account_id: ID, test: &mut Scenario): vector<u128> {
         let mut ids = vector[];
         let mut i = 0u64;
@@ -162,7 +165,7 @@ module triex::pool_deep_book_tests {
         let ids = build_one_level(pool_id, acct, &mut test);
         assert_straddles_seam(pool_id, &mut test);
 
-        // ids[0] is the buffer's resident; anything later is behind it in the tree.
+        // ids[0..16) fill the buffer; anything later is behind them in the tree.
         let in_buffer = ids[0];
         let in_tree = ids[DEEP / 2];
 
@@ -303,8 +306,9 @@ module triex::pool_deep_book_tests {
         let ids = build_ladder(pool_id, acct, &mut test);
         assert_straddles_seam(pool_id, &mut test);
 
-        // The buffer really did fill rather than trailing at one order, which is
-        // what distinguishes this build from the one-price one.
+        // Both stores hold a run of orders, so the taker below has to walk several
+        // buffer residents before it crosses into the tree. Unlike the one-price
+        // build, the tree here was stocked by spilling.
         test.next_tx(ALICE);
         {
             let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);

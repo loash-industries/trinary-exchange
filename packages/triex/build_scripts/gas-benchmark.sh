@@ -148,8 +148,8 @@ get() {
   local want="$1" i
   for i in "${!NAMES[@]}"; do
     if [[ "${NAMES[$i]}" == "$want" ]]; then
-      (( RESULTS[i] >= 0 )) && printf '%s' "${RESULTS[$i]}"
-      return
+      if (( RESULTS[i] >= 0 )); then printf '%s' "${RESULTS[$i]}"; fi
+      return 0
     fi
   done
   printf ''
