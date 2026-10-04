@@ -824,8 +824,8 @@ module triex::book {
         let is_bid = order_info.is_bid();
 
         let hot_len = if (is_bid) self.hot_bids.length() else self.hot_asks.length();
+        let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
         if (hot_len == 0) {
-            let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
             if (cold_empty) {
                 // First order on this side.
                 if (is_bid) self.hot_bids.push_back(order) else self.hot_asks.push_back(order);
@@ -866,7 +866,6 @@ module triex::book {
             // whole dynamic-field object, to hold a single order the buffer had
             // space for. Keys are unique and this one is no better than the worst,
             // so index 0 keeps the buffer sorted and puts it behind equal prices.
-            let cold_empty = if (is_bid) self.bids.is_empty() else self.asks.is_empty();
             if (cold_empty && hot_len < HOT_CAPACITY) {
                 if (is_bid) self.hot_bids.insert(order, 0) else self.hot_asks.insert(order, 0);
             } else {

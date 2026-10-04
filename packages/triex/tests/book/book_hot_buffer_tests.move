@@ -11,11 +11,12 @@
 /// The multicoin book spills **one way**: orders leave the buffer for the tree on
 /// overflow and never travel back. That makes an empty buffer in front of a
 /// populated tree a legal resting state rather than a missed refill, and it moves
-/// the whole burden of the invariant onto three places — the admission test in
-/// `inject_limit_order`, `spill`, and the empty-buffer-over-populated-tree branch.
-/// Nothing repairs the invariant if one of them is wrong, because there is no
-/// refill to shuffle orders back into place, so every case below re-checks it
-/// after every single operation rather than at the end.
+/// the whole burden of the invariant onto four places — the admission test in
+/// `inject_limit_order`, the tree-empty admission at the buffer's worst end,
+/// `spill`, and the empty-buffer-over-populated-tree branch. Nothing repairs the
+/// invariant if one of them is wrong, because there is no refill to shuffle orders
+/// back into place, so every case below re-checks it after every single operation
+/// rather than at the end.
 #[test_only]
 module triex::book_hot_buffer_tests {
     use sui::test_scenario::begin;

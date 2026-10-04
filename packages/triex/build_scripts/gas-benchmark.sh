@@ -142,10 +142,15 @@ for bench in "${BENCHES[@]}"; do
   NAMES+=("$bench"); RESULTS+=("$hi")
 done
 
+# A result of -1 means the bench exceeded CEILING. It reads back as unmeasured, so
+# the differentials below skip it instead of subtracting a sentinel.
 get() {
   local want="$1" i
   for i in "${!NAMES[@]}"; do
-    if [[ "${NAMES[$i]}" == "$want" ]]; then printf '%s' "${RESULTS[$i]}"; return; fi
+    if [[ "${NAMES[$i]}" == "$want" ]]; then
+      (( RESULTS[i] >= 0 )) && printf '%s' "${RESULTS[$i]}"
+      return
+    fi
   done
   printf ''
 }

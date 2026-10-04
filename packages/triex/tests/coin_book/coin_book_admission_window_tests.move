@@ -8,16 +8,21 @@
 /// `inject_limit_order` is the whole of that logic. It has four branches:
 ///
 /// ```text
-///   hot_len == 0 && tree empty      -> ADMIT                        (branch A)
-///   hot_len == 0 && tree non-empty  -> ADMIT iff better(key, best_cold)   (W)
-///   hot_len >  0                    -> ADMIT iff better(key, worst_hot)   (branch C)
-///                                      then spill if now over capacity
-///   otherwise, tree empty and room  -> ADMIT at the worst end        (branch B)
+///   hot_len == 0 && tree empty      -> ADMIT                               (branch A)
+///   hot_len == 0 && tree non-empty  -> ADMIT iff better(key, best_cold)    (W)
+///   hot_len >  0 && better(key, worst_hot)
+///                                   -> ADMIT, then spill if over capacity  (branch C)
+///   hot_len >  0 && !better(key, worst_hot)
+///                                   -> ADMIT at index 0 iff tree empty
+///                                      and hot_len < HOT_CAPACITY          (branch B)
 /// ```
+///
+/// Anything not admitted goes to the tree.
 ///
 /// Branch **B** keeps a thin book entirely inline: with nothing behind the buffer,
 /// an order behind its worst still beats the (empty) tree, so admitting it at
-/// index 0 is sound and saves minting the side's first tree slice.
+/// index 0 is sound and saves minting the side's first tree slice. Once the tree
+/// holds anything, B is closed and a not-better order goes behind the buffer.
 ///
 /// Branch **W** is the promotion window: the only place in the module that reads
 /// the tree in order to decide buffer membership, and the branch that does not
@@ -36,22 +41,22 @@
 /// Branch C then inherits soundness from W by induction: `worst_hot` beats
 /// `best_cold`, so anything beating `worst_hot` beats the whole tree.
 ///
-/// Branch C is *conservative*: an order worse than `worst_hot` but better than
-/// `best_cold` is sent to the tree even though the buffer has room and the
-/// invariant would permit it inline. That costs a tree write and never breaks
-/// anything. It is asserted below (`GAP`) so the behaviour is pinned rather than
-/// assumed.
+/// Rejection with a stocked tree is *conservative*: an order worse than
+/// `worst_hot` but better than `best_cold` is sent to the tree even though the
+/// buffer has room and the invariant would permit it inline. That costs a tree
+/// write and never breaks anything. It is asserted below (`GAP`) so the behaviour
+/// is pinned rather than assumed.
 ///
 /// ## Promotion is structurally impossible
 ///
-/// Every write into a hot buffer in `coin_book.move` is one of three `push_back` /
-/// `insert` calls in `inject_limit_order`, and all three write the same local
-/// `order`, bound once from `order_info.to_order()`. No value read out of a
-/// `BigVector` ever reaches a hot-buffer write: `spill` moves buffer → tree,
-/// `remove_order` returns to its caller, and `borrow_mut` mutates in place. That is
-/// an exhaustive argument over write sites, and `assert_no_promotion` below is its
-/// observable form — after every operation, no id that was in the tree is in the
-/// buffer.
+/// Every write into a hot buffer in `book.move` is one of four `push_back` /
+/// `insert` calls in `inject_limit_order` (branches A, W, B and C), and all four
+/// write the same local `order`, bound once from `order_info.to_order()`. No value
+/// read out of a `BigVector` ever reaches a hot-buffer write: `spill` moves buffer
+/// → tree, `remove_order` returns to its caller, and `borrow_mut` mutates in place.
+/// That is an exhaustive argument over write sites, and `assert_no_promotion`
+/// below is its observable form — after every operation, no id that was in the
+/// tree is in the buffer.
 ///
 /// ## How "exhaustive" is meant here
 ///

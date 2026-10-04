@@ -215,6 +215,38 @@ module triex::coin_book_hot_buffer_tests {
     }
 
     #[test]
+    /// Once the tree holds anything, a placement behind the buffer goes to the tree
+    /// even with room inline: admitting it would need the tree's best key to prove
+    /// it still beats the tree, a read this path deliberately does not pay.
+    fun behind_the_buffer_with_a_stocked_tree_goes_to_the_tree() {
+        let mut test = begin(OWNER);
+        let mut book = book::empty(test.ctx());
+
+        // Fill the buffer from the back, then one more lands in the tree.
+        let mut i = HOT_CAPACITY + 1;
+        while (i > 0) {
+            rest(&mut book, price_at(100 + i), true);
+            i = i - 1;
+        };
+        assert!(book.hot_bids().length() == HOT_CAPACITY);
+        assert!(book.bids().length() == 1);
+
+        // Free a slot by cancelling the best order, then quote behind the buffer.
+        let best = book.hot_bids()[HOT_CAPACITY - 1].order_id();
+        book.cancel_order(best);
+        assert!(book.hot_bids().length() == HOT_CAPACITY - 1);
+
+        rest(&mut book, price_at(0), true);
+        assert!(book.hot_bids().length() == HOT_CAPACITY - 1);
+        assert!(book.bids().length() == 2);
+        assert_invariant(&book, true);
+        assert_ordered(&book, true, HOT_CAPACITY + 1);
+
+        book.drop_for_testing();
+        test.end();
+    }
+
+    #[test]
     /// Prices that jump either side of the seam, so placements alternate between
     /// the buffer and the tree and the sorted insert inside the buffer is exercised
     /// at positions other than the end.
