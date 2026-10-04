@@ -1,7 +1,7 @@
 /// Coin-pool twin of `multicoin_pool_turnover_fold_tests`: cancel and modify
 /// fold the pool's pending maker turnover into the exchange-wide ring.
-/// `withdraw_settled_amounts` is deliberately absent — it takes no `TxContext`
-/// on this pool, so it cannot fold without breaking upgrade compatibility.
+/// `withdraw_settled_amounts` takes no `TxContext` on this pool, so it cannot
+/// fold; `fold_pending_turnover` alongside it in the same PTB does instead.
 #[test_only]
 module triex::pool_turnover_fold_tests {
     use std::unit_test::assert_eq;
@@ -111,6 +111,28 @@ module triex::pool_turnover_fold_tests {
 
         assert_eq!(ring(alice, &mut test), credit);
         assert_eq!(pool_turnover(pool_id, alice, &mut test), credit);
+        end(test);
+    }
+
+    #[test]
+    fun explicit_fold_alongside_withdraw_settled_lands_pending_turnover() {
+        let mut test = begin(OWNER);
+        let (pool_id, alice, _, credit) = alice_earns_maker_credit(&mut test);
+
+        test.next_tx(ALICE);
+        {
+            let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
+            let mut ta = test.take_shared_by_id<TradingAccount>(alice);
+            let proof = ta.generate_proof_as_owner(test.ctx());
+            pool.withdraw_settled_amounts(&mut ta, &proof);
+            assert_eq!(pool.account_pending_fee_turnover(&ta, test.ctx()), credit);
+            pool.fold_pending_turnover(&mut ta, test.ctx());
+            assert_eq!(pool.account_pending_fee_turnover(&ta, test.ctx()), 0);
+            return_shared(ta);
+            return_shared(pool);
+        };
+
+        assert_eq!(ring(alice, &mut test), credit);
         end(test);
     }
 }

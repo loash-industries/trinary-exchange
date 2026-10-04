@@ -911,6 +911,25 @@ module triex::multicoin_pool {
         self.state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
     }
 
+    /// Fold the maker-fee credits this pool holds for `trading_account` into its
+    /// exchange-wide turnover ring, so every pool on this quote prices against
+    /// them — not only this one.
+    ///
+    /// For clients that know credits are pending here (see
+    /// `account_pending_fee_turnover`) to add to any PTB that holds the trading
+    /// account, without trading, withdrawing or cancelling on this pool.
+    /// Permissionless: it only ever credits fees the account actually paid, so a
+    /// third party calling it can only help the trader. A no-op, never an abort,
+    /// when nothing is pending.
+    /// #ref:functions
+    public fun fold_pending_turnover<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        trading_account: &mut TradingAccount,
+        ctx: &TxContext,
+    ) {
+        self.load_inner_mut().state.fold_pending_turnover<QuoteAsset>(trading_account, ctx);
+    }
+
     // === Public-Mutative Functions * ADMIN * ===
 
     /// Admin function to reassign this pool to another pricing class — the only
@@ -1407,6 +1426,17 @@ module triex::multicoin_pool {
         ctx: &TxContext,
     ): u128 {
         self.load_inner().account_turnover_int(trading_account, ctx)
+    }
+
+    /// Maker-fee credits this pool holds for the trading account that have not
+    /// yet folded into its exchange-wide ring — what `fold_pending_turnover`
+    /// would land. Zero means there is nothing to fold here.
+    public fun account_pending_fee_turnover<QuoteAsset>(
+        self: &MultiCoinPool<QuoteAsset>,
+        trading_account: &TradingAccount,
+        ctx: &TxContext,
+    ): u128 {
+        self.load_inner().state.pending_turnover_total(trading_account.id(), ctx)
     }
 
     public fun account<QuoteAsset>(

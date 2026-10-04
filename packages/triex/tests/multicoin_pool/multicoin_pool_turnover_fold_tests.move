@@ -152,6 +152,25 @@ module triex::multicoin_pool_turnover_fold_tests {
         turnover
     }
 
+    fun pending(pool_id: ID, trading_account_id: ID, test: &mut Scenario): u128 {
+        test.next_tx(OWNER);
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
+        let turnover = pool.account_pending_fee_turnover(&ta, test.ctx());
+        return_shared(ta);
+        return_shared(pool);
+        turnover
+    }
+
+    fun fold(sender: address, pool_id: ID, trading_account_id: ID, test: &mut Scenario) {
+        test.next_tx(sender);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
+        pool.fold_pending_turnover(&mut ta, test.ctx());
+        return_shared(ta);
+        return_shared(pool);
+    }
+
     #[test]
     fun pending_maker_credit_is_invisible_to_other_pools_until_folded() {
         let mut test = begin(OWNER);
@@ -334,6 +353,62 @@ module triex::multicoin_pool_turnover_fold_tests {
         // And the total is taker + maker, not just the taker fee.
         assert!(taker_fee > 0);
         assert!(total > (taker_fee as u128));
+
+        destroy(cap);
+        end(test);
+    }
+    #[test]
+    fun explicit_fold_alongside_withdraw_all_lands_pending_turnover() {
+        let mut test = begin(OWNER);
+        let (gold, silver, alice, bob, cap) = setup(&mut test);
+        let (_, credit) = alice_earns_maker_credit(gold, alice, bob, QUANTITY, &mut test);
+        assert_eq!(pending(gold, alice, &mut test), credit);
+
+        // One PTB: Alice withdraws her quote balance and folds gold's credit,
+        // touching no order and no settled balance on the pool.
+        test.next_tx(ALICE);
+        {
+            let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(gold);
+            let mut ta = test.take_shared_by_id<TradingAccount>(alice);
+            let coin = ta.withdraw_all<USDC>(test.ctx());
+            pool.fold_pending_turnover(&mut ta, test.ctx());
+            destroy(coin);
+            return_shared(ta);
+            return_shared(pool);
+        };
+
+        assert_eq!(pending(gold, alice, &mut test), 0);
+        assert_eq!(ring(alice, &mut test), credit);
+        assert_eq!(pool_turnover(silver, alice, &mut test), credit);
+
+        destroy(cap);
+        end(test);
+    }
+
+    #[test]
+    fun anyone_can_fold_and_folding_twice_is_a_noop() {
+        let mut test = begin(OWNER);
+        let (gold, _silver, alice, bob, cap) = setup(&mut test);
+        let (_, credit) = alice_earns_maker_credit(gold, alice, bob, QUANTITY, &mut test);
+
+        fold(BOB, gold, alice, &mut test);
+        fold(BOB, gold, alice, &mut test);
+
+        assert_eq!(ring(alice, &mut test), credit);
+        assert_eq!(pending(gold, alice, &mut test), 0);
+
+        destroy(cap);
+        end(test);
+    }
+
+    #[test]
+    fun fold_on_an_untouched_pool_is_a_noop() {
+        let mut test = begin(OWNER);
+        let (gold, _silver, alice, _bob, cap) = setup(&mut test);
+
+        assert_eq!(pending(gold, alice, &mut test), 0);
+        fold(BOB, gold, alice, &mut test);
+        assert_eq!(ring(alice, &mut test), 0);
 
         destroy(cap);
         end(test);
