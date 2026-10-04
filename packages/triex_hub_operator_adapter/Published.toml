@@ -4,9 +4,9 @@
 
 [published.testnet_stillness]
 chain-id = "4c78adac"
-published-at = "0x9e9b7c2d78885fb0ab573f770c5d227218d490ea7b5688ab5881d7bc8a1204ee"
-original-id = "0xdbf259ed33d70666379492199137e2ad50fcc1ed1e56acd5780329f7fe982945"
-version = 2
+published-at = "0x658ee39f76e5c5be53f54cd5923e2409c9fadad0e813d3a5f74278f9311fcf75"
+original-id = "0x658ee39f76e5c5be53f54cd5923e2409c9fadad0e813d3a5f74278f9311fcf75"
+version = 1
 toolchain-version = "1.81.0"
 build-config = { flavor = "sui", edition = "2024" }
-upgrade-capability = "0x0790c8b3317edc17a50ef4999ad12c38d4e17f0e98cf870436ff2a5dbd1ed1ac"
+upgrade-capability = "0x2f776c68f832a324300df5ac07589a4355782f85784e59762b89e8cac05057bc"
