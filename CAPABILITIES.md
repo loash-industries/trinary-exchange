@@ -128,26 +128,63 @@ pulling a book of quotes from being credited nothing at all. An operator
 reconciling payouts should expect the floored figure, not `bps × revenue`.
 
 Where the share is paid is configuration, not inference: `FeePolicy` holds an
-explicit `collection_id -> address`, written once through a witness minted by an
-admin-registered adapter package — the adapter checks the caller's
-`OwnerCap<StorageUnit>` against the collection, so the address registered is the
-storage unit owner's, not whichever sender happened to deploy a pool first (pool
-creation itself writes nothing) — and never re-pointed by the contracts, so a
-hub changing hands, a capability parked on another object, or a game-side change
-to a character's wallet cannot silently redirect money. Until the admin
-registers an adapter type, no registration path exists at all, and the first
-type registered is pinned for the life of the policy: `clear_operator_adapter`
-closes registration but never unpins it, and `set_operator_adapter` aborts
-(`EAdapterPinned`) for any other type, so the cap cannot authorize a witness of
-its own and re-register a destroyed mapping to itself. `pinned_operator_adapter()`
-shows the pin. Moving to a different adapter package takes a Triex upgrade. There is no
-rotation surface either: any delegation or re-division of a hub's revenue is
-settled outside Triex, and the admin cap can only **destroy** a mapping (halting
-payouts, which stay encumbered until the owner re-registers), never point it
-somewhere new.
-Accrued-but-unclaimed balance pays whoever is configured at claim time, which is
-a settlement matter between a hub's buyer and seller — the `operator_owed()`
-view and the claim events are the record of it.
+explicit `collection_id -> address`, written and re-pointed only through a
+witness minted by an admin-registered adapter package
+([`triex_hub_operator_adapter`](packages/triex_hub_operator_adapter/)). On every
+write the adapter checks that the `StorageUnit` presented is the one the
+collection's warehouse `VaultConfig` was initialized for, and that the caller's
+`OwnerCap<StorageUnit>` is the cap that storage unit records (`owner_cap_id`) —
+not merely one authorized for it, since world lets an AdminACL sponsor mint
+further caps. So the address is always one the storage unit's *current* owner
+chose — themselves or anyone they name — not whichever sender happened to
+deploy a pool first (pool creation itself writes nothing).
+Registration is first-write-wins; after it, `update_operator_beneficiary_with_witness`
+re-points the mapping. That rotation exists because a storage unit's `OwnerCap`
+is transferable: a write-once mapping would keep paying the previous owner after
+a sale, with the new owner unable to stop it. Re-pointing to the current address
+is a no-op (nothing written, no event), so a hand-over PTB never fails on an
+unchanged payee. Every write is on the event stream
+— `OperatorBeneficiaryRegistered`, `OperatorBeneficiaryChanged` (with the previous
+and new address) and `OperatorBeneficiaryDestroyed` from `fee_policy`, plus the
+adapter's own `HubOperatorRegistered` / `HubOperatorChanged`, which add the
+storage unit and the signer.
+
+Until the admin registers an adapter type, no registration or rotation path
+exists at all, and the first type registered is pinned for the life of the
+policy: `clear_operator_adapter` closes both paths but never unpins the type,
+and `set_operator_adapter` aborts (`EAdapterPinned`) for any other type, so the
+cap cannot authorize a witness of its own and register or rotate a mapping to
+itself. `pinned_operator_adapter()` shows the pin. Moving to a different adapter
+package takes a Triex upgrade. The admin cap can only **destroy** a mapping
+(halting payouts, which stay encumbered until the owner re-registers), never
+point it somewhere new. The pin survives upgrades of the adapter package, so
+whoever holds the adapter's `UpgradeCap` could add a function that mints the
+witness and re-point **every** collection. The adapter is therefore made
+immutable (`sui::package::make_immutable`) after it is published and before it
+is pinned; until that is done, read the adapter `UpgradeCap` as a cap with the
+power to redirect all hub revenue. Two world-side parties sit in the same trust
+set: an AdminACL sponsor can re-point any character's wallet
+(`character::update_address`) and so act as any storage unit owner, and the
+warehouse_receipts / world `UpgradeCap`s guard the `VaultConfig` and
+`owner_cap_id` bindings the adapter relies on. Once world unanchors a storage
+unit or deletes its cap, that collection's payout address is frozen at its last
+value.
+
+Accrued-but-unclaimed balance pays whoever is configured at claim time, not
+whoever was configured when it accrued — a seller who wants the backlog claims
+every pool before handing over the `OwnerCap`. The mapping does not follow the
+cap: until the buyer rotates it, claims keep paying the seller's choice. A clean
+hand-over is one PTB by the seller — borrow the cap, `update_operator` to the
+buyer's address, `transfer_owner_cap_with_receipt`. A storage unit can carry
+several warehouse collections; each is rotated separately.
+
+Only warehouse_receipts collections can ever get a payout address, but pool
+creation accepts any multicoin collection and the default class credits the
+share regardless. On any other collection the share accrues to a payee who can
+never exist: neither claimable nor sweepable. The admin stops further accrual
+by assigning such collections a zero-rate class; what has accrued stays put. `claim_operator_share` is
+permissionless, so either side can run it; the `operator_owed()` view and the
+claim events are the record of it.
 
 ### What the AdminCap can NOT do
 
@@ -161,8 +198,8 @@ power than it sounds. It cannot:
   can never reach it. (What the cap *does* keep is the sub-unit flooring
   remainder described above, which is revenue never credited to anyone else.)
 - Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
-  the address `FeePolicy` records — registered through the pinned adapter's
-  witness, destructible but never re-pointable by the cap — and never the caller
+  the address `FeePolicy` records — registered and rotated only through the pinned
+  adapter's witness, destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)
 - Change a live pool's tick size, lot size, or min size (that code is disabled).

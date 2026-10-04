@@ -1,0 +1,28 @@
+[package]
+name = "triex_hub_operator_adapter"
+edition = "2024"
+version = "0.0.1"
+
+# triex_hub_operator_adapter — the operator adapter `triex::fee_policy` pins with
+# `set_operator_adapter`. It binds a multicoin collection's hub-share payout
+# address to the owner of the storage unit behind that collection: the caller
+# presents the storage unit's `OwnerCap` and its warehouse_receipts
+# `VaultConfig`, and only then is the witness minted.
+#
+# Every dep must resolve to the same on-chain packages triex and
+# warehouse_receipts were published against: multicoin 2772c26, world d33ff23
+# (testnet_stillness). The adapter pinned on a FeePolicy is permanent and
+# only accepts the types it was linked against: republish (and pin) it with each
+# fresh triex publish. Republishing world or warehouse_receipts alone strands new
+# storage units until triex is republished too.
+[dependencies]
+triex = { local = "../triex" }
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "d33ff232bd3878e8f9ad0721e18564b21facc925", override = true }
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "2772c26d24c02671726d39f167b8f772777875d9", override = true }
+# fe73b95 = warehouse_receipts v2 on testnet_stillness (`receipt::new_vault` /
+# `PendingVault`, loash-industries/warehouse-receipts#1): published-at 0xcfd8ce37…,
+# original-id 0x134dfa96….
+warehouse_receipts = { git = "https://github.com/loash-industries/warehouse-receipts.git", subdir = "packages/contracts", rev = "fe73b95a753d440ae3944b71217fb39a07cecac2", override = true }
+
+[environments]
+testnet_stillness = "4c78adac"

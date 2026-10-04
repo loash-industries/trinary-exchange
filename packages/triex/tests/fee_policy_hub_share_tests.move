@@ -27,6 +27,22 @@ module triex::fee_policy_operator_share_tests {
         object::id_from_address(@0xDECAF)
     }
 
+    /// The publish path: `init` shares a policy already carrying the genesis
+    /// hub-share state, with no adapter and no beneficiaries.
+    #[test]
+    fun publishing_shares_a_policy_at_the_genesis_share() {
+        let mut test = begin(OWNER);
+        fee_policy::init_for_testing(test.ctx());
+
+        test.next_tx(OWNER);
+        let policy = test.take_shared<FeePolicy>();
+        assert_eq!(policy.operator_share_bps_at(a_collection(), 0), GENESIS_SHARE_BPS);
+        assert_eq!(policy.operator_adapter(), option::none());
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::none());
+        sui::test_scenario::return_shared(policy);
+        end(test);
+    }
+
     #[test]
     fun unconfigured_resolves_to_the_genesis_share() {
         // A fresh policy ships with genesis class 0 at the launch rate,
@@ -547,6 +563,138 @@ module triex::fee_policy_operator_share_tests {
         policy.destroy_operator_beneficiary(a_collection(), &cap);
         policy.set_operator_adapter<Forgery>(&cap);
         policy.register_operator_beneficiary_with_witness(a_collection(), @0xAD, Forgery {});
+
+        abort 0
+    }
+
+    // === Rotation ===
+
+    #[test]
+    fun the_registered_witness_rotates_an_existing_mapping() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        policy.register_operator_beneficiary_with_witness(another_collection(), @0xD00D, Adapter {});
+
+        let previous = policy.update_operator_beneficiary_with_witness(
+            a_collection(),
+            @0xCAFE,
+            Adapter {},
+        );
+        assert_eq!(previous, @0xB0B);
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xCAFE));
+        // Rotation is per collection.
+        assert_eq!(policy.operator_beneficiary(another_collection()), option::some(@0xD00D));
+
+        // And it can rotate again — a hub can change hands more than once.
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    /// Rotation is never a second registration path: a collection with no
+    /// mapping has nothing to re-point.
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EOperatorBeneficiaryNotRegistered)]
+    fun rotating_an_unregistered_collection_aborts() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+
+        abort 0
+    }
+
+    /// After the admin destroys a mapping, only re-registration restores it.
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EOperatorBeneficiaryNotRegistered)]
+    fun rotating_a_destroyed_mapping_aborts() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        policy.destroy_operator_beneficiary(a_collection(), &cap);
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xCAFE, Adapter {});
+
+        abort 0
+    }
+
+    /// Re-pointing to the current beneficiary is a no-op rather than an abort,
+    /// so a hand-over PTB doesn't fail when the buyer is already the payee.
+    /// It returns the unchanged address.
+    #[test]
+    fun rotating_to_the_current_beneficiary_is_a_no_op() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        let previous = policy.update_operator_beneficiary_with_witness(
+            a_collection(),
+            @0xB0B,
+            Adapter {},
+        );
+
+        assert_eq!(previous, @0xB0B);
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        destroy(cap);
+        destroy(policy);
+        end(test);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::ENoAuthorizedAdapter)]
+    fun no_rotation_path_exists_until_an_adapter_is_registered() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+
+        policy.register_operator_beneficiary_for_testing(a_collection(), @0xB0B);
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xBAD, Adapter {});
+
+        abort 0
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::EUnauthorizedAdapter)]
+    fun a_forged_witness_cannot_rotate() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xBAD, Forgery {});
+
+        abort 0
+    }
+
+    /// The admin's emergency stop: clearing the adapter freezes rotation as
+    /// well as registration, and leaves the live mapping paying out.
+    #[test]
+    #[expected_failure(abort_code = triex::fee_policy::ENoAuthorizedAdapter)]
+    fun clearing_the_adapter_closes_the_rotation_path() {
+        let mut test = begin(OWNER);
+        let mut policy = fee_policy::create_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+
+        policy.set_operator_adapter<Adapter>(&cap);
+        policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
+        policy.clear_operator_adapter(&cap);
+        assert_eq!(policy.operator_beneficiary(a_collection()), option::some(@0xB0B));
+
+        policy.update_operator_beneficiary_with_witness(a_collection(), @0xBAD, Adapter {});
 
         abort 0
     }
