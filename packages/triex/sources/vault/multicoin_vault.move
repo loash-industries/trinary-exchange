@@ -297,9 +297,7 @@ module triex::multicoin_vault {
     }
 
     #[test_only]
-    public fun operator_share_claimed_parts(
-        self: &OperatorShareClaimed,
-    ): (ID, ID, address, u64) {
+    public fun operator_share_claimed_parts(self: &OperatorShareClaimed): (ID, ID, address, u64) {
         (self.pool_id, self.collection_id, self.beneficiary, self.amount)
     }
 

@@ -43,8 +43,9 @@ module triex_hub_operator_adapter::hub_adapter_tests {
 
         let registered = event::events_by_type<HubOperatorRegistered>();
         assert_eq!(registered.length(), 1);
-        let (collection, storage_unit, config, cap, beneficiary, by) = registered[0]
-            .hub_operator_registered_parts();
+        let (collection, storage_unit, config, cap, beneficiary, by) = registered[
+            0,
+        ].hub_operator_registered_parts();
         assert_eq!(collection, site.collection());
         assert_eq!(storage_unit, site.storage_unit());
         assert_eq!(config, site.vault_config());
@@ -183,7 +184,9 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         assert_eq!(event::events_by_type<OperatorBeneficiaryRegistered>().length(), 1);
         let registered = event::events_by_type<HubOperatorRegistered>();
         assert_eq!(registered.length(), 1);
-        let (_, storage_unit, _, _, beneficiary, by) = registered[0].hub_operator_registered_parts();
+        let (_, storage_unit, _, _, beneficiary, by) = registered[
+            0,
+        ].hub_operator_registered_parts();
         assert_eq!(storage_unit, site.storage_unit());
         assert_eq!(beneficiary, OWNER);
         assert_eq!(by, OWNER);
@@ -216,8 +219,9 @@ module triex_hub_operator_adapter::hub_adapter_tests {
 
         let changed = event::events_by_type<HubOperatorChanged>();
         assert_eq!(changed.length(), 1);
-        let (collection, storage_unit, config, cap, previous, beneficiary, by) = changed[0]
-            .hub_operator_changed_parts();
+        let (collection, storage_unit, config, cap, previous, beneficiary, by) = changed[
+            0,
+        ].hub_operator_changed_parts();
         assert_eq!(collection, site.collection());
         assert_eq!(storage_unit, site.storage_unit());
         assert_eq!(config, site.vault_config());
@@ -228,7 +232,9 @@ module triex_hub_operator_adapter::hub_adapter_tests {
 
         let triex_changed = event::events_by_type<OperatorBeneficiaryChanged>();
         assert_eq!(triex_changed.length(), 1);
-        let (collection, previous, beneficiary) = triex_changed[0].operator_beneficiary_changed_parts();
+        let (collection, previous, beneficiary) = triex_changed[
+            0,
+        ].operator_beneficiary_changed_parts();
         assert_eq!(collection, site.collection());
         assert_eq!(previous, PARTNER);
         assert_eq!(beneficiary, NEW_PARTNER);

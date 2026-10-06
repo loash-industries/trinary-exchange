@@ -16,10 +16,11 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         constants,
         fee_policy::FeePolicy,
         multicoin_pool::{Self, MultiCoinPool},
+        multicoin_vault::OperatorShareClaimed,
         registry::{Self, Registry},
-        trading_account::{Self, TradingAccount}
+        trading_account::{Self, TradingAccount},
+        vault::PoolFeesWithdrawn
     };
-    use triex::{multicoin_vault::OperatorShareClaimed, vault::PoolFeesWithdrawn};
     use triex_hub_operator_adapter::test_world::{Self, HUB_USD, Site};
     use warehouse_receipts::{receipt, vault::VaultConfig};
     use world::{access::OwnerCap, character::Character, storage_unit::StorageUnit};

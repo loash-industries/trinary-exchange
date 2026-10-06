@@ -91,8 +91,9 @@ module triex::integration_hub_revenue_share_tests {
     fun assert_payout_events(pool_id: ID, collection_id: ID, hub: u64, treasury: u64) {
         let claims = event::events_by_type<OperatorShareClaimed>();
         assert!(claims.length() == 1);
-        let (claim_pool, claim_collection, beneficiary, amount) = claims[0]
-            .operator_share_claimed_parts();
+        let (claim_pool, claim_collection, beneficiary, amount) = claims[
+            0,
+        ].operator_share_claimed_parts();
         assert!(claim_pool == pool_id);
         assert!(claim_collection == collection_id);
         assert!(beneficiary == OPERATOR);

@@ -129,7 +129,12 @@ module triex_hub_operator_adapter::test_world {
     }
 
     /// Another storage unit for an existing character (offline, no vault).
-    public fun create_site_for(sc: &mut Scenario, owner: address, character_id: ID, seed: u64): Site {
+    public fun create_site_for(
+        sc: &mut Scenario,
+        owner: address,
+        character_id: ID,
+        seed: u64,
+    ): Site {
         ts::next_tx(sc, ADMIN);
         let (storage_unit_id, nwn_id) = {
             let admin_acl = ts::take_shared<world::access::AdminACL>(sc);
@@ -231,14 +236,22 @@ module triex_hub_operator_adapter::test_world {
     /// The first-time setup PTB the app sends: `new_vault`, authorize the
     /// extension, register `beneficiary` against the unshared vault, then
     /// `share_vault` — one transaction, one signature.
-    public fun initialize_vault_and_register(sc: &mut Scenario, site: &mut Site, beneficiary: address) {
+    public fun initialize_vault_and_register(
+        sc: &mut Scenario,
+        site: &mut Site,
+        beneficiary: address,
+    ) {
         initialize_vault_and_register_only(sc, site, beneficiary);
         record_vault(sc, site);
     }
 
     /// The setup PTB alone, leaving its events readable to the caller; follow
     /// with `record_vault`.
-    public fun initialize_vault_and_register_only(sc: &mut Scenario, site: &Site, beneficiary: address) {
+    public fun initialize_vault_and_register_only(
+        sc: &mut Scenario,
+        site: &Site,
+        beneficiary: address,
+    ) {
         ts::next_tx(sc, site.owner);
         let mut character = ts::take_shared_by_id<Character>(sc, site.character);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
@@ -431,7 +444,12 @@ module triex_hub_operator_adapter::test_world {
 
     /// Hand the storage unit's `OwnerCap` from `site`'s character to
     /// character `buyer` — a sale of the structure.
-    public fun transfer_storage_unit(sc: &mut Scenario, site: &mut Site, buyer: address, buyer_character: ID) {
+    public fun transfer_storage_unit(
+        sc: &mut Scenario,
+        site: &mut Site,
+        buyer: address,
+        buyer_character: ID,
+    ) {
         ts::next_tx(sc, site.owner);
         let mut character = ts::take_shared_by_id<Character>(sc, site.character);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
@@ -464,7 +482,14 @@ module triex_hub_operator_adapter::test_world {
         let storage_unit = ts::take_shared_by_id<StorageUnit>(sc, site.storage_unit);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
 
-        hub_adapter::update_operator(&mut policy, &config, &storage_unit, &cap, beneficiary, sc.ctx());
+        hub_adapter::update_operator(
+            &mut policy,
+            &config,
+            &storage_unit,
+            &cap,
+            beneficiary,
+            sc.ctx(),
+        );
         access::transfer_owner_cap_with_receipt(
             cap,
             receipt,
