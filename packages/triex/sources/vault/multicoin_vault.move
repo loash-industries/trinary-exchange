@@ -268,13 +268,16 @@ module triex::multicoin_vault {
 
     /// Pay the settled share out of the reserve. Zeroes `operator_owed` first so the
     /// split is measured against an already-decremented encumbrance.
+    ///
+    /// Returns a `Balance`, not a `Coin`: the caller delivers it with
+    /// `balance::send_funds`, so no payout object is minted, and
+    /// `OperatorShareClaimed` is the only on-chain record of where it went.
     public(package) fun claim_operator_share<QuoteAsset>(
         self: &mut MultiCoinVault<QuoteAsset>,
         pool_id: ID,
         beneficiary: address,
         timestamp: u64,
-        ctx: &mut TxContext,
-    ): Coin<QuoteAsset> {
+    ): Balance<QuoteAsset> {
         let amount = self.operator_owed;
         self.operator_owed = 0;
         // Guaranteed by `reserve >= encumbered()`, which counts `operator_owed` in
@@ -290,7 +293,12 @@ module triex::multicoin_vault {
             timestamp,
         });
 
-        coin::from_balance(share, ctx)
+        share
+    }
+
+    #[test_only]
+    public fun operator_share_claimed_parts(self: &OperatorShareClaimed): (ID, ID, address, u64) {
+        (self.pool_id, self.collection_id, self.beneficiary, self.amount)
     }
 
     /// Returns the collection_id this vault is associated with.
@@ -523,10 +531,18 @@ module triex::multicoin_vault {
         amount: u64,
         ctx: &mut TxContext,
     ): Coin<QuoteAsset> {
+        coin::from_balance(self.withdraw_quote_fees_balance(amount), ctx)
+    }
+
+    /// `withdraw_quote_fees` without minting a coin, for payouts delivered with
+    /// `balance::send_funds`.
+    public(package) fun withdraw_quote_fees_balance<QuoteAsset>(
+        self: &mut MultiCoinVault<QuoteAsset>,
+        amount: u64,
+    ): Balance<QuoteAsset> {
         assert!(self.quote_fee_reserve.value() >= amount, EInsufficientFeeReserve);
         // Escrow backing open bid orders is not revenue and cannot be swept.
         assert!(amount <= self.withdrawable_quote_fees(), EFeesLocked);
-        let fee_balance = self.quote_fee_reserve.split(amount);
-        coin::from_balance(fee_balance, ctx)
+        self.quote_fee_reserve.split(amount)
     }
 }

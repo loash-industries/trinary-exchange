@@ -240,13 +240,17 @@ module triex::fee_policy_event_tests {
 
         let registered = event::events_by_type<OperatorBeneficiaryRegistered>();
         assert_eq!(registered.length(), 1);
-        let (registered_collection, beneficiary) = registered[0].operator_beneficiary_registered_parts();
+        let (registered_collection, beneficiary) = registered[
+            0,
+        ].operator_beneficiary_registered_parts();
         assert_eq!(registered_collection, collection);
         assert_eq!(beneficiary, @0xB0B);
 
         let changed = event::events_by_type<OperatorBeneficiaryChanged>();
         assert_eq!(changed.length(), 2);
-        let (changed_collection, previous, beneficiary) = changed[0].operator_beneficiary_changed_parts();
+        let (changed_collection, previous, beneficiary) = changed[
+            0,
+        ].operator_beneficiary_changed_parts();
         assert_eq!(changed_collection, collection);
         assert_eq!(previous, @0xB0B);
         assert_eq!(beneficiary, @0xCAFE);

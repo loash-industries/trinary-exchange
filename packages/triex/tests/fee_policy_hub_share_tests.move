@@ -577,7 +577,11 @@ module triex::fee_policy_operator_share_tests {
 
         policy.set_operator_adapter<Adapter>(&cap);
         policy.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
-        policy.register_operator_beneficiary_with_witness(another_collection(), @0xD00D, Adapter {});
+        policy.register_operator_beneficiary_with_witness(
+            another_collection(),
+            @0xD00D,
+            Adapter {},
+        );
 
         let previous = policy.update_operator_beneficiary_with_witness(
             a_collection(),

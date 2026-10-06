@@ -10,19 +10,26 @@
 #[test_only]
 module triex::integration_hub_revenue_share_tests {
     use multicoin::multicoin::{Self, Collection, CollectionCap};
-    use std::unit_test;
-    use sui::{clock::Clock, coin::Coin, test_scenario::{Scenario, begin, end, return_shared}};
+    use std::{type_name, unit_test};
+    use sui::{
+        clock::Clock,
+        coin::Coin,
+        event,
+        test_scenario::{Self, Scenario, begin, end, return_shared}
+    };
     use token::cred::CRED;
     use triex::{
         constants,
         fee_policy::FeePolicy,
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
+        multicoin_vault::OperatorShareClaimed,
         pool_test_utils,
         quote_fee,
         registry::{Self, Registry},
         trading_account::TradingAccount,
-        trading_account_tests::USDC
+        trading_account_tests::USDC,
+        vault::PoolFeesWithdrawn
     };
 
     const OWNER: address = @0x1;
@@ -76,6 +83,37 @@ module triex::integration_hub_revenue_share_tests {
     /// the treasury pointed at a distinct address.
     ///
     /// Returns `(pool_id, collection_id, registry_id, alice_ta, bob_ta, cap)`.
+    /// A claim pays both legs into address balances, so it mints nothing and
+    /// its events are the whole record of the payout — what an indexer sees.
+    /// Asserts the current transaction emitted exactly one
+    /// `OperatorShareClaimed` paying `OPERATOR` `hub` and one
+    /// `PoolFeesWithdrawn` for the treasury's `treasury`, both for `pool_id`.
+    fun assert_payout_events(pool_id: ID, collection_id: ID, hub: u64, treasury: u64) {
+        let claims = event::events_by_type<OperatorShareClaimed>();
+        assert!(claims.length() == 1);
+        let (claim_pool, claim_collection, beneficiary, amount) = claims[
+            0,
+        ].operator_share_claimed_parts();
+        assert!(claim_pool == pool_id);
+        assert!(claim_collection == collection_id);
+        assert!(beneficiary == OPERATOR);
+        assert!(amount == hub);
+
+        let sweeps = event::events_by_type<PoolFeesWithdrawn>();
+        assert!(sweeps.length() == 1);
+        let (sweep_pool, quote_type, swept) = sweeps[0].pool_fees_withdrawn_parts();
+        assert!(sweep_pool == pool_id);
+        assert!(quote_type == type_name::with_defining_ids<USDC>());
+        assert!(swept == treasury);
+    }
+
+    /// Neither party was handed a `Coin`: the payouts went to address balances.
+    fun assert_no_payout_coins(test: &mut Scenario) {
+        test.next_tx(OWNER);
+        assert!(!test_scenario::has_most_recent_for_address<Coin<USDC>>(OPERATOR));
+        assert!(!test_scenario::has_most_recent_for_address<Coin<USDC>>(TREASURY));
+    }
+
     fun setup(test: &mut Scenario): (ID, ID, ID, ID, ID, CollectionCap) {
         let (registry_id, collection_id, collection_cap) = mc_utils::setup_registry_with_multicoin(
             test,
@@ -481,29 +519,16 @@ module triex::integration_hub_revenue_share_tests {
             assert!(treasury_paid == revenue - share);
             assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
+            // The operator is paid exactly its share — the operator, not the
+            // caller who paid for the transaction — and the treasury the rest.
+            assert_payout_events(pool_id, collection_id, share, revenue - share);
 
             return_shared(clock);
             return_shared(triex_reg);
             return_shared(policy);
             return_shared(pool);
         };
-
-        // The operator holds a coin for exactly its share — the operator, not
-        // the caller who paid for the transaction.
-        test.next_tx(OPERATOR);
-        {
-            let paid = test.take_from_sender<Coin<USDC>>();
-            assert!(paid.value() == share);
-            unit_test::destroy(paid);
-        };
-
-        // And the treasury address holds the remainder.
-        test.next_tx(TREASURY);
-        {
-            let swept = test.take_from_sender<Coin<USDC>>();
-            assert!(swept.value() == revenue - share);
-            unit_test::destroy(swept);
-        };
+        assert_no_payout_coins(&mut test);
 
         unit_test::destroy(collection_cap);
         end(test);
@@ -538,19 +563,17 @@ module triex::integration_hub_revenue_share_tests {
             assert!(swept.value() == remainder);
             assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
+            // The operator was paid in the same transaction; the admin keeps
+            // the swept coin.
+            assert_payout_events(pool_id, collection_id, share, remainder);
 
             unit_test::destroy(swept);
             unit_test::destroy(cap);
             return_shared(clock);
             return_shared(policy);
             return_shared(pool);
-
-            // The operator's coin arrived in the same transaction.
-            test.next_tx(OPERATOR);
-            let paid = test.take_from_sender<Coin<USDC>>();
-            assert!(paid.value() == share);
-            unit_test::destroy(paid);
         };
+        assert!(!test_scenario::has_most_recent_for_address<Coin<USDC>>(OPERATOR));
 
         unit_test::destroy(collection_cap);
         end(test);
@@ -679,6 +702,9 @@ module triex::integration_hub_revenue_share_tests {
             );
             assert!(hub_paid == 0);
             assert!(treasury_paid == 0);
+            // Nothing paid, nothing recorded: an indexer sees no empty payout.
+            assert!(event::events_by_type<OperatorShareClaimed>().is_empty());
+            assert!(event::events_by_type<PoolFeesWithdrawn>().is_empty());
 
             return_shared(clock);
             return_shared(triex_reg);
@@ -1005,6 +1031,9 @@ module triex::integration_hub_revenue_share_tests {
                 &clock,
                 test.ctx(),
             );
+            // The payouts reached their configured destinations, at exactly the
+            // claimed amounts.
+            assert_payout_events(pool_id, collection_id, hub_paid, treasury_paid);
             return_shared(clock);
             return_shared(triex_reg);
             return_shared(policy);
@@ -1036,20 +1065,7 @@ module triex::integration_hub_revenue_share_tests {
             residue
         };
 
-        // The payout coins reached their configured destinations, at exactly
-        // the claimed amounts.
-        test.next_tx(OPERATOR);
-        {
-            let paid = test.take_from_sender<Coin<USDC>>();
-            assert!(paid.value() == hub_paid, 13);
-            unit_test::destroy(paid);
-        };
-        test.next_tx(TREASURY);
-        {
-            let swept = test.take_from_sender<Coin<USDC>>();
-            assert!(swept.value() == treasury_paid, 14);
-            unit_test::destroy(swept);
-        };
+        assert_no_payout_coins(&mut test);
 
         // Conservation, exactly: every quote unit that entered is now with a
         // trader, with the operator, with the treasury, or is the pinned

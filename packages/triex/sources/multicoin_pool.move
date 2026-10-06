@@ -7,6 +7,7 @@ module triex::multicoin_pool {
     use multicoin::multicoin::{Self, Collection};
     use std::type_name;
     use sui::{
+        balance,
         clock::Clock,
         coin::{Self, Coin},
         event,
@@ -1010,7 +1011,7 @@ module triex::multicoin_pool {
         // The sweep must not be blockable by a misconfigured hub, so an absent
         // beneficiary skips the leg: the share stays encumbered, and the
         // treasury still cannot touch it.
-        pool_inner.pay_operator_share(policy, false, now, ctx);
+        pool_inner.pay_operator_share(policy, false, now);
 
         let pool_id = pool_inner.pool_id;
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
@@ -1021,17 +1022,21 @@ module triex::multicoin_pool {
     // === Public-Mutative Functions * HUB REVENUE SHARE * ===
 
     /// The one payout leg both sweep entry points share: claim the accrued
-    /// share out of the reserve and transfer it to the collection's registered
+    /// share out of the reserve and send it to the collection's registered
     /// beneficiary. Returns the amount paid — zero when nothing is owed, and
     /// zero when no beneficiary is registered and `must_have_beneficiary` is
     /// false; with it true, an absent mapping aborts instead, so the share
     /// stays encumbered until a registration restores it.
+    ///
+    /// The share lands in the beneficiary's address balance (`send_funds`)
+    /// rather than as a new `Coin`: a coin object is ~1.3M MIST of storage per
+    /// payout that nobody is refunded until it is merged, and it is most of the
+    /// cost of a claim. `OperatorShareClaimed` records the payout.
     fun pay_operator_share<QuoteAsset>(
         pool_inner: &mut MultiCoinPoolInner<QuoteAsset>,
         policy: &FeePolicy,
         must_have_beneficiary: bool,
         timestamp: u64,
-        ctx: &mut TxContext,
     ): u64 {
         let owed = pool_inner.vault.operator_owed();
         if (owed == 0) return 0;
@@ -1045,14 +1050,22 @@ module triex::multicoin_pool {
 
         let share = pool_inner
             .vault
-            .claim_operator_share(pool_inner.pool_id, beneficiary, timestamp, ctx);
-        transfer::public_transfer(share, beneficiary);
+            .claim_operator_share(pool_inner.pool_id, beneficiary, timestamp);
+        balance::send_funds(share, beneficiary);
         owed
     }
 
     /// Pay the hub operator's accrued share to the collection's configured
     /// beneficiary, and the treasury's remainder to the treasury address — one
     /// claim, both parties, atomically.
+    ///
+    /// Both legs are delivered to address balances with `send_funds`, so a
+    /// claim mints no objects and its storage cost does not grow with the
+    /// number of pools batched into one PTB. With no coins to follow, the
+    /// events are the record: `OperatorShareClaimed` (pool, collection,
+    /// beneficiary, amount) for the hub leg and `PoolFeesWithdrawn` (pool,
+    /// quote type, amount) for the treasury leg, each emitted only when that
+    /// leg pays.
     ///
     /// No capability required. Both destinations come from configuration —
     /// `FeePolicy` records the beneficiary the adapter witness registered, and
@@ -1067,7 +1080,8 @@ module triex::multicoin_pool {
         policy: &FeePolicy,
         triex_registry: &Registry,
         clock: &Clock,
-        ctx: &mut TxContext,
+        // Kept for upgrade compatibility: nothing is minted any more.
+        _ctx: &mut TxContext,
     ): (u64, u64) {
         let now = clock.timestamp_ms();
         let pool_inner = self.load_inner_mut();
@@ -1076,20 +1090,20 @@ module triex::multicoin_pool {
         // the share or bank it for the treasury: `operator_owed` stays
         // encumbered until claimed, so a registration restoring the mapping
         // still pays.
-        let hub_amount = pool_inner.pay_operator_share(policy, true, now, ctx);
+        let hub_amount = pool_inner.pay_operator_share(policy, true, now);
 
         // The remainder is exact — no holdback, no unsettled basis — so the
         // treasury leg empties the earned revenue completely. Zero is normal for
         // an idle pool in a batched PTB, so it skips rather than aborts.
         let treasury_amount = pool_inner.vault.withdrawable_quote_fees();
         if (treasury_amount > 0) {
-            let fee_coin = pool_inner.vault.withdraw_quote_fees(treasury_amount, ctx);
+            let fees = pool_inner.vault.withdraw_quote_fees_balance(treasury_amount);
             vault::emit_pool_fees_withdrawn<QuoteAsset>(
                 pool_inner.pool_id,
                 treasury_amount,
                 now,
             );
-            transfer::public_transfer(fee_coin, triex_registry.treasury_address());
+            balance::send_funds(fees, triex_registry.treasury_address());
         };
 
         (hub_amount, treasury_amount)
