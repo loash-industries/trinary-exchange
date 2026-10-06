@@ -19,7 +19,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         registry::{Self, Registry},
         trading_account::{Self, TradingAccount}
     };
-    use triex::multicoin_vault::OperatorShareClaimed;
+    use triex::{multicoin_vault::OperatorShareClaimed, vault::PoolFeesWithdrawn};
     use triex_hub_operator_adapter::test_world::{Self, HUB_USD, Site};
     use warehouse_receipts::{receipt, vault::VaultConfig};
     use world::{access::OwnerCap, character::Character, storage_unit::StorageUnit};
@@ -221,18 +221,31 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         (hub_paid, treasury_paid)
     }
 
-    /// The single coin of `HUB_USD` the previous transaction sent `who`.
-    fun received(sc: &mut Scenario, who: address): u64 {
-        ts::next_tx(sc, who);
-        let paid = ts::take_from_address<Coin<HUB_USD>>(sc, who);
-        let value = paid.value();
-        unit_test::destroy(paid);
-        value
+    /// What the claim in the current transaction paid `who` as hub operator.
+    /// Payouts land in address balances, so its `OperatorShareClaimed` events
+    /// are the only record of them — the same record an indexer reads.
+    fun received(who: address): u64 {
+        let mut paid = 0;
+        event::events_by_type<OperatorShareClaimed>().do!(|claimed| {
+            let (_, _, beneficiary, amount) = claimed.operator_share_claimed_parts();
+            if (beneficiary == who) paid = paid + amount;
+        });
+        paid
     }
 
-    fun receives_nothing(sc: &mut Scenario, who: address) {
-        ts::next_tx(sc, who);
-        assert!(!ts::has_most_recent_for_address<Coin<HUB_USD>>(who));
+    /// What the claim in the current transaction swept to the treasury, from
+    /// its `PoolFeesWithdrawn` events.
+    fun treasury_received(): u64 {
+        let mut swept = 0;
+        event::events_by_type<PoolFeesWithdrawn>().do!(|withdrawn| {
+            let (_, _, amount) = withdrawn.pool_fees_withdrawn_parts();
+            swept = swept + amount;
+        });
+        swept
+    }
+
+    fun receives_nothing(who: address) {
+        assert!(received(who) == 0);
     }
 
     // === Tests ===
@@ -253,9 +266,9 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         let claims = event::events_by_type<OperatorShareClaimed>();
         assert!(claims.length() == 1);
 
-        assert!(received(&mut sc, OWNER) == share);
-        receives_nothing(&mut sc, STRANGER);
-        assert!(received(&mut sc, test_world::treasury()) == treasury_paid);
+        assert!(received(OWNER) == share);
+        receives_nothing(STRANGER);
+        assert!(treasury_received() == treasury_paid);
         ts::end(sc);
     }
 
@@ -285,8 +298,8 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         test_world::register(&mut sc, OWNER, site.character(), &site, PARTNER);
         let (hub_paid, _) = claim(&mut sc, STRANGER, pool_id);
         assert!(hub_paid == first + second);
-        assert!(received(&mut sc, PARTNER) == first + second);
-        receives_nothing(&mut sc, OWNER);
+        assert!(received(PARTNER) == first + second);
+        receives_nothing(OWNER);
         ts::end(sc);
     }
 
@@ -299,13 +312,13 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
 
         let first = trade_one_lot(&mut sc, pool_id, seller_ta, bidder_ta);
         claim(&mut sc, STRANGER, pool_id);
-        assert!(received(&mut sc, OWNER) == first);
+        assert!(received(OWNER) == first);
 
         test_world::update(&mut sc, OWNER, site.character(), &site, PARTNER);
         let second = trade_one_lot(&mut sc, pool_id, seller_ta, bidder_ta);
         claim(&mut sc, STRANGER, pool_id);
-        assert!(received(&mut sc, PARTNER) == second);
-        receives_nothing(&mut sc, OWNER);
+        assert!(received(PARTNER) == second);
+        receives_nothing(OWNER);
         ts::end(sc);
     }
 
@@ -319,7 +332,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
 
         let before_sale = trade_one_lot(&mut sc, pool_id, seller_ta, bidder_ta);
         claim(&mut sc, OWNER, pool_id);
-        assert!(received(&mut sc, OWNER) == before_sale);
+        assert!(received(OWNER) == before_sale);
 
         let buyer_character = test_world::create_character(&mut sc, BUYER, 50);
         test_world::transfer_storage_unit(&mut sc, &mut site, BUYER, buyer_character);
@@ -327,8 +340,8 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
 
         let after_sale = trade_one_lot(&mut sc, pool_id, seller_ta, bidder_ta);
         claim(&mut sc, OWNER, pool_id);
-        assert!(received(&mut sc, BUYER) == after_sale);
-        receives_nothing(&mut sc, OWNER);
+        assert!(received(BUYER) == after_sale);
+        receives_nothing(OWNER);
         ts::end(sc);
     }
 
@@ -347,8 +360,8 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         test_world::update(&mut sc, BUYER, buyer_character, &site, BUYER);
 
         claim(&mut sc, STRANGER, pool_id);
-        assert!(received(&mut sc, BUYER) == before_sale);
-        receives_nothing(&mut sc, OWNER);
+        assert!(received(BUYER) == before_sale);
+        receives_nothing(OWNER);
         ts::end(sc);
     }
 
@@ -365,7 +378,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
 
         test_world::register(&mut sc, OWNER, site.character(), &site, PARTNER);
         claim(&mut sc, STRANGER, pool_id);
-        assert!(received(&mut sc, PARTNER) == share);
+        assert!(received(PARTNER) == share);
         ts::end(sc);
     }
 

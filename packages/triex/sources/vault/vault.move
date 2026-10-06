@@ -136,4 +136,9 @@ module triex::vault {
         amount: u64,
         timestamp: u64,
     }
+
+    #[test_only]
+    public fun pool_fees_withdrawn_parts(self: &PoolFeesWithdrawn): (ID, TypeName, u64) {
+        (self.pool_id, self.quote_type, self.amount)
+    }
 }

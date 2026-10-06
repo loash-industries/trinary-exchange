@@ -1054,7 +1054,7 @@ module triex::multicoin_vault_tests {
         vault.recognize_locked_maker_fees(1_000, 1_000); // 10%
 
         assert!(vault.operator_owed() == 100);
-        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
 
         assert!(share.value() == 100);
         assert!(vault.operator_owed() == 0);
@@ -1077,7 +1077,7 @@ module triex::multicoin_vault_tests {
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         vault.deposit_quote_fees(mint_for_testing<USDC>(500, test.ctx()).into_balance());
 
-        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
         assert!(share.value() == 0);
         assert!(vault.withdrawable_quote_fees() == 500);
 
@@ -1110,7 +1110,7 @@ module triex::multicoin_vault_tests {
         assert_solvent(&vault);
 
         // And the share is still payable.
-        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
         assert!(share.value() == 800);
 
         destroy(share);
@@ -1193,7 +1193,7 @@ module triex::multicoin_vault_tests {
         vault.recognize_locked_maker_fees(100, max_bps());
         vault.unlock_quote_fees(collection_id, 1, collection_id, 970, 0);
 
-        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
 
         destroy(share);
         destroy(vault);
@@ -1238,7 +1238,7 @@ module triex::multicoin_vault_tests {
         // reserve, with nothing stranded and nothing conjured.
         assert!(vault.withdrawable_quote_fees() == total - expected_owed);
 
-        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+        let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
         assert!(share.value() == expected_owed);
         assert!(vault.quote_fee_reserve_balance() == total - expected_owed);
         assert_solvent(&vault);
@@ -1269,7 +1269,7 @@ module triex::multicoin_vault_tests {
             assert!(vault.operator_owed() == expected);
             assert_solvent(&vault);
 
-            let share = vault.claim_operator_share(test_pool_id(), ALICE, 0, test.ctx());
+            let share = vault.claim_operator_share(test_pool_id(), ALICE, 0);
             assert!(share.value() == expected);
             assert!(vault.operator_owed() == 0);
             total_claimed = total_claimed + share.value();
