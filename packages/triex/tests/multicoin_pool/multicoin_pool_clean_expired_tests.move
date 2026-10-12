@@ -95,6 +95,28 @@ module triex::integration_multicoin_pool_clean_expired_tests {
         is_bid: bool,
         expire_timestamp: u64,
     ): OrderInfo {
+        place_sized(
+            test,
+            sender,
+            pool_id,
+            trading_account_id,
+            price,
+            QUANTITY,
+            is_bid,
+            expire_timestamp,
+        )
+    }
+
+    fun place_sized(
+        test: &mut Scenario,
+        sender: address,
+        pool_id: ID,
+        trading_account_id: ID,
+        price: u64,
+        quantity: u64,
+        is_bid: bool,
+        expire_timestamp: u64,
+    ): OrderInfo {
         test.next_tx(sender);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -108,7 +130,7 @@ module triex::integration_multicoin_pool_clean_expired_tests {
             constants::no_restriction(),
             constants::self_matching_allowed(),
             price,
-            QUANTITY,
+            quantity,
             is_bid,
             expire_timestamp,
             &clock,
@@ -319,6 +341,90 @@ module triex::integration_multicoin_pool_clean_expired_tests {
         set_clock(expire + 1, &mut test);
         assert!(clean(&mut test, f.pool_id, vector[bid.order_id()]) == 1);
         assert!(!is_resting(&mut test, f.pool_id, f.alice, bid.order_id()));
+
+        unit_test::destroy(collection_cap);
+        end(test);
+    }
+
+    /// Orders that are still valid are never touched, however they are passed in:
+    /// a bid and an ask with expiries still ahead, and a partially filled bid. The
+    /// call removes nothing, emits nothing, and leaves the orders, their escrow
+    /// and their owners' balances exactly as they were.
+    #[test]
+    fun live_orders_are_left_untouched() {
+        let mut test = begin(OWNER);
+        let (f, collection_cap) = setup(&mut test);
+        let expire = now(&mut test) + 1_000;
+
+        // Half filled first, by an ask that leaves nothing resting.
+        let partial = place(
+            &mut test,
+            ALICE,
+            f.pool_id,
+            f.alice,
+            PRICE,
+            true,
+            constants::max_u64(),
+        );
+        place_sized(
+            &mut test,
+            BOB,
+            f.pool_id,
+            f.bob,
+            PRICE,
+            QUANTITY / 2,
+            false,
+            constants::max_u64(),
+        );
+        let bid = place(&mut test, ALICE, f.pool_id, f.alice, PRICE / 2, true, expire);
+        // Priced above the bids, so the two sides never cross.
+        let ask = place(&mut test, BOB, f.pool_id, f.bob, 2 * PRICE, false, expire);
+        let ids = vector[bid.order_id(), ask.order_id(), partial.order_id()];
+
+        test.next_tx(OWNER);
+        let (orders_before, locked_before, reserve_before) = {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(f.pool_id);
+            let orders = ids.map_ref!(|id| pool.get_order(*id));
+            assert!(orders[2].filled_quantity() == QUANTITY / 2);
+            let locked = pool.locked_maker_fees();
+            let reserve = pool.quote_fee_reserve_balance();
+            return_shared(pool);
+            (orders, locked, reserve)
+        };
+        let (alice_base, alice_quote) = settled(&mut test, f.pool_id, f.alice);
+        let (bob_base, bob_quote) = settled(&mut test, f.pool_id, f.bob);
+
+        // Well before expiry, and again on the expiry instant itself.
+        assert!(clean(&mut test, f.pool_id, ids) == 0);
+        assert!(expired_events().is_empty());
+        assert!(event::events_by_type<vault::PoolFeesRefunded>().is_empty());
+        set_clock(expire, &mut test);
+        assert!(clean(&mut test, f.pool_id, ids) == 0);
+        assert!(expired_events().is_empty());
+        assert!(event::events_by_type<vault::PoolFeesRefunded>().is_empty());
+
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(f.pool_id);
+            let mut i = 0;
+            while (i < ids.length()) {
+                let order = pool.get_order(ids[i]);
+                assert!(order.quantity() == orders_before[i].quantity());
+                assert!(order.filled_quantity() == orders_before[i].filled_quantity());
+                assert!(order.status() == orders_before[i].status());
+                i = i + 1;
+            };
+            assert!(pool.locked_maker_fees() == locked_before);
+            assert!(pool.quote_fee_reserve_balance() == reserve_before);
+            return_shared(pool);
+        };
+        let (alice_base_after, alice_quote_after) = settled(&mut test, f.pool_id, f.alice);
+        assert!(alice_base_after == alice_base && alice_quote_after == alice_quote);
+        let (bob_base_after, bob_quote_after) = settled(&mut test, f.pool_id, f.bob);
+        assert!(bob_base_after == bob_base && bob_quote_after == bob_quote);
+        assert!(is_resting(&mut test, f.pool_id, f.alice, bid.order_id()));
+        assert!(is_resting(&mut test, f.pool_id, f.bob, ask.order_id()));
+        assert!(is_resting(&mut test, f.pool_id, f.alice, partial.order_id()));
 
         unit_test::destroy(collection_cap);
         end(test);
