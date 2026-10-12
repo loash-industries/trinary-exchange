@@ -217,6 +217,29 @@ module triex::pool_clean_expired_tests {
         end(test);
     }
 
+    /// An order is live on its expiry instant, as in matching, so a call that
+    /// finds nothing expired removes nothing; one millisecond later it is cleaned.
+    #[test]
+    fun order_is_not_removed_at_its_expire_timestamp() {
+        let mut test = begin(OWNER);
+        let f = setup(&mut test);
+        let expire = pool_test_utils::get_time(&mut test) + 100;
+
+        let bid = place(&mut test, ALICE, &f, f.alice, price(), true, expire);
+
+        set_clock(expire, &mut test);
+        assert!(clean(&mut test, &f, vector[bid.order_id()]) == 0);
+        assert!(expired_events().is_empty());
+        assert!(event::events_by_type<vault::PoolFeesRefunded>().is_empty());
+        assert!(is_resting(&mut test, &f, f.alice, bid.order_id()));
+
+        set_clock(expire + 1, &mut test);
+        assert!(clean(&mut test, &f, vector[bid.order_id()]) == 1);
+        assert!(!is_resting(&mut test, &f, f.alice, bid.order_id()));
+
+        end(test);
+    }
+
     #[test, expected_failure(abort_code = ::triex::pool::ETooManyOrders)]
     fun batch_above_max_fills_aborts() {
         let mut test = begin(OWNER);
