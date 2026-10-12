@@ -25,6 +25,29 @@ module triex::big_vector_tests {
     }
 
     #[test]
+    /// `contains` finds every present key and none of the gaps around them, at
+    /// every depth, without aborting.
+    fun test_contains() {
+        let mut bv = empty_for_test();
+        assert!(!bv.contains(0));
+
+        let mut k = 2;
+        while (k <= 40) {
+            bv.insert(k, 0);
+            k = k + 2;
+        };
+        assert!(bv.depth() >= 2);
+
+        let mut k = 0;
+        while (k <= 42) {
+            assert!(bv.contains(k) == (k > 0 && k <= 40 && k % 2 == 0));
+            k = k + 1;
+        };
+
+        bv.drop()
+    }
+
+    #[test]
     fun test_drop() {
         let mut bv = empty_for_test();
         bv.insert(42, 1);

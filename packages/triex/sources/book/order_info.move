@@ -658,6 +658,17 @@ module triex::order_info {
         };
     }
 
+    /// Emit the `OrderExpired` for an order retired outside a match, identical to
+    /// the one `emit_orders_filled` emits for an expired maker.
+    public(package) fun emit_order_expired(
+        pool_id: ID,
+        trader: address,
+        fill: &Fill,
+        timestamp: u64,
+    ) {
+        event::emit(new_order_expired(pool_id, trader, fill, timestamp));
+    }
+
     public(package) fun emit_order_placed(self: &OrderInfo) {
         event::emit(OrderPlaced {
             trading_account_id: self.trading_account_id,
@@ -733,13 +744,21 @@ module triex::order_info {
     }
 
     fun order_expired_from_fill(self: &OrderInfo, fill: &Fill, timestamp: u64): OrderExpired {
+        new_order_expired(self.pool_id, self.trader(), fill, timestamp)
+    }
+
+    /// `trader` is whoever sent the transaction that expired the order — the
+    /// taker in a match, the caller of a permissionless cleanup. The maker is
+    /// `trading_account_id`.
+    fun new_order_expired(pool_id: ID, trader: address, fill: &Fill, timestamp: u64): OrderExpired {
         OrderExpired {
             trading_account_id: fill.trading_account_id(),
-            pool_id: self.pool_id,
+            pool_id,
             order_id: fill.maker_order_id(),
-            trader: self.trader(),
+            trader,
             price: fill.execution_price(),
-            is_bid: !self.is_bid(),
+            // The fill records the side that expired it, so the maker is the other.
+            is_bid: !fill.taker_is_bid(),
             original_quantity: fill.original_maker_quantity(),
             base_asset_quantity_canceled: fill.base_quantity(),
             fee_refunded: fill.maker_fee_refunded(),
