@@ -34,6 +34,7 @@ module triex::book {
     use triex::{
         big_vector::{Self, BigVector, SliceRef, slice_borrow, slice_borrow_mut},
         constants,
+        fill::Fill,
         math,
         order::Order,
         order_info::OrderInfo,
@@ -524,6 +525,57 @@ module triex::book {
         order.modify(new_quantity, timestamp, price_scaling);
 
         (cancel_quantity, order)
+    }
+
+    /// Retires every order in `order_ids` that is resting and already expired at
+    /// `timestamp`, the way a match retires an expired maker: `generate_fill` marks
+    /// it expired and records its whole remaining quantity on a `Fill`, and the
+    /// order leaves the book. Settling the returned fills is the caller's job,
+    /// exactly as it is for the fills a match records.
+    ///
+    /// An id that is not on the book, or whose order has not expired, is skipped
+    /// rather than aborting, so two callers sweeping the same orders cannot fail
+    /// each other — and a repeated id is just absent the second time. Expiry is the
+    /// match's own test, `timestamp > expire_timestamp`, so an order is still live
+    /// on its expiry instant.
+    public(package) fun expire_orders(
+        self: &mut Book,
+        order_ids: &vector<u128>,
+        timestamp: u64,
+    ): vector<Fill> {
+        let price_scaling = self.price_scaling;
+        let mut fills = vector[];
+        let mut i = 0;
+        while (i < order_ids.length()) {
+            let order_id = order_ids[i];
+            i = i + 1;
+            if (!self.contains_order(order_id)) continue;
+            let order = self.borrow_order_mut(order_id);
+            if (timestamp <= order.expire_timestamp()) continue;
+
+            // Generated as against a taker on the opposite side, which is what
+            // makes settlement return the maker's principal in the right asset.
+            let (is_bid, _, _) = utils::decode_order_id(order_id);
+            let remaining = order.quantity() - order.filled_quantity();
+            fills.push_back(order.generate_fill(
+                timestamp,
+                remaining,
+                !is_bid,
+                false,
+                price_scaling,
+            ));
+            self.remove_order(order_id);
+        };
+
+        fills
+    }
+
+    /// Whether `order_id` is resting on either store. Never aborts.
+    fun contains_order(self: &Book, order_id: u128): bool {
+        let (is_bid, _, _) = utils::decode_order_id(order_id);
+        let hot = if (is_bid) &self.hot_bids else &self.hot_asks;
+
+        hot_find(hot, order_id).is_some() || self.book_side(order_id).contains(order_id)
     }
 
     /// #ref:order_query
