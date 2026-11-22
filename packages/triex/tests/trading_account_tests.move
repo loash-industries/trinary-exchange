@@ -9,6 +9,7 @@ module triex::trading_account_tests {
     };
     use token::cred::CRED;
     use triex::{
+        fee_policy,
         registry::{Self, Registry},
         trading_account::{Self, TradingAccount, TradeCap, DepositCap, WithdrawCap}
     };
@@ -41,25 +42,21 @@ module triex::trading_account_tests {
         let mut test = begin(@0xF);
         let alice = @0xA;
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             assert!(trading_account.owner() == alice, 0);
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 200, 0);
 
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -70,30 +67,26 @@ module triex::trading_account_tests {
         let alice = @0xA;
         let bob = @0xB;
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let trading_account = trading_account::new_with_custom_owner(bob, test.ctx());
+            let trading_account = trading_account::new_with_custom_owner(&gate, bob, test.ctx());
             assert!(trading_account.owner() == bob, 0);
             transfer::public_share_object(trading_account);
         };
         test.next_tx(bob);
         {
             let mut trading_account = test.take_shared<TradingAccount>();
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 200, 0);
 
             return_shared(trading_account);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -106,8 +99,9 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let trading_account = trading_account::new(test.ctx());
+            let trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
             transfer::public_share_object(trading_account);
         };
@@ -117,11 +111,9 @@ module triex::trading_account_tests {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
         };
+        destroy(gate);
 
         abort 0
     }
@@ -135,10 +127,11 @@ module triex::trading_account_tests {
         let trade_cap_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             trade_cap_id = object::id(&trade_cap);
             transfer::public_transfer(trade_cap, bob);
             transfer::public_share_object(trading_account);
@@ -151,6 +144,7 @@ module triex::trading_account_tests {
             );
             trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
         };
+        destroy(gate);
 
         abort 0
     }
@@ -164,11 +158,13 @@ module triex::trading_account_tests {
         let trade_cap_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             let trade_proof = trading_account.generate_proof_as_trader(
+                &gate,
                 &trade_cap,
                 test.ctx(),
             );
@@ -193,6 +189,7 @@ module triex::trading_account_tests {
             );
             let trade_cap = test.take_from_sender<TradeCap>();
             let trade_proof = trading_account.generate_proof_as_trader(
+                &gate,
                 &trade_cap,
                 test.ctx(),
             );
@@ -201,6 +198,7 @@ module triex::trading_account_tests {
                 mint_for_testing<CRED>(100000, test.ctx()).into_balance(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -214,13 +212,15 @@ module triex::trading_account_tests {
         let deposit_cap_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
             deposit_cap_id = object::id(&deposit_cap);
 
             trading_account.deposit_with_cap<SUI>(
+                &gate,
                 &deposit_cap,
                 mint_for_testing<SUI>(100, test.ctx()),
                 test.ctx(),
@@ -240,11 +240,13 @@ module triex::trading_account_tests {
             );
             let deposit_cap = test.take_from_sender<DepositCap>();
             trading_account.deposit_with_cap<SUI>(
+                &gate,
                 &deposit_cap,
                 mint_for_testing<SUI>(100, test.ctx()),
                 test.ctx(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -257,11 +259,12 @@ module triex::trading_account_tests {
         let trading_account_id_2;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            let trading_account_2 = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            let trading_account_2 = trading_account::new(&gate, test.ctx());
             trading_account_id_2 = object::id(&trading_account_2);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
 
             transfer::public_transfer(deposit_cap, bob);
             transfer::public_share_object(trading_account);
@@ -275,11 +278,13 @@ module triex::trading_account_tests {
             );
             let deposit_cap = test.take_from_sender<DepositCap>();
             trading_account_2.deposit_with_cap<SUI>(
+                &gate,
                 &deposit_cap,
                 mint_for_testing<SUI>(100, test.ctx()),
                 test.ctx(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -292,12 +297,14 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
 
             trading_account.deposit_with_cap<SUI>(
+                &gate,
                 &deposit_cap,
                 mint_for_testing<SUI>(100, test.ctx()),
                 test.ctx(),
@@ -316,6 +323,7 @@ module triex::trading_account_tests {
             );
             let deposit_cap = test.take_from_sender<DepositCap>();
             trading_account.deposit_with_cap<SUI>(
+                &gate,
                 &deposit_cap,
                 mint_for_testing<SUI>(100, test.ctx()),
                 test.ctx(),
@@ -326,6 +334,7 @@ module triex::trading_account_tests {
             return_shared(trading_account);
             test.return_to_sender(deposit_cap);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -339,21 +348,15 @@ module triex::trading_account_tests {
         let withdraw_cap_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
             withdraw_cap_id = object::id(&withdraw_cap);
-            trading_account.deposit(
-                mint_for_testing<SUI>(1000, test.ctx()),
-                test.ctx(),
-            );
+            trading_account.deposit(&gate, mint_for_testing<SUI>(1000, test.ctx()), test.ctx());
 
-            let sui = trading_account.withdraw_with_cap<SUI>(
-                &withdraw_cap,
-                100,
-                test.ctx(),
-            );
+            let sui = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 100, test.ctx());
             assert!(sui.value() == 100, 0);
             sui.burn_for_testing();
             transfer::public_transfer(withdraw_cap, bob);
@@ -370,13 +373,10 @@ module triex::trading_account_tests {
                 trading_account_id,
             );
             let withdraw_cap = test.take_from_sender<WithdrawCap>();
-            let sui = trading_account.withdraw_with_cap<SUI>(
-                &withdraw_cap,
-                100,
-                test.ctx(),
-            );
+            let sui = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 100, test.ctx());
             sui.burn_for_testing();
         };
+        destroy(gate);
 
         abort 0
     }
@@ -389,15 +389,13 @@ module triex::trading_account_tests {
         let trading_account_id_2;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            let mut trading_account_2 = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            let mut trading_account_2 = trading_account::new(&gate, test.ctx());
             trading_account_id_2 = object::id(&trading_account_2);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
-            trading_account_2.deposit(
-                mint_for_testing<SUI>(1000, test.ctx()),
-                test.ctx(),
-            );
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
+            trading_account_2.deposit(&gate, mint_for_testing<SUI>(1000, test.ctx()), test.ctx());
 
             transfer::public_transfer(withdraw_cap, bob);
 
@@ -412,12 +410,14 @@ module triex::trading_account_tests {
             );
             let withdraw_cap = test.take_from_sender<WithdrawCap>();
             let sui = trading_account_2.withdraw_with_cap<SUI>(
+                &gate,
                 &withdraw_cap,
                 100,
                 test.ctx(),
             );
             sui.burn_for_testing();
         };
+        destroy(gate);
 
         abort 0
     }
@@ -430,20 +430,14 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
-            trading_account.deposit(
-                mint_for_testing<SUI>(1000, test.ctx()),
-                test.ctx(),
-            );
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
+            trading_account.deposit(&gate, mint_for_testing<SUI>(1000, test.ctx()), test.ctx());
 
-            let sui = trading_account.withdraw_with_cap<SUI>(
-                &withdraw_cap,
-                100,
-                test.ctx(),
-            );
+            let sui = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 100, test.ctx());
             assert!(sui.value() == 100, 0);
             sui.burn_for_testing();
             transfer::public_transfer(withdraw_cap, bob);
@@ -459,11 +453,7 @@ module triex::trading_account_tests {
                 trading_account_id,
             );
             let withdraw_cap = test.take_from_sender<WithdrawCap>();
-            let sui = trading_account.withdraw_with_cap<SUI>(
-                &withdraw_cap,
-                100,
-                test.ctx(),
-            );
+            let sui = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 100, test.ctx());
             sui.burn_for_testing();
             let balance = trading_account.balance<SUI>();
             assert!(balance == 800, 0);
@@ -471,6 +461,7 @@ module triex::trading_account_tests {
             return_shared(trading_account);
             test.return_to_sender(withdraw_cap);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -480,25 +471,21 @@ module triex::trading_account_tests {
         let mut test = begin(@0xF);
         let alice = @0xA;
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            let coin = trading_account.withdraw<SUI>(
-                50,
-                test.ctx(),
-            );
+            let coin = trading_account.withdraw<SUI>(&gate, 50, test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 50, 0);
             coin.burn_for_testing();
 
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -508,22 +495,21 @@ module triex::trading_account_tests {
         let mut test = begin(@0xF);
         let alice = @0xA;
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            let coin = trading_account.withdraw_all<SUI>(test.ctx());
+            let coin = trading_account.withdraw_all<SUI>(&gate, test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 0, 0);
             assert!(coin.burn_for_testing() == 100, 0);
 
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         end(test);
     }
@@ -533,20 +519,16 @@ module triex::trading_account_tests {
         let mut test = begin(@0xF);
         let alice = @0xA;
         test.next_tx(alice);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            trading_account.deposit(
-                mint_for_testing<SUI>(100, test.ctx()),
-                test.ctx(),
-            );
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            trading_account.deposit(&gate, mint_for_testing<SUI>(100, test.ctx()), test.ctx());
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            let _coin = trading_account.withdraw<SUI>(
-                200,
-                test.ctx(),
-            );
+            let _coin = trading_account.withdraw<SUI>(&gate, 200, test.ctx());
         };
+        destroy(gate);
 
         abort 0
     }
@@ -617,7 +599,8 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         assert!(trading_account.owner() == ALICE, 0);
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
@@ -639,7 +622,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
         let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(balance == 100, 0);
         return_shared(trading_account);
@@ -661,7 +644,8 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account2 = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal2 = test.take_from_sender<multicoin::Balance>();
-        trading_account2.deposit_multicoin(multicoin_bal2, test.ctx());
+        trading_account2.deposit_multicoin(&gate, multicoin_bal2, test.ctx());
+        destroy(gate);
         let balance = trading_account2.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(balance == 150, 1);
         return_shared(trading_account2);
@@ -676,7 +660,8 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -711,8 +696,9 @@ module triex::trading_account_tests {
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal1 = test.take_from_sender<multicoin::Balance>();
         let multicoin_bal2 = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal1, test.ctx());
-        trading_account.deposit_multicoin(multicoin_bal2, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal1, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal2, test.ctx());
+        destroy(gate);
 
         // Verify both balances
         let balance1 = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
@@ -731,8 +717,9 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Deposit 1000
             let mut collection = test.take_shared<Collection>();
@@ -744,10 +731,11 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Withdraw 400
             let withdrawn = trading_account.withdraw_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 400,
@@ -762,6 +750,7 @@ module triex::trading_account_tests {
             destroy(withdrawn);
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -773,8 +762,9 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Deposit 1000
             let mut collection = test.take_shared<Collection>();
@@ -786,10 +776,11 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Withdraw all
             let withdrawn = trading_account.withdraw_all_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 test.ctx(),
@@ -803,6 +794,7 @@ module triex::trading_account_tests {
             destroy(withdrawn);
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -814,11 +806,13 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Withdraw all from non-existent asset (should return zero balance)
             let withdrawn = trading_account.withdraw_all_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 test.ctx(),
@@ -828,6 +822,7 @@ module triex::trading_account_tests {
             destroy(withdrawn);
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -839,8 +834,9 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Query non-existent asset (should return 0)
             let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
@@ -856,7 +852,7 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
             let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
             assert!(balance == 500, 1);
 
@@ -866,6 +862,7 @@ module triex::trading_account_tests {
 
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -877,8 +874,9 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Deposit 1000
             let mut collection = test.take_shared<Collection>();
@@ -890,10 +888,11 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Withdraw exact amount (should remove DOF entry)
             let withdrawn = trading_account.withdraw_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 1000,
@@ -908,6 +907,7 @@ module triex::trading_account_tests {
             destroy(withdrawn);
             transfer::public_share_object(trading_account);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -920,10 +920,11 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
 
             // Deposit with cap
             let mut collection = test.take_shared<Collection>();
@@ -935,7 +936,12 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin_with_cap(
+                &gate,
+                &deposit_cap,
+                multicoin_bal,
+                test.ctx(),
+            );
             let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
             assert!(balance == 100, 0);
 
@@ -958,13 +964,19 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection2);
-            trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin_with_cap(
+                &gate,
+                &deposit_cap,
+                multicoin_bal,
+                test.ctx(),
+            );
             let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
             assert!(balance == 300, 1);
 
             return_shared(trading_account);
             test.return_to_sender(deposit_cap);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -978,11 +990,12 @@ module triex::trading_account_tests {
         let trading_account_id_2;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            let trading_account_2 = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            let trading_account_2 = trading_account::new(&gate, test.ctx());
             trading_account_id_2 = object::id(&trading_account_2);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
 
             transfer::public_transfer(deposit_cap, BOB);
             transfer::public_share_object(trading_account);
@@ -1006,8 +1019,14 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account_2.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+            trading_account_2.deposit_multicoin_with_cap(
+                &gate,
+                &deposit_cap,
+                multicoin_bal,
+                test.ctx(),
+            );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1019,10 +1038,11 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
 
             // Deposit 1000
             let mut collection = test.take_shared<Collection>();
@@ -1034,10 +1054,11 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Withdraw with cap
             let withdrawn = trading_account.withdraw_multicoin_with_cap(
+                &gate,
                 &withdraw_cap,
                 collection_id,
                 TEST_ASSET_ID_1,
@@ -1061,6 +1082,7 @@ module triex::trading_account_tests {
 
             // Bob withdraws with cap
             let withdrawn = trading_account.withdraw_multicoin_with_cap(
+                &gate,
                 &withdraw_cap,
                 collection_id,
                 TEST_ASSET_ID_1,
@@ -1076,6 +1098,7 @@ module triex::trading_account_tests {
             return_shared(trading_account);
             test.return_to_sender(withdraw_cap);
         };
+        destroy(gate);
 
         destroy(collection_cap);
         test.end();
@@ -1089,11 +1112,12 @@ module triex::trading_account_tests {
         let trading_account_id_2;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
-            let mut trading_account_2 = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
+            let mut trading_account_2 = trading_account::new(&gate, test.ctx());
             trading_account_id_2 = object::id(&trading_account_2);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
 
             // Deposit to trading_account 2
             let mut collection = test.take_shared<Collection>();
@@ -1105,7 +1129,7 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account_2.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account_2.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             transfer::public_transfer(withdraw_cap, BOB);
             transfer::public_share_object(trading_account);
@@ -1121,6 +1145,7 @@ module triex::trading_account_tests {
 
             // Try to use cap from trading_account 1 with trading_account 2
             let withdrawn = trading_account_2.withdraw_multicoin_with_cap(
+                &gate,
                 &withdraw_cap,
                 collection_id,
                 TEST_ASSET_ID_1,
@@ -1129,6 +1154,7 @@ module triex::trading_account_tests {
             );
             destroy(withdrawn);
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1142,10 +1168,11 @@ module triex::trading_account_tests {
         let deposit_cap_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
             deposit_cap_id = object::id(&deposit_cap);
 
             // Deposit once successfully
@@ -1158,7 +1185,12 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin_with_cap(
+                &gate,
+                &deposit_cap,
+                multicoin_bal,
+                test.ctx(),
+            );
 
             transfer::public_transfer(deposit_cap, BOB);
 
@@ -1182,8 +1214,14 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection2);
-            trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin_with_cap(
+                &gate,
+                &deposit_cap,
+                multicoin_bal,
+                test.ctx(),
+            );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1197,10 +1235,11 @@ module triex::trading_account_tests {
         let withdraw_cap_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
             withdraw_cap_id = object::id(&withdraw_cap);
 
             // Deposit 1000
@@ -1213,10 +1252,11 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Withdraw once successfully
             let withdrawn = trading_account.withdraw_multicoin_with_cap(
+                &gate,
                 &withdraw_cap,
                 collection_id,
                 TEST_ASSET_ID_1,
@@ -1239,6 +1279,7 @@ module triex::trading_account_tests {
 
             // Try to withdraw with revoked cap
             let withdrawn = trading_account.withdraw_multicoin_with_cap(
+                &gate,
                 &withdraw_cap,
                 collection_id,
                 TEST_ASSET_ID_1,
@@ -1247,6 +1288,7 @@ module triex::trading_account_tests {
             );
             destroy(withdrawn);
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1258,8 +1300,9 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Deposit 100
             let mut collection = test.take_shared<Collection>();
@@ -1271,16 +1314,18 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             // Try to withdraw 200 (should fail)
             let _withdrawn = trading_account.withdraw_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 200,
                 test.ctx(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1291,17 +1336,20 @@ module triex::trading_account_tests {
         let mut test = begin(ALICE);
         let (collection_id, _collection_cap) = setup_multicoin_collection(&mut test);
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
 
             // Try to withdraw from asset that was never deposited (should fail)
             let _withdrawn = trading_account.withdraw_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 100,
                 test.ctx(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1314,8 +1362,9 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let trading_account = trading_account::new(test.ctx());
+            let trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
             transfer::public_share_object(trading_account);
         };
@@ -1334,8 +1383,9 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1348,8 +1398,9 @@ module triex::trading_account_tests {
         let trading_account_id;
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             trading_account_id = object::id(&trading_account);
 
             // Deposit as owner
@@ -1362,7 +1413,7 @@ module triex::trading_account_tests {
                 test.ctx(),
             );
             return_shared(collection);
-            trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
             transfer::public_share_object(trading_account);
         };
@@ -1373,12 +1424,14 @@ module triex::trading_account_tests {
 
             // Bob tries to withdraw from Alice's trading_account (should fail)
             let _withdrawn = trading_account.withdraw_multicoin(
+                &gate,
                 collection_id,
                 TEST_ASSET_ID_1,
                 100,
                 test.ctx(),
             );
         };
+        destroy(gate);
 
         abort 0
     }
@@ -1393,12 +1446,13 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let mut trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
 
         // Deposit regular Coins
-        trading_account.deposit(mint_for_testing<SUI>(500, test.ctx()), test.ctx());
-        trading_account.deposit(mint_for_testing<USDC>(300, test.ctx()), test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<SUI>(500, test.ctx()), test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<USDC>(300, test.ctx()), test.ctx());
         transfer::public_share_object(trading_account);
 
         // Mint MultiCoin as OWNER and transfer to ALICE
@@ -1418,7 +1472,8 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
+        destroy(gate);
 
         // Verify all balances coexist
         assert!(trading_account.balance<SUI>() == 500, 0);
@@ -1435,10 +1490,9 @@ module triex::trading_account_tests {
         amount: u64,
         test: &mut Scenario,
     ) {
-        trading_account.deposit(
-            mint_for_testing<T>(amount, test.ctx()),
-            test.ctx(),
-        );
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<T>(amount, test.ctx()), test.ctx());
+        destroy(gate);
     }
 
     public(package) fun create_acct_and_share_with_funds(
@@ -1447,34 +1501,38 @@ module triex::trading_account_tests {
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             deposit_into_account<SUI>(&mut trading_account, amount, test);
             deposit_into_account<SPAM>(&mut trading_account, amount, test);
             deposit_into_account<USDC>(&mut trading_account, amount, test);
             deposit_into_account<CRED>(&mut trading_account, amount, test);
             deposit_into_account<USDT>(&mut trading_account, amount, test);
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             transfer::public_transfer(trade_cap, sender);
             let id = object::id(&trading_account);
             transfer::public_share_object(trading_account);
 
+            destroy(gate);
             id
         }
     }
 
     public(package) fun create_caps(sender: address, trading_account_id: ID, test: &mut Scenario) {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-            let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
-            let withdraw_cap = trading_account.mint_withdraw_cap(test.ctx());
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
+            let withdraw_cap = trading_account.mint_withdraw_cap(&gate, test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             transfer::public_transfer(deposit_cap, sender);
             transfer::public_transfer(withdraw_cap, sender);
             transfer::public_transfer(trade_cap, sender);
             return_shared(trading_account);
-        }
+        };
+        destroy(gate);
     }
 
     public(package) fun asset_balance<Asset>(
@@ -1501,8 +1559,9 @@ module triex::trading_account_tests {
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
-            let mut trading_account = trading_account::new(test.ctx());
+            let mut trading_account = trading_account::new(&gate, test.ctx());
             deposit_into_account<BaseAsset>(&mut trading_account, amount, test);
             deposit_into_account<QuoteAsset>(&mut trading_account, amount, test);
             deposit_into_account<ReferenceBaseAsset>(
@@ -1510,11 +1569,12 @@ module triex::trading_account_tests {
                 amount,
                 test,
             );
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             transfer::public_transfer(trade_cap, sender);
             let id = object::id(&trading_account);
             transfer::public_share_object(trading_account);
 
+            destroy(gate);
             id
         }
     }
@@ -1527,7 +1587,9 @@ module triex::trading_account_tests {
         let (_collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         transfer::public_share_object(trading_account);
 
         // Try to mint zero amount - should fail in multicoin::mint_and_keep
@@ -1553,7 +1615,8 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -1573,15 +1636,17 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
         // Try to withdraw zero amount - should fail in multicoin split
         let withdrawn = trading_account.withdraw_multicoin(
+            &gate,
             collection_id,
             TEST_ASSET_ID_1,
             0,
             test.ctx(),
         );
+        destroy(gate);
         destroy(withdrawn);
 
         abort 0
@@ -1593,7 +1658,8 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -1615,17 +1681,19 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
         let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(balance == large_amount, 0);
 
         // Withdraw large amount
         let withdrawn = trading_account.withdraw_multicoin(
+            &gate,
             collection_id,
             TEST_ASSET_ID_1,
             large_amount,
             test.ctx(),
         );
+        destroy(gate);
         let balance_after = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(balance_after == 0, 1);
 
@@ -1643,7 +1711,8 @@ module triex::trading_account_tests {
         let (_, collection_cap_1) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -1663,18 +1732,20 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
 
         // Create a fake collection ID that doesn't match any deposit
         let fake_collection_id = object::id_from_address(FAKE);
 
         // Try to withdraw using fake_collection_id - should fail with EMultiCoinBalanceTooLow
         let withdrawn = trading_account.withdraw_multicoin(
+            &gate,
             fake_collection_id,
             TEST_ASSET_ID_1,
             50,
             test.ctx(),
         );
+        destroy(gate);
         destroy(withdrawn);
 
         abort 0
@@ -1688,14 +1759,15 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
         // Mint and give ALICE a deposit cap
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
-        let deposit_cap = trading_account.mint_deposit_cap(test.ctx());
+        let deposit_cap = trading_account.mint_deposit_cap(&gate, test.ctx());
         return_shared(trading_account);
 
         // Use the cap successfully
@@ -1714,7 +1786,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin_with_cap(&gate, &deposit_cap, multicoin_bal, test.ctx());
         let balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(balance == 100, 0);
         return_shared(trading_account);
@@ -1746,7 +1818,8 @@ module triex::trading_account_tests {
         let deposit_cap = test.take_from_sender<DepositCap>();
 
         // This should fail because cap was revoked
-        trading_account.deposit_multicoin_with_cap(&deposit_cap, multicoin_bal2, test.ctx());
+        trading_account.deposit_multicoin_with_cap(&gate, &deposit_cap, multicoin_bal2, test.ctx());
+        destroy(gate);
         return_shared(trading_account);
         destroy(deposit_cap);
         destroy(collection_cap);
@@ -1762,12 +1835,13 @@ module triex::trading_account_tests {
 
         // Create trading accounts for ALICE and BOB
         test.next_tx(ALICE);
-        let alice_bm = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let alice_bm = trading_account::new(&gate, test.ctx());
         let alice_bm_id = object::id(&alice_bm);
         transfer::public_share_object(alice_bm);
 
         test.next_tx(BOB);
-        let bob_bm = trading_account::new(test.ctx());
+        let bob_bm = trading_account::new(&gate, test.ctx());
         let bob_bm_id = object::id(&bob_bm);
         transfer::public_share_object(bob_bm);
 
@@ -1796,7 +1870,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_bal = test.take_from_sender<multicoin::Balance>();
-        alice_bm.deposit_multicoin(alice_bal, test.ctx());
+        alice_bm.deposit_multicoin(&gate, alice_bal, test.ctx());
         let alice_balance = alice_bm.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(alice_balance == 500, 0);
         return_shared(alice_bm);
@@ -1805,7 +1879,7 @@ module triex::trading_account_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_bal = test.take_from_sender<multicoin::Balance>();
-        bob_bm.deposit_multicoin(bob_bal, test.ctx());
+        bob_bm.deposit_multicoin(&gate, bob_bal, test.ctx());
         let bob_balance = bob_bm.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(bob_balance == 300, 1);
         return_shared(bob_bm);
@@ -1814,6 +1888,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_withdrawn = alice_bm.withdraw_multicoin(
+            &gate,
             collection_id,
             TEST_ASSET_ID_1,
             200,
@@ -1828,11 +1903,13 @@ module triex::trading_account_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_withdrawn = bob_bm.withdraw_multicoin(
+            &gate,
             collection_id,
             TEST_ASSET_ID_1,
             300,
             test.ctx(),
         );
+        destroy(gate);
         let bob_remaining = bob_bm.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(bob_remaining == 0, 3);
         return_shared(bob_bm);
@@ -1856,7 +1933,8 @@ module triex::trading_account_tests {
 
         // Create trading account for ALICE
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -1891,8 +1969,8 @@ module triex::trading_account_tests {
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let bal_1 = test.take_from_sender<multicoin::Balance>();
         let bal_2 = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(bal_1, test.ctx());
-        trading_account.deposit_multicoin(bal_2, test.ctx());
+        trading_account.deposit_multicoin(&gate, bal_1, test.ctx());
+        trading_account.deposit_multicoin(&gate, bal_2, test.ctx());
 
         // Verify balances are tracked separately
         let balance_1 = trading_account.multicoin_balance(collection_id_1, TEST_ASSET_ID_1);
@@ -1902,11 +1980,13 @@ module triex::trading_account_tests {
 
         // Withdraw from collection_1
         let withdrawn_1 = trading_account.withdraw_multicoin(
+            &gate,
             collection_id_1,
             TEST_ASSET_ID_1,
             50,
             test.ctx(),
         );
+        destroy(gate);
         let remaining_1 = trading_account.multicoin_balance(collection_id_1, TEST_ASSET_ID_1);
         assert!(remaining_1 == 50, 2);
 
@@ -1927,14 +2007,15 @@ module triex::trading_account_tests {
         let (collection_id, collection_cap) = setup_multicoin_collection(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
         // Deposit regular SUI coin
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
-        trading_account.deposit(mint_for_testing<SUI>(1000, test.ctx()), test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<SUI>(1000, test.ctx()), test.ctx());
         let sui_balance = trading_account.balance<SUI>();
         assert!(sui_balance == 1000, 0);
         return_shared(trading_account);
@@ -1955,7 +2036,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_bal = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_bal, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_bal, test.ctx());
         let multicoin_balance = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(multicoin_balance == 500, 1);
 
@@ -1967,7 +2048,7 @@ module triex::trading_account_tests {
         // Withdraw regular coin
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
-        let withdrawn_sui = trading_account.withdraw<SUI>(300, test.ctx());
+        let withdrawn_sui = trading_account.withdraw<SUI>(&gate, 300, test.ctx());
         let sui_remaining = trading_account.balance<SUI>();
         assert!(sui_remaining == 700, 3);
 
@@ -1984,11 +2065,13 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let withdrawn_multicoin = trading_account.withdraw_multicoin(
+            &gate,
             collection_id,
             TEST_ASSET_ID_1,
             200,
             test.ctx(),
         );
+        destroy(gate);
         let multicoin_remaining = trading_account.multicoin_balance(collection_id, TEST_ASSET_ID_1);
         assert!(multicoin_remaining == 300, 5);
 
@@ -2024,7 +2107,9 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         trading_account.register_trading_account(&mut registry, test.ctx());
         assert!(registry.get_trading_account_ids(ALICE).contains(&object::id(&trading_account)));
 
@@ -2039,7 +2124,9 @@ module triex::trading_account_tests {
         let registry_id = setup_registry(&mut test);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new_with_custom_owner(BOB, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new_with_custom_owner(&gate, BOB, test.ctx());
+        destroy(gate);
         let trading_account_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -2064,7 +2151,9 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
-        let trading_account = trading_account::new_with_custom_owner(BOB, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new_with_custom_owner(&gate, BOB, test.ctx());
+        destroy(gate);
         trading_account.register_trading_account(&mut registry, test.ctx());
 
         abort
@@ -2077,7 +2166,12 @@ module triex::trading_account_tests {
         let mut test = begin(OWNER);
 
         test.next_tx(ALICE);
-        let trading_account = trading_account::new_with_custom_owner_and_caps(BOB, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new_with_custom_owner_and_caps(
+            &gate,
+            BOB,
+            test.ctx(),
+        );
         assert!(trading_account.owner() == BOB);
         let trading_account_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
@@ -2093,11 +2187,13 @@ module triex::trading_account_tests {
         let trade_cap = test.take_from_sender<TradeCap>();
 
         trading_account.deposit_with_cap(
+            &gate,
             &deposit_cap,
             mint_for_testing<SUI>(100, test.ctx()),
             test.ctx(),
         );
-        let coin = trading_account.withdraw_with_cap<SUI>(&withdraw_cap, 40, test.ctx());
+        let coin = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 40, test.ctx());
+        destroy(gate);
         assert!(coin.value() == 40);
         assert!(trading_account.balance<SUI>() == 60);
 
@@ -2118,23 +2214,26 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut owner_uid = object::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
         let (
             mut trading_account,
             deposit_cap,
             withdraw_cap,
             trade_cap,
-        ) = trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+        ) = trading_account::new_with_uid_owner_and_caps(&gate, &mut owner_uid, test.ctx());
         assert!(trading_account.owner() == owner_uid.to_address());
 
         trading_account.deposit_with_cap(
+            &gate,
             &deposit_cap,
             mint_for_testing<SUI>(100, test.ctx()),
             test.ctx(),
         );
-        let coin = trading_account.withdraw_with_cap<SUI>(&withdraw_cap, 40, test.ctx());
+        let coin = trading_account.withdraw_with_cap<SUI>(&gate, &withdraw_cap, 40, test.ctx());
         assert!(coin.value() == 40);
         assert!(trading_account.balance<SUI>() == 60);
-        let _ = trading_account.generate_proof_as_trader(&trade_cap, test.ctx());
+        let _ = trading_account.generate_proof_as_trader(&gate, &trade_cap, test.ctx());
+        destroy(gate);
 
         destroy(coin);
         destroy(deposit_cap);
@@ -2153,14 +2252,16 @@ module triex::trading_account_tests {
 
         test.next_tx(ALICE);
         let mut owner_uid = object::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
         let (
             mut trading_account,
             deposit_cap,
             withdraw_cap,
             trade_cap,
-        ) = trading_account::new_with_uid_owner_and_caps(&mut owner_uid, test.ctx());
+        ) = trading_account::new_with_uid_owner_and_caps(&gate, &mut owner_uid, test.ctx());
 
         trading_account.revoke_trade_cap(&object::id(&trade_cap), test.ctx());
+        destroy(gate);
 
         destroy(deposit_cap);
         destroy(withdraw_cap);

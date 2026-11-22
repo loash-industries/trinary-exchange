@@ -12,12 +12,7 @@ use sui::{
     test_scenario::{begin, end, next_tx},
     unit_test::destroy
 };
-use triex::{
-    trading_account::{Self, TradingAccount},
-    constants,
-    pool::{Self, Pool},
-    registry::{Self, Registry, TriexAdminCap}
-};
+use triex::{fee_policy, trading_account::{Self, TradingAccount}, constants, pool::{Self, Pool}, registry::{Self, Registry, TriexAdminCap}};
 
 const OWNER: address = @0xF;
 const ALICE: address = @0xA;
@@ -169,7 +164,8 @@ fun admin_fee_change_affects_trades_ok() {
     
     // Create trading account for Alice
     test.next_tx(ALICE);
-    let trading_account = trading_account::new(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trading_account = trading_account::new(&gate, test.ctx());
     let trading_account_id = trading_account.id();
     trading_account::share(trading_account);
     
@@ -179,8 +175,9 @@ fun admin_fee_change_affects_trades_ok() {
     let spam_coin = coin::mint_for_testing<SPAM>(1000000 * constants::float_scaling(), test.ctx());
     let usdc_coin = coin::mint_for_testing<USDC>(1000000 * constants::float_scaling(), test.ctx());
     
-    trading_account.deposit(spam_coin);
-    trading_account.deposit(usdc_coin);
+    trading_account.deposit(&gate, spam_coin);
+    trading_account.deposit(&gate, usdc_coin);
+    destroy(gate);
     
     // Admin reduces fee from 2% to 0.5%
     pool.set_next_epoch_fee(5000000, &admin_cap);

@@ -14,7 +14,7 @@ module triex::multicoin_pool_swap_dry_run_parity_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         trading_account::TradingAccount,
@@ -53,7 +53,9 @@ module triex::multicoin_pool_swap_dry_run_parity_tests {
         test.next_tx(BOB);
         let mut bob = test.take_shared_by_id<TradingAccount>(bob_ta);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        bob.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(bob);
 
         (pool_id, bob_ta, cap)
@@ -65,7 +67,7 @@ module triex::multicoin_pool_swap_dry_run_parity_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         pool.place_limit_order(
             &policy,
             &mut ta,

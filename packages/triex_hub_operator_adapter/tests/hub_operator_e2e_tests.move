@@ -14,7 +14,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
     use sui::{clock::Clock, coin::{Self, Coin}, event, test_scenario::{Self as ts, Scenario}};
     use triex::{
         constants,
-        fee_policy::{FeePolicy, OperatorPayouts},
+        fee_policy::{Self, FeePolicy, OperatorPayouts},
         multicoin_pool::{Self, MultiCoinPool},
         multicoin_vault::OperatorShareClaimed,
         registry::{Self, Registry},
@@ -135,10 +135,12 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
             quantity,
             sc.ctx(),
         );
-        let mut ta = trading_account::new(sc.ctx());
-        ta.deposit_multicoin(receipts, sc.ctx());
+        let gate = fee_policy::gate_for_testing(sc.ctx());
+        let mut ta = trading_account::new(&gate, sc.ctx());
+        ta.deposit_multicoin(&gate, receipts, sc.ctx());
         // A taker pays its fee in quote, so the seller carries some.
-        ta.deposit(coin::mint_for_testing<HUB_USD>(1_000_000_000_000, sc.ctx()), sc.ctx());
+        ta.deposit(&gate, coin::mint_for_testing<HUB_USD>(1_000_000_000_000, sc.ctx()), sc.ctx());
+        unit_test::destroy(gate);
         let ta_id = object::id(&ta);
         transfer::public_share_object(ta);
 
@@ -152,8 +154,10 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
 
     fun fund(sc: &mut Scenario, trader: address, amount: u64): ID {
         ts::next_tx(sc, trader);
-        let mut ta = trading_account::new(sc.ctx());
-        ta.deposit(coin::mint_for_testing<HUB_USD>(amount, sc.ctx()), sc.ctx());
+        let gate = fee_policy::gate_for_testing(sc.ctx());
+        let mut ta = trading_account::new(&gate, sc.ctx());
+        ta.deposit(&gate, coin::mint_for_testing<HUB_USD>(amount, sc.ctx()), sc.ctx());
+        unit_test::destroy(gate);
         let id = object::id(&ta);
         transfer::public_share_object(ta);
         id
@@ -178,7 +182,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
         let policy = ts::take_shared<FeePolicy>(sc);
         let clock = ts::take_shared<Clock>(sc);
         let mut ta = ts::take_shared_by_id<TradingAccount>(sc, ta_id);
-        let proof = ta.generate_proof_as_owner(sc.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, sc.ctx());
         pool.place_limit_order(
             &policy,
             &mut ta,

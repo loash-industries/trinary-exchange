@@ -6,6 +6,7 @@ module triex::integration_multicoin_registry_trading_account_tests {
     use token::cred::CRED;
     use triex::{
         constants,
+        fee_policy,
         fill::Fill,
         integration_multicoin_test_utils as mc_utils,
         math,
@@ -45,7 +46,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
 
         // Create trading account
         test.next_tx(ALICE);
-        let mut trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -66,7 +68,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_balance, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_balance, test.ctx());
+        unit_test::destroy(gate);
 
         // Verify balance
         let balance = trading_account.multicoin_balance(collection_id, ASSET_GOLD);
@@ -89,7 +92,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
 
         // Create trading account and share immediately
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -110,18 +114,20 @@ module triex::integration_multicoin_registry_trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_balance, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_balance, test.ctx());
         return_shared(trading_account);
 
         // Withdraw some MultiCoin
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let withdrawn = trading_account.withdraw_multicoin(
+            &gate,
             collection_id,
             ASSET_GOLD,
             400,
             test.ctx(),
         );
+        unit_test::destroy(gate);
 
         // Verify balances
         assert!(withdrawn.value() == 400, 0);
@@ -145,7 +151,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
 
         // Create trading account and share immediately
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -166,17 +173,19 @@ module triex::integration_multicoin_registry_trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let multicoin_balance = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(multicoin_balance, test.ctx());
+        trading_account.deposit_multicoin(&gate, multicoin_balance, test.ctx());
         return_shared(trading_account);
 
         // Withdraw all MultiCoin
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let withdrawn = trading_account.withdraw_all_multicoin(
+            &gate,
             collection_id,
             ASSET_GOLD,
             test.ctx(),
         );
+        unit_test::destroy(gate);
 
         // Verify balances
         assert!(withdrawn.value() == 1000, 0);
@@ -200,7 +209,8 @@ module triex::integration_multicoin_registry_trading_account_tests {
 
         // Create trading account and share immediately
         test.next_tx(ALICE);
-        let trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trading_account = trading_account::new(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
 
@@ -239,9 +249,10 @@ module triex::integration_multicoin_registry_trading_account_tests {
         let gold = test.take_from_sender<multicoin::Balance>();
         let silver = test.take_from_sender<multicoin::Balance>();
         let iron = test.take_from_sender<multicoin::Balance>();
-        trading_account.deposit_multicoin(gold, test.ctx());
-        trading_account.deposit_multicoin(silver, test.ctx());
-        trading_account.deposit_multicoin(iron, test.ctx());
+        trading_account.deposit_multicoin(&gate, gold, test.ctx());
+        trading_account.deposit_multicoin(&gate, silver, test.ctx());
+        trading_account.deposit_multicoin(&gate, iron, test.ctx());
+        unit_test::destroy(gate);
 
         // Verify balances
         assert!(trading_account.multicoin_balance(collection_id, ASSET_GOLD) == 1000, 0);

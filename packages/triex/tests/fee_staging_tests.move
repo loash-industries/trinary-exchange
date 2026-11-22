@@ -862,12 +862,14 @@ module triex::fee_staging_tests {
             transfer::public_transfer(gold, BOB);
         };
         test.next_tx(BOB);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut ta = test.take_shared_by_id<TradingAccount>(bob);
             let gold = test.take_from_sender<multicoin::Balance>();
-            ta.deposit_multicoin(gold, test.ctx());
+            ta.deposit_multicoin(&gate, gold, test.ctx());
             return_shared(ta);
         };
+        destroy(gate);
 
         (Market { pool_id, alice, bob }, collection_cap)
     }
@@ -884,7 +886,7 @@ module triex::fee_staging_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(account);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         let order_info = pool.place_limit_order(
             &policy,
             &mut ta,

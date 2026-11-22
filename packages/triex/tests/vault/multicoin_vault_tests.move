@@ -10,6 +10,7 @@ module triex::multicoin_vault_tests {
     use triex::{
         balances,
         constants,
+        fee_policy,
         multicoin_vault,
         quote_fee,
         trading_account::{Self, TradingAccount},
@@ -50,17 +51,12 @@ module triex::multicoin_vault_tests {
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
-        let mut trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut trading_account = trading_account::new(&gate, test.ctx());
 
         // Deposit Coin-based assets
-        trading_account.deposit(
-            mint_for_testing<USDC>(coin_amount, test.ctx()),
-            test.ctx(),
-        );
-        trading_account.deposit(
-            mint_for_testing<CRED>(coin_amount, test.ctx()),
-            test.ctx(),
-        );
+        trading_account.deposit(&gate, mint_for_testing<USDC>(coin_amount, test.ctx()), test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<CRED>(coin_amount, test.ctx()), test.ctx());
 
         // Deposit MultiCoin balance
         if (multicoin_amount > 0) {
@@ -79,7 +75,7 @@ module triex::multicoin_vault_tests {
             transfer::public_transfer(multicoin_balance, sender);
         };
 
-        let trade_cap = trading_account.mint_trade_cap(test.ctx());
+        let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
         transfer::public_transfer(trade_cap, sender);
         let id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
@@ -89,9 +85,10 @@ module triex::multicoin_vault_tests {
             test.next_tx(sender);
             let mut trading_account_mut = test.take_shared_by_id<TradingAccount>(id);
             let multicoin_bal = test.take_from_sender<MultiCoinBalance>();
-            trading_account_mut.deposit_multicoin(multicoin_bal, test.ctx());
+            trading_account_mut.deposit_multicoin(&gate, multicoin_bal, test.ctx());
             return_shared(trading_account_mut);
         };
+        destroy(gate);
 
         id
     }
@@ -136,7 +133,9 @@ module triex::multicoin_vault_tests {
         let settled_balances = balances::new(1000, 1000, 1000);
         let owed_balances = balances::new(1000, 1000, 1000);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Move funds into the vault (equal amounts in and out should be no-op)
         vault.settle_trading_account(
@@ -187,7 +186,9 @@ module triex::multicoin_vault_tests {
         let mut trading_account_bob = test.take_shared_by_id<TradingAccount>(
             trading_account_id_bob,
         );
-        let trade_proof = trading_account_alice.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account_alice.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Try to use Alice's proof with Bob's trading_account (should fail)
         vault.settle_trading_account(
@@ -223,7 +224,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // First, put some base tokens into the vault
         let initial_owed = balances::new(5000, 0, 0);
@@ -284,7 +287,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // User owes vault 3000 base (owed > settled)
         let settled_balances = balances::new(0, 0, 0);
@@ -327,7 +332,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // First, put some quote tokens into the vault
         let initial_owed = balances::new(0, 5000, 0);
@@ -388,7 +395,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // User owes vault 3000 quote
         let settled_balances = balances::new(0, 0, 0);
@@ -431,7 +440,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // First, put some CRED tokens into the vault
         let initial_owed = balances::new(0, 0, 5000);
@@ -492,7 +503,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // User owes vault 3000 CRED
         let settled_balances = balances::new(0, 0, 0);
@@ -535,7 +548,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Complex settlement: user owes base and quote, vault owes CRED
         // First put CRED in vault
@@ -592,7 +607,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Try to settle more base than vault has (vault owes 1000 base but has 0)
         let settled_balances = balances::new(1000, 0, 0);
@@ -627,7 +644,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Try to settle more quote than vault has
         let settled_balances = balances::new(0, 1000, 0);
@@ -662,7 +681,9 @@ module triex::multicoin_vault_tests {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id, TEST_ASSET_ID, test.ctx());
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Try to settle more CRED than vault has
         let settled_balances = balances::new(0, 0, 1000);

@@ -146,9 +146,11 @@ module triex::pool_quote_decimal_precision_tests {
 
     fun create_funded_bm<QuoteAsset>(trader: address, test: &mut sui::test_scenario::Scenario): ID {
         test.next_tx(trader);
-        let mut ta = trading_account::new(test.ctx());
-        ta.deposit(mint_for_testing<SUI>(LARGE_BALANCE, test.ctx()), test.ctx());
-        ta.deposit(mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut ta = trading_account::new(&gate, test.ctx());
+        ta.deposit(&gate, mint_for_testing<SUI>(LARGE_BALANCE, test.ctx()), test.ctx());
+        ta.deposit(&gate, mint_for_testing<QuoteAsset>(LARGE_BALANCE, test.ctx()), test.ctx());
+        destroy(gate);
         let id = object::id(&ta);
         transfer::public_share_object(ta);
         id
@@ -170,7 +172,7 @@ module triex::pool_quote_decimal_precision_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(alice_bm_id);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&policy, test.ctx());
             pool.place_limit_order(
                 &policy,
                 &mut ta,
@@ -197,7 +199,7 @@ module triex::pool_quote_decimal_precision_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(bob_bm_id);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&policy, test.ctx());
             let order_info = pool.place_limit_order(
                 &policy,
                 &mut ta,

@@ -5,6 +5,7 @@ module triex::registry_tests {
     use sui::{test_scenario::{Scenario, begin, end}, vec_set};
     use triex::{
         constants,
+        fee_policy,
         registry::{Self, Registry, TriexAdminCap},
         registry_quote_dec2,
         registry_quote_dec3::{Self, REGISTRY_QUOTE_DEC3},
@@ -35,7 +36,8 @@ module triex::registry_tests {
     fun enabling_an_enabled_version_aborts() {
         let mut test = begin(OWNER);
         let (mut registry, cap) = setup(&mut test);
-        registry.enable_version(constants::current_version(), &cap);
+        let mut policy = fee_policy::gate_for_testing(test.ctx());
+        policy.enable_version(&mut registry, constants::current_version(), &cap);
         abort 0
     }
 
@@ -44,7 +46,8 @@ module triex::registry_tests {
     fun disabling_a_version_never_enabled_aborts() {
         let mut test = begin(OWNER);
         let (mut registry, cap) = setup(&mut test);
-        registry.disable_version(constants::current_version() + 1, &cap);
+        let mut policy = fee_policy::gate_for_testing(test.ctx());
+        policy.disable_version(&mut registry, constants::current_version() + 1, &cap);
         abort 0
     }
 
@@ -53,7 +56,8 @@ module triex::registry_tests {
     fun mutating_while_the_running_version_is_disabled_aborts() {
         let mut test = begin(OWNER);
         let (mut registry, cap) = setup(&mut test);
-        registry.disable_version(constants::current_version(), &cap);
+        let mut policy = fee_policy::gate_for_testing(test.ctx());
+        policy.disable_version(&mut registry, constants::current_version(), &cap);
         assert!(!registry.allowed_versions().contains(&constants::current_version()));
         registry.set_treasury_address(ALICE, &cap);
         abort 0
@@ -64,7 +68,8 @@ module triex::registry_tests {
     fun reading_while_the_running_version_is_disabled_aborts() {
         let mut test = begin(OWNER);
         let (mut registry, cap) = setup(&mut test);
-        registry.disable_version(constants::current_version(), &cap);
+        let mut policy = fee_policy::gate_for_testing(test.ctx());
+        policy.disable_version(&mut registry, constants::current_version(), &cap);
         registry.is_quote_approved(type_name::with_defining_ids<USDC>());
         abort 0
     }

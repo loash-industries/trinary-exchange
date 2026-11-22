@@ -10,7 +10,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         fill::Fill,
         integration_multicoin_test_utils as mc_utils,
         math,
@@ -94,7 +94,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         let clock = test.take_shared<Clock>();
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
-        let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
+        let bob_proof = bob_bm.generate_proof_as_trader(&policy, &bob_trade_cap, test.ctx());
 
         // BOB places bid order - willing to buy 1000 base at price 2
         pool.place_limit_order(
@@ -200,7 +200,9 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob_bm.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        bob_bm.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(bob_bm);
 
         // BOB places ask order - selling 1000 base at price 2
@@ -210,7 +212,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         let clock = test.take_shared<Clock>();
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
-        let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
+        let bob_proof = bob_bm.generate_proof_as_trader(&policy, &bob_trade_cap, test.ctx());
 
         pool.place_limit_order(
             &policy,
@@ -301,7 +303,9 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob_bm.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        bob_bm.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(bob_bm);
 
         // BOB places ask order - selling 100 base at price 2
@@ -311,7 +315,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         let clock = test.take_shared<Clock>();
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
-        let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
+        let bob_proof = bob_bm.generate_proof_as_trader(&policy, &bob_trade_cap, test.ctx());
 
         pool.place_limit_order(
             &policy,
@@ -398,7 +402,9 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob_bm.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        bob_bm.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(bob_bm);
 
         // BOB places ask at price 2
@@ -408,7 +414,7 @@ module triex::integration_multicoin_pool_swap_quantity_tests {
         let clock = test.take_shared<Clock>();
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
-        let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
+        let bob_proof = bob_bm.generate_proof_as_trader(&policy, &bob_trade_cap, test.ctx());
 
         pool.place_limit_order(
             &policy,
