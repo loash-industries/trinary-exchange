@@ -65,9 +65,13 @@ module triex_hub_operator_adapter::test_world {
 
     // === Bootstrap ===
 
-    /// World, `FeePolicy` (multicoin class for `HUB_USD`) and an empty
-    /// `OperatorPayouts`, `Registry` with `TREASURY` as treasury, and a shared
-    /// `Clock`.
+    /// World, `FeePolicy` (multicoin class for `HUB_USD`), `OperatorPayouts`
+    /// with this package's adapter pinned and registration closed, `Registry`
+    /// with `TREASURY` as treasury, and a shared `Clock`.
+    ///
+    /// Multicoin pricing can only be set up once an adapter is pinned, so the
+    /// deploy order is: publish, pin, bootstrap. Registration is then closed
+    /// again so each test decides when the path goes live, with `pin_adapter`.
     public fun setup(sc: &mut Scenario) {
         world::test_helpers::setup_world(sc);
         world::test_helpers::configure_assembly_energy(sc);
@@ -77,9 +81,19 @@ module triex_hub_operator_adapter::test_world {
         {
             let mut policy = fee_policy::create_for_testing(sc.ctx());
             let cap = registry::get_admin_cap_for_testing(sc.ctx());
-            policy.bootstrap_quote<HUB_USD>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, sc.ctx());
+            let mut payouts = fee_policy::create_payouts_for_testing(sc.ctx());
+            payouts.pin_operator_adapter_for_testing<HubAdapterWitness>(&cap, sc.ctx());
+            payouts.clear_operator_adapter(&cap);
+            policy.bootstrap_quote<HUB_USD>(
+                &payouts,
+                COIN_CLASS,
+                MULTICOIN_CLASS,
+                SIX_DP,
+                &cap,
+                sc.ctx(),
+            );
             policy.share_for_testing();
-            fee_policy::share_payouts_for_testing(fee_policy::create_payouts_for_testing(sc.ctx()));
+            fee_policy::share_payouts_for_testing(payouts);
             unit_test::destroy(cap);
             clock::create_for_testing(sc.ctx()).share_for_testing();
         };
@@ -291,8 +305,9 @@ module triex_hub_operator_adapter::test_world {
 
     // === Adapter calls, as the cap holder's PTB makes them ===
 
-    /// What the admin does once per `OperatorPayouts`, after publishing the
-    /// adapter.
+    /// Open registration for the adapter `setup` pinned. On a real deploy the
+    /// pin opens it in the same call; `setup` closes it again so tests can
+    /// exercise both states.
     public fun pin_adapter(sc: &mut Scenario) {
         ts::next_tx(sc, ADMIN);
         let mut payouts = ts::take_shared<OperatorPayouts>(sc);

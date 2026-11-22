@@ -207,6 +207,7 @@ module triex::fee_policy_coverage_tests {
     fun defaults_can_be_repointed() {
         let mut test = begin(OWNER);
         let (mut policy, cap) = new_policy(&mut test);
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
         let usdc = type_name::with_defining_ids<USDC>();
         add_class<USDC>(&mut policy, CLASS_A, TAKER, RETENTION, &cap, &mut test);
         add_class<USDC>(&mut policy, CLASS_B, TAKER, RETENTION, &cap, &mut test);
@@ -215,9 +216,11 @@ module triex::fee_policy_coverage_tests {
         policy.set_default_class<USDC>(CLASS_B, &cap);
         assert_eq!(policy.default_class(usdc), CLASS_B);
 
-        policy.set_multicoin_default_class<USDC>(CLASS_B, &cap);
-        policy.set_multicoin_default_class<USDC>(CLASS_A, &cap);
+        policy.set_multicoin_default_class<USDC>(&payouts, CLASS_B, &cap);
+        policy.set_multicoin_default_class<USDC>(&payouts, CLASS_A, &cap);
         assert_eq!(policy.multicoin_default_class(usdc), CLASS_A);
+
+        destroy(payouts);
 
         destroy(cap);
         destroy(policy);
@@ -266,7 +269,7 @@ module triex::fee_policy_coverage_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         assert!(payouts.operator_adapter().is_some());
         payouts.clear_operator_adapter(&cap);
         assert_eq!(payouts.operator_adapter(), option::none());

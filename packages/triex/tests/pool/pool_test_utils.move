@@ -13,7 +13,7 @@ module triex::pool_test_utils {
         book,
         coin_vault,
         constants,
-        fee_policy::{Self, FeePolicy},
+        fee_policy::{Self, FeePolicy, OperatorPayouts},
         fill::Fill,
         math,
         order::{Self, Order},
@@ -102,23 +102,27 @@ module triex::pool_test_utils {
         test.next_tx(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        // Published beside the policy, as `fee_policy::init` does: claims and
+        // the multicoin fee sweep read hub payout addresses from it. A hub
+        // adapter has to be pinned before multicoin pricing can be set up, so
+        // the fixture pins the stand-in `fee_policy::TestAdapter`.
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&admin_cap, test.ctx());
 
-        seed_quote_classes<USDC>(&mut policy, &admin_cap, test);
-        seed_quote_classes<USDT>(&mut policy, &admin_cap, test);
-        seed_quote_classes<SUI>(&mut policy, &admin_cap, test);
-        seed_quote_classes<CRED>(&mut policy, &admin_cap, test);
-        seed_quote_classes<SPAM>(&mut policy, &admin_cap, test);
+        seed_quote_classes<USDC>(&mut policy, &payouts, &admin_cap, test);
+        seed_quote_classes<USDT>(&mut policy, &payouts, &admin_cap, test);
+        seed_quote_classes<SUI>(&mut policy, &payouts, &admin_cap, test);
+        seed_quote_classes<CRED>(&mut policy, &payouts, &admin_cap, test);
+        seed_quote_classes<SPAM>(&mut policy, &payouts, &admin_cap, test);
 
         fee_policy::share_for_testing(policy);
-        // Published beside the policy, as `fee_policy::init` does: claims and
-        // the multicoin fee sweep read hub payout addresses from it.
-        fee_policy::share_payouts_for_testing(fee_policy::create_payouts_for_testing(test.ctx()));
+        fee_policy::share_payouts_for_testing(payouts);
         destroy(admin_cap);
     }
 
     #[test_only]
     fun seed_quote_classes<QuoteAsset>(
         policy: &mut FeePolicy,
+        payouts: &OperatorPayouts,
         admin_cap: &TriexAdminCap,
         test: &mut Scenario,
     ) {
@@ -141,7 +145,11 @@ module triex::pool_test_utils {
             admin_cap,
             test.ctx(),
         );
-        policy.set_multicoin_default_class<QuoteAsset>(multicoin_class<QuoteAsset>(), admin_cap);
+        policy.set_multicoin_default_class<QuoteAsset>(
+            payouts,
+            multicoin_class<QuoteAsset>(),
+            admin_cap,
+        );
     }
 
     #[test_only]

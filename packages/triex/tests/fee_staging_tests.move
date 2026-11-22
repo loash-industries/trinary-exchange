@@ -181,7 +181,8 @@ module triex::fee_staging_tests {
     fun launch_pricing_sits_well_under_the_cap() {
         let mut test = begin(OWNER);
         let (mut policy, cap) = new_policy(&mut test);
-        policy.bootstrap_quote<USDC>(1, 2, 1_000_000, &cap, test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
+        policy.bootstrap_quote<USDC>(&payouts, 1, 2, 1_000_000, &cap, test.ctx());
 
         let epoch = test.ctx().epoch();
         let (_, coin_taker, coin_maker) = policy.resolve(1, 0, epoch);
@@ -191,6 +192,8 @@ module triex::fee_staging_tests {
         assert!(multicoin_maker < multicoin_taker);
         // Nine times the highest launch rate still fits.
         assert!(9 * multicoin_taker <= CAP);
+
+        destroy(payouts);
 
         destroy(cap);
         destroy(policy);

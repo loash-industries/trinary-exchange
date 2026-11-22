@@ -171,20 +171,28 @@ and new address) and `OperatorBeneficiaryDestroyed` from `fee_policy`, plus the
 adapter's own `HubOperatorRegistered` / `HubOperatorChanged`, which add the
 storage unit and the signer.
 
-Until the admin registers an adapter type, no registration or rotation path
-exists at all, and the first type registered is pinned for the life of the
-`OperatorPayouts` object: `clear_operator_adapter` closes both paths but never unpins the type,
-and `set_operator_adapter` aborts (`EAdapterPinned`) for any other type, so the
-cap cannot authorize a witness of its own and register or rotate a mapping to
-itself. `pinned_operator_adapter()` shows the pin. Moving to a different adapter
-package takes a Triex upgrade. The admin cap can only **destroy** a mapping
-(halting payouts, which stay encumbered until the owner re-registers), never
-point it somewhere new. The pin survives upgrades of the adapter package, so
-whoever holds the adapter's `UpgradeCap` could add a function that mints the
-witness and re-point **every** collection. The adapter is therefore made
-immutable (`sui::package::make_immutable`) after it is published and before it
-is pinned; until that is done, read the adapter `UpgradeCap` as a cap with the
-power to redirect all hub revenue. Two world-side parties sit in the same trust
+Until the admin pins an adapter type, no registration or rotation path exists
+at all. `pin_operator_adapter` pins it for the life of the `OperatorPayouts`
+object, and takes the adapter package's `UpgradeCap` to do so: the cap must
+belong to the package that defines the witness type, as first published, and
+the pin deletes it (`sui::package::make_immutable`) in the same transaction. So
+a pinned adapter can never be upgraded into one that mints its witness without
+the `OwnerCap` check, a primitive or another publisher's public type can never
+be pinned, and `pinned_operator_adapter()` always names immutable code anyone
+can audit. A second pin aborts (`EAdapterPinned`), whatever its type;
+`clear_operator_adapter` closes registration and rotation but never unpins, and
+`set_operator_adapter` only re-opens the pinned type. So the cap cannot
+authorize a witness of its own and register or rotate a mapping to itself.
+Moving to a different adapter package takes a fresh publish of Triex. The admin
+cap can only **destroy** a mapping (halting payouts, which stay encumbered until
+the owner re-registers), never point it somewhere new.
+
+Which adapter gets pinned is the admin's choice, and that remains trust in the
+admin. The contracts make it reviewable rather than silent: multicoin pricing
+cannot be set up until an adapter is pinned (`bootstrap_quote` and
+`set_multicoin_default_class` abort with `ENoPinnedAdapter`), so the pin is
+fixed and public before any multicoin pool exists and before any operator share
+accrues. Two world-side parties sit in the same trust
 set: an AdminACL sponsor can re-point any character's wallet
 (`character::update_address`) and so act as any storage unit owner, and the
 warehouse_receipts / world `UpgradeCap`s guard the `VaultConfig` and

@@ -433,7 +433,7 @@ module triex::fee_policy_operator_share_tests {
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
         assert_eq!(payouts.operator_adapter(), option::none());
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         assert_eq!(
             payouts.operator_adapter(),
             option::some(std::type_name::with_defining_ids<Adapter>()),
@@ -472,7 +472,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         // `drop` is free to declare; only the registered type passes the gate.
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Forgery {});
 
@@ -486,7 +486,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.clear_operator_adapter(&cap);
         assert_eq!(payouts.operator_adapter(), option::none());
 
@@ -505,7 +505,7 @@ module triex::fee_policy_operator_share_tests {
         let adapter = std::type_name::with_defining_ids<Adapter>();
 
         assert_eq!(payouts.pinned_operator_adapter(), option::none());
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         assert_eq!(payouts.pinned_operator_adapter(), option::some(adapter));
 
         // Clearing closes registration but leaves the pin; the same type may
@@ -531,7 +531,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.set_operator_adapter<Forgery>(&cap);
 
         abort 0
@@ -544,7 +544,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.clear_operator_adapter(&cap);
         payouts.set_operator_adapter<Forgery>(&cap);
 
@@ -561,7 +561,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
 
         payouts.destroy_operator_beneficiary(a_collection(), &cap);
@@ -579,7 +579,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         payouts.register_operator_beneficiary_with_witness(
             another_collection(),
@@ -615,7 +615,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.update_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
 
         abort 0
@@ -629,7 +629,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         payouts.destroy_operator_beneficiary(a_collection(), &cap);
         payouts.update_operator_beneficiary_with_witness(a_collection(), @0xCAFE, Adapter {});
@@ -646,7 +646,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         let previous = payouts.update_operator_beneficiary_with_witness(
             a_collection(),
@@ -681,7 +681,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         payouts.update_operator_beneficiary_with_witness(a_collection(), @0xBAD, Forgery {});
 
@@ -697,7 +697,7 @@ module triex::fee_policy_operator_share_tests {
         let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(a_collection(), @0xB0B, Adapter {});
         payouts.clear_operator_adapter(&cap);
         assert_eq!(payouts.operator_beneficiary(a_collection()), option::some(@0xB0B));

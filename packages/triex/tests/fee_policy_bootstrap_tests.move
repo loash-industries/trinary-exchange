@@ -118,8 +118,16 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
-        policy.bootstrap_quote<CRED>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(
+            &payouts,
+            COIN_CLASS,
+            MULTICOIN_CLASS,
+            SIX_DP,
+            &cap,
+            test.ctx(),
+        );
 
         assert!(policy.class_exists(COIN_CLASS));
         assert!(policy.class_exists(MULTICOIN_CLASS));
@@ -139,6 +147,8 @@ module triex::fee_policy_bootstrap_tests {
         assert_eq!(policy.cancel_retention_bps(COIN_CLASS, epoch), 2_000);
         assert_eq!(policy.cancel_retention_bps(MULTICOIN_CLASS, epoch), 2_000);
 
+        destroy(payouts);
+
         destroy(cap);
         policy.share_for_testing();
         end(test);
@@ -149,8 +159,16 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
-        policy.bootstrap_quote<CRED>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(
+            &payouts,
+            COIN_CLASS,
+            MULTICOIN_CLASS,
+            SIX_DP,
+            &cap,
+            test.ctx(),
+        );
         assert_ladder(
             &policy,
             COIN_CLASS,
@@ -159,6 +177,8 @@ module triex::fee_policy_bootstrap_tests {
             coin_makers(),
             six_dp_thresholds(),
         );
+
+        destroy(payouts);
 
         destroy(cap);
         policy.share_for_testing();
@@ -170,8 +190,16 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
-        policy.bootstrap_quote<CRED>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(
+            &payouts,
+            COIN_CLASS,
+            MULTICOIN_CLASS,
+            SIX_DP,
+            &cap,
+            test.ctx(),
+        );
         assert_ladder(
             &policy,
             MULTICOIN_CLASS,
@@ -180,6 +208,8 @@ module triex::fee_policy_bootstrap_tests {
             multicoin_makers(),
             six_dp_thresholds(),
         );
+
+        destroy(payouts);
 
         destroy(cap);
         policy.share_for_testing();
@@ -232,8 +262,10 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
         policy.bootstrap_quote<NINE_DP>(
+            &payouts,
             COIN_CLASS,
             MULTICOIN_CLASS,
             NINE_DP_UNIT,
@@ -252,6 +284,8 @@ module triex::fee_policy_bootstrap_tests {
         // Rates are absolute, so they do not move with the quote's decimals.
         assert_eq!(schedule.tier_at(0).taker_fee(), 11_000_000);
 
+        destroy(payouts);
+
         destroy(cap);
         policy.share_for_testing();
         end(test);
@@ -263,8 +297,16 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
-        policy.bootstrap_quote<CRED>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(
+            &payouts,
+            COIN_CLASS,
+            MULTICOIN_CLASS,
+            SIX_DP,
+            &cap,
+            test.ctx(),
+        );
 
         let epoch = test.ctx().epoch();
         let thresholds = six_dp_thresholds();
@@ -302,6 +344,8 @@ module triex::fee_policy_bootstrap_tests {
         assert_eq!(top, GENESIS_TIERS - 1);
         assert_eq!(top_taker, takers[GENESIS_TIERS - 1]);
 
+        destroy(payouts);
+
         destroy(cap);
         policy.share_for_testing();
         end(test);
@@ -312,11 +356,14 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
         // Both kinds into one class would silently price multicoin pools as coin
         // pools; the second `create_class` would abort anyway, but this fails on
         // the argument rather than halfway through the setup.
-        policy.bootstrap_quote<CRED>(COIN_CLASS, COIN_CLASS, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(&payouts, COIN_CLASS, COIN_CLASS, SIX_DP, &cap, test.ctx());
+
+        destroy(payouts);
 
         destroy(cap);
         policy.share_for_testing();
@@ -328,10 +375,13 @@ module triex::fee_policy_bootstrap_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
         // A zero scale would collapse every threshold to zero, putting every
         // trader on the top rung from their first trade.
-        policy.bootstrap_quote<CRED>(COIN_CLASS, MULTICOIN_CLASS, 0, &cap, test.ctx());
+        policy.bootstrap_quote<CRED>(&payouts, COIN_CLASS, MULTICOIN_CLASS, 0, &cap, test.ctx());
+
+        destroy(payouts);
 
         destroy(cap);
         policy.share_for_testing();

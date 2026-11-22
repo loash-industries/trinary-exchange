@@ -49,7 +49,13 @@
 /// per-pool step. See `halt_trading` for what a halt does and does not stop.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
-    use sui::{dynamic_field as df, event, table::{Self, Table}};
+    use sui::{
+        address,
+        dynamic_field as df,
+        event,
+        package::{Self, UpgradeCap},
+        table::{Self, Table}
+    };
     use triex::{constants, fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
 
     // === Errors ===
@@ -72,6 +78,12 @@ module triex::fee_policy {
     const EPoolFeeClassNotYetEffective: u64 = 14;
     /// Trading is halted exchange-wide: no new orders, swaps or pools.
     const ETradingHalted: u64 = 15;
+    /// No hub adapter has been pinned yet. Multicoin pricing cannot be set up,
+    /// and registration cannot be reopened, until one is.
+    const ENoPinnedAdapter: u64 = 16;
+    /// The `UpgradeCap` handed to `pin_operator_adapter` is not the cap of the
+    /// package that defines the witness type, as first published.
+    const EAdapterUpgradeCapMismatch: u64 = 17;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -315,12 +327,13 @@ module triex::fee_policy {
     /// told about up front is announced by publication. Note what that obliges
     /// on deploy — the share is credited whether or not the collection has a
     /// beneficiary registered yet, and `withdrawable_quote_fees` subtracts
-    /// `operator_owed` in full, so until an adapter is registered and hubs
-    /// register through it, this fraction of multicoin revenue is neither
-    /// claimable nor sweepable. It is encumbered, not lost: a later
-    /// registration still pays the whole accrued balance. An admin who wants
-    /// the feature dark at launch stages class 0 to zero before the first
-    /// multicoin pool is created.
+    /// `operator_owed` in full, so until a hub registers through the pinned
+    /// adapter, this fraction of its multicoin revenue is neither claimable nor
+    /// sweepable. It is encumbered, not lost: a later registration still pays
+    /// the whole accrued balance. No share can accrue before the adapter itself
+    /// is pinned, because multicoin pricing cannot be set up until it is (see
+    /// `bootstrap_quote`). An admin who wants the feature dark at launch stages
+    /// class 0 to zero before the first multicoin pool is created.
     ///
     /// This runs from `init`, so it seeds a *fresh publish* only. An upgrade
     /// keeps the already-shared `FeePolicy`, which never passed through here;
@@ -373,8 +386,15 @@ module triex::fee_policy {
     /// Class ids are the caller's to allocate and must not collide with an existing
     /// class — `create_class` aborts on a duplicate, so a mistake here fails the
     /// transaction rather than overwriting live pricing.
+    ///
+    /// Aborts with `ENoPinnedAdapter` until a hub adapter is pinned on `payouts`
+    /// (see `pin_operator_adapter`). This sets the multicoin default class, and
+    /// without it no multicoin pool can exist, so the hub operator share — live
+    /// from the first fill — can never accrue before the adapter that decides
+    /// who it is paid to is fixed and public.
     public fun bootstrap_quote<QuoteAsset>(
         self: &mut FeePolicy,
+        payouts: &OperatorPayouts,
         coin_class_id: u16,
         multicoin_class_id: u16,
         quote_unit: u128,
@@ -406,7 +426,7 @@ module triex::fee_policy {
             cap,
             ctx,
         );
-        self.set_multicoin_default_class<QuoteAsset>(multicoin_class_id, cap);
+        self.set_multicoin_default_class<QuoteAsset>(payouts, multicoin_class_id, cap);
     }
 
     /// **The protocol's kill switch.** One transaction, and from the next one on
@@ -539,12 +559,16 @@ module triex::fee_policy {
         event::emit(DefaultFeeClassSet { quote, class_id, multicoin: false });
     }
 
-    /// Same, for multicoin pools.
+    /// Same, for multicoin pools. Aborts with `ENoPinnedAdapter` until a hub
+    /// adapter is pinned, for the reason given on `bootstrap_quote`. Coin pools
+    /// carry no operator share, so `set_default_class` has no such gate.
     public fun set_multicoin_default_class<QuoteAsset>(
         self: &mut FeePolicy,
+        payouts: &OperatorPayouts,
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        assert!(payouts.pinned_adapter.is_some(), ENoPinnedAdapter);
         let quote = type_name::with_defining_ids<QuoteAsset>();
         self.assert_class_matches_quote(class_id, quote);
         if (self.multicoin_default_classes.contains(quote)) {
@@ -769,6 +793,40 @@ module triex::fee_policy {
     }
 
     #[test_only]
+    /// A stand-in hub adapter witness for fixtures that need *a* pinned adapter
+    /// (multicoin pricing requires one) without testing a particular one.
+    public struct TestAdapter has drop {}
+
+    #[test_only]
+    public fun test_adapter_witness(): TestAdapter {
+        TestAdapter {}
+    }
+
+    #[test_only]
+    /// `pin_operator_adapter` with the `UpgradeCap` a publish of `W`'s package
+    /// would have produced.
+    public fun pin_operator_adapter_for_testing<W: drop>(
+        self: &mut OperatorPayouts,
+        cap: &TriexAdminCap,
+        ctx: &mut TxContext,
+    ) {
+        let adapter_upgrade_cap = package::test_publish(defining_package<W>(), ctx);
+        self.pin_operator_adapter<W>(cap, adapter_upgrade_cap);
+    }
+
+    #[test_only]
+    /// A payouts object with `TestAdapter` pinned, so multicoin pricing can be
+    /// set up against it.
+    public fun create_pinned_payouts_for_testing(
+        cap: &TriexAdminCap,
+        ctx: &mut TxContext,
+    ): OperatorPayouts {
+        let mut payouts = new_payouts(ctx);
+        payouts.pin_operator_adapter_for_testing<TestAdapter>(cap, ctx);
+        payouts
+    }
+
+    #[test_only]
     public fun share_payouts_for_testing(self: OperatorPayouts) {
         transfer::share_object(self)
     }
@@ -781,6 +839,13 @@ module triex::fee_policy {
     #[test_only]
     public fun pool_fee_class_set_parts(self: &PoolFeeClassSet): (ID, u16) {
         (self.pool_id, self.class_id)
+    }
+
+    #[test_only]
+    public fun operator_adapter_authorized_adapter(
+        self: &OperatorAdapterAuthorized,
+    ): Option<TypeName> {
+        self.adapter
     }
 
     #[test_only]
@@ -1176,16 +1241,10 @@ module triex::fee_policy {
         0
     }
 
-    /// Register the one witness type allowed to register beneficiaries.
-    ///
-    /// The first type registered is pinned for the life of `OperatorPayouts`: later
-    /// calls may only re-open registration for that same type after a clear.
-    /// Replacing it would let the cap redirect an operator share — authorize a
-    /// witness it mints itself, destroy the mapping, re-register its own
-    /// address — which is the one power over hub revenue it is promised not to
-    /// have. An adapter package upgrade keeps its defining id, so the pin
-    /// survives upgrades of the adapter; swapping to a different package takes
-    /// a Triex upgrade.
+    /// Pin `W` as the one witness type allowed to register beneficiaries, for
+    /// good, and open registration for it. Consumes the `UpgradeCap` of the
+    /// package that defines `W` and makes that package immutable, in the same
+    /// transaction.
     ///
     /// The type is what makes the gate real. A bare `<W: drop>` bound authorizes
     /// nothing — any package can declare a struct with `drop` and mint one — so a
@@ -1193,16 +1252,70 @@ module triex::fee_policy {
     /// Pinning it by `TypeName` rather than by importing the adapter keeps Triex
     /// free of any dependency on the game world: it compares a name, it does not
     /// link a module.
-    public fun set_operator_adapter<W: drop>(self: &mut OperatorPayouts, _cap: &TriexAdminCap) {
+    ///
+    /// The cap is what makes the pin trustworthy (TRIEX-152):
+    ///
+    /// - The pinned code can never change. A pin survives upgrades of the
+    ///   adapter, so a live `UpgradeCap` could add a function that mints the
+    ///   witness without the adapter's `OwnerCap` check and re-point every hub.
+    ///   Making the package immutable here, rather than trusting a runbook step,
+    ///   means "pinned" always implies "immutable".
+    /// - Only a type from a package whose cap the pinner holds can be pinned:
+    ///   not a primitive (its type name has no package and aborts), and not some
+    ///   other publisher's public struct with `drop`, which would let anyone
+    ///   register first-write-wins.
+    /// - The cap must still point at the package as first published — the
+    ///   package that defines `W` — so the code auditors read at that address is
+    ///   the code that runs.
+    ///
+    /// What it cannot decide is *which* adapter the admin chooses. That stays a
+    /// trust in the admin's choice, made reviewable instead: the pin must happen
+    /// before any multicoin pool exists (`bootstrap_quote` and
+    /// `set_multicoin_default_class` require it), `pinned_operator_adapter` names
+    /// it, and the package behind it can no longer change.
+    ///
+    /// Replacing a pin would let the cap redirect an operator share — authorize
+    /// a witness it mints itself, destroy the mapping, re-register its own
+    /// address — which is the one power over hub revenue it is promised not to
+    /// have. So a second pin aborts with `EAdapterPinned`; moving to a different
+    /// adapter takes a fresh publish of Triex.
+    public fun pin_operator_adapter<W: drop>(
+        self: &mut OperatorPayouts,
+        _cap: &TriexAdminCap,
+        adapter_upgrade_cap: UpgradeCap,
+    ) {
+        assert!(self.pinned_adapter.is_none(), EAdapterPinned);
+        assert!(
+            adapter_upgrade_cap.upgrade_package() == defining_package<W>(),
+            EAdapterUpgradeCapMismatch,
+        );
+        package::make_immutable(adapter_upgrade_cap);
+
         let adapter = type_name::with_defining_ids<W>();
-        if (self.pinned_adapter.is_some()) {
-            assert!(*self.pinned_adapter.borrow() == adapter, EAdapterPinned);
-        } else {
-            self.pinned_adapter = option::some(adapter);
-        };
+        self.pinned_adapter = option::some(adapter);
         self.authorized_adapter = option::some(adapter);
 
         event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
+    }
+
+    /// Re-open registration for the pinned adapter after `clear_operator_adapter`
+    /// closed it. Only the pinned type is accepted (`EAdapterPinned` otherwise),
+    /// and nothing can be re-opened before a pin exists (`ENoPinnedAdapter`).
+    /// Setting it while it is already open is a no-op apart from the event.
+    public fun set_operator_adapter<W: drop>(self: &mut OperatorPayouts, _cap: &TriexAdminCap) {
+        assert!(self.pinned_adapter.is_some(), ENoPinnedAdapter);
+        let adapter = type_name::with_defining_ids<W>();
+        assert!(*self.pinned_adapter.borrow() == adapter, EAdapterPinned);
+        self.authorized_adapter = option::some(adapter);
+
+        event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
+    }
+
+    /// The package that defines `W`, as first published. Aborts for a
+    /// primitive type, which has none.
+    fun defining_package<W>(): ID {
+        let package = type_name::with_defining_ids<W>().address_string();
+        object::id_from_address(address::from_ascii_bytes(package.as_bytes()))
     }
 
     /// Set `key` to `value`, present or not — the dynamic-field upsert every

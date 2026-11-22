@@ -1,6 +1,6 @@
 # triex_hub_operator_adapter
 
-The adapter `triex::fee_policy` pins with `set_operator_adapter`. It lets the
+The adapter `triex::fee_policy` pins with `pin_operator_adapter`. It lets the
 owner of a storage unit choose and change the address that receives the hub
 operator share of fees on every multicoin pool trading that storage unit's
 warehouse-receipt collection.
@@ -90,6 +90,8 @@ From `triex::fee_policy`:
 | Code | Name | Meaning |
 |---|---|---|
 | 9 | `ENoAuthorizedAdapter` | The admin has not pinned the adapter, or has cleared it |
+| 16 | `ENoPinnedAdapter` | `set_operator_adapter` or multicoin pricing before any adapter is pinned |
+| 17 | `EAdapterUpgradeCapMismatch` | The `UpgradeCap` given to `pin_operator_adapter` is not this package's, as first published |
 | 12 | `EOperatorBeneficiaryNotRegistered` | `update_operator` with nothing to rotate; use `register_operator` |
 
 ## Deploy
@@ -101,13 +103,18 @@ Per `OperatorPayouts` (the pin is permanent on it):
    later (`receipt::new_vault` / `PendingVault`,
    loash-industries/warehouse-receipts#1); Move.toml pins `fe73b95`, the
    testnet_stillness v2 upgrade.
-2. `sui client publish --build-env testnet_stillness`.
-3. **Make it immutable**: `sui client call --package 0x2 --module package
-   --function make_immutable --args <adapter UpgradeCap>`. The pin survives
-   upgrades, so a live UpgradeCap could add a function that mints
-   `HubAdapterWitness` and redirects every collection's revenue.
-4. Check `fee_policy::pinned_operator_adapter` is `none`, then the admin calls
-   `fee_policy::set_operator_adapter<<ADAPTER>::hub_adapter::HubAdapterWitness>(operatorPayouts, adminCap)`.
+2. `sui client publish --build-env testnet_stillness`. Keep the `UpgradeCap`
+   it creates; the pin needs it. Do not upgrade the package first: the pin
+   only accepts the cap of the package as first published.
+3. Check `fee_policy::pinned_operator_adapter` is `none`, then the admin calls
+   `fee_policy::pin_operator_adapter<<ADAPTER>::hub_adapter::HubAdapterWitness>(operatorPayouts, adminCap, adapterUpgradeCap)`.
+   One transaction pins the type, opens registration, and makes this package
+   immutable by deleting its `UpgradeCap`; the same address must hold the
+   admin cap and the adapter's `UpgradeCap`. Check that the
+   `OperatorAdapterAuthorized` event names `HubAdapterWitness`.
+4. Only now run `fee_policy::bootstrap_quote` for each quote: it aborts with
+   `ENoPinnedAdapter` until step 3 has happened, so no multicoin pool can exist
+   before the pin.
 
 When a cycle fresh-publishes triex (new `OperatorPayouts`), republish this package
 against it and repeat. Within a cycle triex is upgraded in place, and this
@@ -121,7 +128,7 @@ register.
 Only the holder of a storage unit's canonical cap can register or re-point its
 collections, *as a user*. Also able to re-point a hub, and trusted accordingly:
 
-- this package's `UpgradeCap` — hence `make_immutable` before pinning;
+- this package's `UpgradeCap` — no longer: the pin deletes it;
 - world AdminACL sponsors — `character::update_address` lets a sponsor act as
   any character's wallet for a transaction; a sponsoring service that co-signs
   arbitrary user PTBs extends that to its users;
