@@ -121,7 +121,13 @@ signals congestion.
 The package uses a versioned inner-object pattern: the registry keeps a set of
 allowed package versions (`enable_version` / `disable_version`,
 `update_pool_allowed_versions`), letting old package versions be disabled
-after upgrades.
+after upgrades. Each pool caches the set, so a change reaches a pool when that
+pool is refreshed, one call per pool.
+
+The one-transaction emergency stop is `fee_policy::halt_trading`: every order
+already reads the shared `FeePolicy`, so a halt stops new orders, swaps and
+permissionless pool creation on every pool at once, while cancels, withdrawals,
+expired-order cleanup and claims stay open.
 
 ## Source layout
 

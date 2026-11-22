@@ -90,6 +90,7 @@ module triex::multicoin_pool {
         creation_fee: Coin<CRED>,
         ctx: &mut TxContext,
     ): ID {
+        policy.assert_trading_live();
         assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
         create_pool<QuoteAsset>(
             registry,
@@ -1641,6 +1642,9 @@ module triex::multicoin_pool {
         market_order: bool,
         ctx: &mut TxContext,
     ): OrderInfo {
+        // Every order and every swap on this pool comes through here, so this
+        // one check is the whole of the exchange-wide halt for a multicoin pool.
+        policy.assert_trading_live();
         let order_info = {
             let pool_inner = self.load_inner_mut();
 
