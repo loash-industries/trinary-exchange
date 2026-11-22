@@ -175,23 +175,25 @@ module triex::integration_locked_balance_tests {
     }
 
     /// An ask locks base and nothing else, so reading its locked balance must not
-    /// depend on its quote leg being representable. `qty_to_quote` asserts its
-    /// result fits in a `u64`, and `quantity x price / 1e9` crosses that at
-    /// 2_000_000_001 raw base units priced at `MAX_PRICE` — one unit above the
-    /// control below. Computing the conversion before the bid/ask branch let such
-    /// an ask brick its own owner's locked-funds view, on a number the ask arm
-    /// discarded. Nothing upstream bounds it: `validate_inputs` checks no
-    /// quantity, and `MAX_PRICE` is an accepted price.
-    /// The control: one raw unit below the threshold, which read correctly even
-    /// before the fix. It is here so a later change that moves the threshold
-    /// instead of removing it cannot pass by making both cases abort.
+    /// depend on its quote leg. `quantity x price / 1e9` stops fitting in a `u64`
+    /// at 2_000_000_001 raw base units priced at `MAX_PRICE`. This sits one raw
+    /// unit under that, on the largest ask that can rest at that price, and its
+    /// locked balance reads as base only.
     #[test]
-    fun test_locked_balance_ask_below_the_quote_overflow_threshold() {
+    fun test_locked_balance_ask_at_the_resting_value_bound() {
         check_max_price_ask_locks_base_only(2_000_000_000);
     }
 
-    #[test]
-    fun test_locked_balance_ask_past_the_quote_overflow_threshold() {
+    /// One raw unit more used to rest. For a while it bricked its own owner's
+    /// locked-funds view, because the conversion ran before the bid/ask branch;
+    /// that was fixed inside `Order::locked_balance`. The order itself still
+    /// aborted every taker that reached it, since matching values a maker's whole
+    /// remainder (TRIEX-153), so it can no longer be placed at all.
+    /// `order_tests::locked_balance_of_an_ask_never_values_its_quote_leg` keeps
+    /// the ordering inside `locked_balance` pinned directly, now that no pool can
+    /// produce such an order.
+    #[test, expected_failure(abort_code = triex::order_info::EOrderValueOverflow)]
+    fun test_ask_past_the_resting_value_bound_is_rejected_at_placement() {
         check_max_price_ask_locks_base_only(2_000_000_001);
     }
 

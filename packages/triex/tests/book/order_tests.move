@@ -631,6 +631,42 @@ module triex::order_tests {
     }
 
     #[test]
+    /// An ask locks base and nothing else, so reading what it has locked, or what
+    /// a cancel returns, must never touch its quote leg. `locked_balance` keeps
+    /// the conversion inside the bid arm for exactly that reason: computed before
+    /// the branch, it aborted the read on a number the ask arm then discarded.
+    ///
+    /// No pool can rest an ask whose value does not fit any more (TRIEX-153), so
+    /// this builds one directly to keep that ordering pinned.
+    fun locked_balance_of_an_ask_never_values_its_quote_leg() {
+        // One raw unit past what `quantity x MAX_PRICE / 1e9` can express.
+        let coin_ask = create_order_base(constants::max_price(), 2_000_000_001, false);
+        assert_eq!(
+            coin_ask.locked_balance(18_000_000, constants::float_scaling()),
+            balances::new(2_000_000_001, 0, 0),
+        );
+        assert_eq!(
+            coin_ask.calculate_cancel_refund(0, option::none(), constants::float_scaling()),
+            balances::new(2_000_000_001, 0, 0),
+        );
+        let (refund, retained) = coin_ask.released_fee_split(
+            18_000_000,
+            option::none(),
+            constants::float_scaling(),
+        );
+        assert_eq!(refund, 0);
+        assert_eq!(retained, 0);
+
+        // The multicoin equivalent, where the product is undivided: three units.
+        let multicoin_ask = create_order_base(constants::max_price(), 3, false);
+        assert_eq!(multicoin_ask.locked_balance(18_000_000, 1), balances::new(3, 0, 0));
+        assert_eq!(
+            multicoin_ask.calculate_cancel_refund(0, option::none(), 1),
+            balances::new(3, 0, 0),
+        );
+    }
+
+    #[test]
     fun released_fee_split_sums_to_released() {
         // The pool decrements `locked_maker_fees` by refund + retained, so any
         // gap between that sum and the released basis would strand escrow.

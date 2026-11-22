@@ -17,6 +17,10 @@ module triex::math_tests {
     /// as human_price × QUOTE_UNIT, so the conversion divides by nothing.
     const NO_SCALING: u64 = 1;
 
+    /// `constants::max_price()`, 2^63 - 1: the highest price an order may carry.
+    const MAX_PRICE: u64 = 9_223_372_036_854_775_807;
+    const MAX_U64: u64 = 0xFFFFFFFFFFFFFFFF;
+
     // === mul ===
 
     #[test]
@@ -108,6 +112,77 @@ module triex::math_tests {
         // undivided multicoin branch is the only place a product this large can
         // reach a cast, so it is the only place that needs the guard.
         math::qty_to_quote(4_294_967_296, 4_294_967_296, NO_SCALING);
+    }
+
+    // === qty_to_quote_fits ===
+
+    #[test]
+    fun test_max_price_constant_matches_the_one_orders_are_bounded_by() {
+        // The boundaries below are computed against this literal, so it has to be
+        // the real one.
+        assert!(MAX_PRICE == triex::constants::max_price(), 0);
+    }
+
+    #[test]
+    fun test_qty_to_quote_fits_multicoin_boundary() {
+        // An undivided product, so the boundary is exact. 2 x (2^63 - 1) is
+        // 2^64 - 2, the last value that fits; one more unit of base lands
+        // 2^63 - 1 past the top.
+        assert!(math::qty_to_quote_fits(2, MAX_PRICE, NO_SCALING), 0);
+        assert!(math::qty_to_quote(2, MAX_PRICE, NO_SCALING) == MAX_U64 - 1, 1);
+        assert!(!math::qty_to_quote_fits(3, MAX_PRICE, NO_SCALING), 2);
+        // The same edge approached from the other factor.
+        assert!(math::qty_to_quote_fits(MAX_U64, 1, NO_SCALING), 3);
+        assert!(math::qty_to_quote(MAX_U64, 1, NO_SCALING) == MAX_U64, 4);
+        assert!(!math::qty_to_quote_fits(MAX_U64, 2, NO_SCALING), 5);
+        // 2^32 x 2^32 is 2^64, exactly one past the top; one less in either
+        // factor is back inside.
+        assert!(!math::qty_to_quote_fits(4_294_967_296, 4_294_967_296, NO_SCALING), 6);
+        assert!(math::qty_to_quote_fits(4_294_967_296, 4_294_967_295, NO_SCALING), 7);
+    }
+
+    #[test]
+    fun test_qty_to_quote_fits_standard_pool_boundary() {
+        // Fixed point divides the product by 1e9 before it has to fit, which moves
+        // the boundary 1e9 times further out. 2e9 raw base at MAX_PRICE is
+        // 2 x (2^63 - 1) again, and one more raw unit adds MAX_PRICE / 1e9 on top.
+        assert!(math::qty_to_quote_fits(2_000_000_000, MAX_PRICE, FLOAT_SCALING), 0);
+        assert!(math::qty_to_quote(2_000_000_000, MAX_PRICE, FLOAT_SCALING) == MAX_U64 - 1, 1);
+        assert!(!math::qty_to_quote_fits(2_000_000_001, MAX_PRICE, FLOAT_SCALING), 2);
+        // A price of exactly one is the identity, so the whole u64 range fits
+        // there and stops fitting one raw price unit above it.
+        assert!(math::qty_to_quote_fits(MAX_U64, FLOAT_SCALING, FLOAT_SCALING), 3);
+        assert!(math::qty_to_quote(MAX_U64, FLOAT_SCALING, FLOAT_SCALING) == MAX_U64, 4);
+        assert!(!math::qty_to_quote_fits(MAX_U64, FLOAT_SCALING + 1, FLOAT_SCALING), 5);
+    }
+
+    #[test]
+    fun test_qty_to_quote_fits_is_total() {
+        // The largest product there is, (2^64 - 1)^2, still fits the u128
+        // intermediate, so the answer is a plain "no" rather than an abort.
+        assert!(!math::qty_to_quote_fits(MAX_U64, MAX_U64, FLOAT_SCALING), 0);
+        assert!(!math::qty_to_quote_fits(MAX_U64, MAX_U64, NO_SCALING), 1);
+        // Zero in either factor is zero quote, which always fits.
+        assert!(math::qty_to_quote_fits(0, MAX_U64, FLOAT_SCALING), 2);
+        assert!(math::qty_to_quote_fits(0, MAX_U64, NO_SCALING), 3);
+        assert!(math::qty_to_quote_fits(MAX_U64, 0, FLOAT_SCALING), 4);
+        assert!(math::qty_to_quote_fits(MAX_U64, 0, NO_SCALING), 5);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::math::EOverflow)]
+    fun test_qty_to_quote_aborts_where_fits_says_no_multicoin() {
+        // The check and the conversion have to agree at the boundary: one unit
+        // past the last value that fits, `fits` says no and `qty_to_quote` aborts.
+        assert!(!math::qty_to_quote_fits(3, MAX_PRICE, NO_SCALING), 0);
+        math::qty_to_quote(3, MAX_PRICE, NO_SCALING);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = triex::math::EOverflow)]
+    fun test_qty_to_quote_aborts_where_fits_says_no_standard_pool() {
+        assert!(!math::qty_to_quote_fits(2_000_000_001, MAX_PRICE, FLOAT_SCALING), 0);
+        math::qty_to_quote(2_000_000_001, MAX_PRICE, FLOAT_SCALING);
     }
 
     #[test]

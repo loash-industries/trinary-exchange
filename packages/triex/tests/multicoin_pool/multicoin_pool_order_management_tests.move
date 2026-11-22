@@ -2220,7 +2220,11 @@ module triex::integration_multicoin_pool_order_management_tests {
         alice_bm.deposit_multicoin(gold, test.ctx());
         return_shared(alice_bm);
 
-        // Place ask order at max valid price (asks only need base, not quote * price)
+        // Place ask order at max valid price. An ask locks only base, but what
+        // rests still has to be convertible to quote, because matching values a
+        // maker's whole remainder (TRIEX-153). Two units is the most that can be
+        // valued at this price: 2 x (2^63 - 1) = 2^64 - 2. The rejection one unit
+        // further on is covered in `multicoin_pool_resting_value_tests`.
         test.next_tx(ALICE);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let policy = test.take_shared<FeePolicy>();
@@ -2236,7 +2240,7 @@ module triex::integration_multicoin_pool_order_management_tests {
             constants::no_restriction(),
             constants::self_matching_allowed(),
             constants::max_price(),
-            1 * constants::float_scaling(),
+            2,
             false,
             constants::max_u64(),
             &clock,

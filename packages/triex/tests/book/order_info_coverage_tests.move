@@ -150,6 +150,89 @@ module triex::order_info_coverage_tests {
         info.validate_inputs(0);
     }
 
+    /// An unfilled limit order of `quantity` at `price`, so its remainder is the
+    /// whole of `quantity`.
+    fun unfilled(price: u64, quantity: u64, is_bid: bool, price_scaling: u64): OrderInfo {
+        order_info::new(
+            id_from_address(@0x2),
+            id_from_address(ALICE),
+            ALICE,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            price,
+            quantity,
+            is_bid,
+            3,
+            MAKER_FEE_RATE,
+            RETENTION_BPS,
+            constants::max_u64(),
+            false,
+            0,
+            price_scaling,
+        )
+    }
+
+    #[test]
+    /// The largest remainder that can be valued at `MAX_PRICE` may rest, on both
+    /// sides and both scalings: 2 x (2^63 - 1) = 2^64 - 2 undivided, and the same
+    /// product reached through the fixed-point division at 2e9 raw base.
+    fun resting_value_at_the_bound_is_accepted() {
+        let max_price = constants::max_price();
+        let coin = constants::float_scaling();
+        unfilled(max_price, 2, false, 1).assert_resting_value_fits();
+        unfilled(max_price, 2, true, 1).assert_resting_value_fits();
+        unfilled(max_price, 2_000_000_000, false, coin).assert_resting_value_fits();
+        unfilled(max_price, 2_000_000_000, true, coin).assert_resting_value_fits();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = order_info::EOrderValueOverflow)]
+    fun resting_ask_past_the_bound_aborts_multicoin() {
+        unfilled(constants::max_price(), 3, false, 1).assert_resting_value_fits();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = order_info::EOrderValueOverflow)]
+    fun resting_bid_past_the_bound_aborts_multicoin() {
+        unfilled(constants::max_price(), 3, true, 1).assert_resting_value_fits();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = order_info::EOrderValueOverflow)]
+    fun resting_ask_past_the_bound_aborts_coin() {
+        unfilled(
+            constants::max_price(),
+            2_000_000_001,
+            false,
+            constants::float_scaling(),
+        ).assert_resting_value_fits();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = order_info::EOrderValueOverflow)]
+    fun resting_bid_past_the_bound_aborts_coin() {
+        unfilled(
+            constants::max_price(),
+            2_000_000_001,
+            true,
+            constants::float_scaling(),
+        ).assert_resting_value_fits();
+    }
+
+    #[test]
+    /// Validation does not bound an order's value: the bound belongs to what
+    /// rests, and a taker priced at the extreme never does. An order far past it
+    /// still validates, on both scalings.
+    fun validate_does_not_bound_value() {
+        unfilled(constants::max_price(), constants::max_u64(), true, 1).validate_inputs(0);
+        unfilled(
+            constants::max_price(),
+            constants::max_u64(),
+            true,
+            constants::float_scaling(),
+        ).validate_inputs(0);
+    }
+
     #[test]
     #[expected_failure(abort_code = order_info::ESelfMatchingCancelTaker)]
     fun cancel_taker_aborts_on_self_match() {
