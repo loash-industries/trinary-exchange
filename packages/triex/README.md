@@ -177,8 +177,9 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 - [`build_scripts/check-fee-policy-writers.sh`](build_scripts/check-fee-policy-writers.sh)
   — checks that only the admin can ever take the shared `FeePolicy` `&mut`:
-  every public function that does must take `&TriexAdminCap`, and every
-  package or private one must be reachable only from such functions. Every
+  every function a transaction can call that does (any `public` or `entry`
+  function) must take `&TriexAdminCap`, and every other package or private one
+  must be reachable only from such functions. Every
   order reads `FeePolicy`, so a user-reachable write would let any sender
   serialize all trading (TRIEX-149). Run it after touching `fee_policy` or the
   hub adapter; it reads the sources, so it needs no build.
