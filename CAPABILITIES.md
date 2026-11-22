@@ -177,18 +177,19 @@ storage unit and the signer.
 Until the admin pins an adapter type, no registration or rotation path exists
 at all. `pin_operator_adapter` pins it for the life of the `OperatorPayouts`
 object, and takes the adapter package's `UpgradeCap` to do so: the cap must
-belong to the package that defines the witness type, as first published, and
-the pin deletes it (`sui::package::make_immutable`) in the same transaction. So
-a pinned adapter can never be upgraded into one that mints its witness without
-the `OwnerCap` check, a primitive or another publisher's public type can never
-be pinned, and `pinned_operator_adapter()` always names immutable code anyone
-can audit. A second pin aborts (`EAdapterPinned`), whatever its type;
+still point at the package version that defines the witness type (for
+`HubAdapterWitness`, the adapter as first published), and the pin deletes it
+(`sui::package::make_immutable`) in the same transaction. So a pinned adapter
+can never be upgraded into one that mints its witness without the `OwnerCap`
+check, a primitive or another publisher's public type can never be pinned, and
+`pinned_operator_adapter()` always names immutable code anyone can audit. A
+second pin aborts (`EAdapterPinned`), whatever its type;
 `clear_operator_adapter` closes registration and rotation but never unpins, and
 `set_operator_adapter` only re-opens the pinned type. So the cap cannot
 authorize a witness of its own and register or rotate a mapping to itself.
 Moving to a different adapter package takes a fresh publish of Triex. The admin
-cap can only **destroy** a mapping (halting payouts, which stay encumbered until
-the owner re-registers), never point it somewhere new.
+cap can only **destroy** a mapping (halting payouts, which stay encumbered
+until the owner re-registers), never point it somewhere new.
 
 Which adapter gets pinned is the admin's choice, and that remains trust in the
 admin. The contracts make it reviewable rather than silent: multicoin pricing

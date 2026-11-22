@@ -81,8 +81,9 @@ module triex::fee_policy {
     /// No hub adapter has been pinned yet. Multicoin pricing cannot be set up,
     /// and registration cannot be reopened, until one is.
     const ENoPinnedAdapter: u64 = 16;
-    /// The `UpgradeCap` handed to `pin_operator_adapter` is not the cap of the
-    /// package that defines the witness type, as first published.
+    /// The `UpgradeCap` handed to `pin_operator_adapter` does not point at the
+    /// package version that defines the witness type: it is another package's,
+    /// or its package has been upgraded past that version.
     const EAdapterUpgradeCapMismatch: u64 = 17;
 
     // === Constants ===
@@ -1264,9 +1265,13 @@ module triex::fee_policy {
     ///   not a primitive (its type name has no package and aborts), and not some
     ///   other publisher's public struct with `drop`, which would let anyone
     ///   register first-write-wins.
-    /// - The cap must still point at the package as first published — the
-    ///   package that defines `W` — so the code auditors read at that address is
-    ///   the code that runs.
+    /// - The cap must still point at the package version that defines `W`, so no
+    ///   upgrade has replaced the code that mints `W`, and the code auditors read
+    ///   at that address is the code that runs. For a witness declared at first
+    ///   publish, as `HubAdapterWitness` is, that means the adapter was never
+    ///   upgraded. A witness added by an upgrade pins with the cap at that
+    ///   version: older versions cannot construct it, and the pin freezes this
+    ///   one.
     ///
     /// What it cannot decide is *which* adapter the admin chooses. That stays a
     /// trust in the admin's choice, made reviewable instead: the pin must happen
@@ -1311,7 +1316,7 @@ module triex::fee_policy {
         event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
     }
 
-    /// The package that defines `W`, as first published. Aborts for a
+    /// The package version that defines `W` (its defining id). Aborts for a
     /// primitive type, which has none.
     fun defining_package<W>(): ID {
         let package = type_name::with_defining_ids<W>().address_string();

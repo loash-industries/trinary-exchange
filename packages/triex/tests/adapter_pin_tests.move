@@ -9,10 +9,10 @@
 /// Pinned here:
 ///
 /// - **The pin consumes the adapter's `UpgradeCap`** and deletes it, so the
-///   pinned package is immutable from that transaction on. The cap has to be
-///   the cap of the package that defines the witness, as first published: a
-///   cap for another package, or for an upgraded one, is refused, and a
-///   primitive type has no package to pin at all.
+///   pinned package is immutable from that transaction on. The cap has to
+///   point at the package version that defines the witness: a cap for another
+///   package, or one upgraded past that version, is refused, and a primitive
+///   type has no package to pin at all.
 /// - **One pin, ever.** A second pin aborts, whatever its type. Re-opening
 ///   registration after a clear needs a pin to re-open.
 /// - **No multicoin pricing before the pin.** `bootstrap_quote` and
@@ -112,8 +112,8 @@ module triex::adapter_pin_tests {
 
     #[test, expected_failure(abort_code = fee_policy::EAdapterUpgradeCapMismatch)]
     /// An upgraded adapter's cap points at its latest version, not at the
-    /// package that defines the witness. The pin wants the package as first
-    /// published, so the code auditors read at that address is what runs.
+    /// version that defines the witness. The pin wants the version that defines
+    /// it, so the code auditors read at that address is what runs.
     ///
     /// The witness here is `token::cred::CRED`, a type with `drop` from a
     /// dependency. A dependency always builds at its published address, while

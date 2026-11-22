@@ -91,7 +91,7 @@ From `triex::fee_policy`:
 |---|---|---|
 | 9 | `ENoAuthorizedAdapter` | The admin has not pinned the adapter, or has cleared it |
 | 16 | `ENoPinnedAdapter` | `set_operator_adapter` or multicoin pricing before any adapter is pinned |
-| 17 | `EAdapterUpgradeCapMismatch` | The `UpgradeCap` given to `pin_operator_adapter` is not this package's, as first published |
+| 17 | `EAdapterUpgradeCapMismatch` | The `UpgradeCap` given to `pin_operator_adapter` is not this package's, or this package has been upgraded |
 | 12 | `EOperatorBeneficiaryNotRegistered` | `update_operator` with nothing to rotate; use `register_operator` |
 
 ## Deploy
@@ -104,8 +104,9 @@ Per `OperatorPayouts` (the pin is permanent on it):
    loash-industries/warehouse-receipts#1); Move.toml pins `fe73b95`, the
    testnet_stillness v2 upgrade.
 2. `sui client publish --build-env testnet_stillness`. Keep the `UpgradeCap`
-   it creates; the pin needs it. Do not upgrade the package first: the pin
-   only accepts the cap of the package as first published.
+   it creates; the pin needs it. Do not upgrade the package first:
+   `HubAdapterWitness` is defined in its first version, and the pin refuses a
+   cap upgraded past the version that defines the witness.
 3. Check `fee_policy::pinned_operator_adapter` is `none`, then the admin calls
    `fee_policy::pin_operator_adapter<<ADAPTER>::hub_adapter::HubAdapterWitness>(operatorPayouts, adminCap, adapterUpgradeCap)`.
    One transaction pins the type, opens registration, and makes this package
