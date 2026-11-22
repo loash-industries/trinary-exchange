@@ -97,9 +97,12 @@ boundary before they can take effect:
   through `pool_fee_schedule_next()` and `fee_policy::cancel_retention_bps()`.
 - *It is moved to another class* (`stage_pool_fee_class`, then
   `apply_pool_fee_class`). The move is visible from the moment it is staged
-  through `pool_fee_class_next()` and `pool_fee_schedule_next()`, and cannot be
-  applied before the next epoch. It lands when the operator applies it, which
-  may be later than the boundary but never earlier.
+  through `pool_fee_class_next()` (the destination's ladder through
+  `fee_policy::next_schedule()`), and cannot be applied before the next epoch.
+  It lands when the operator applies it, which may be later than the boundary
+  but never earlier. Until then the pool's current class keeps pricing it,
+  including any re-price of that class, so `pool_fee_schedule_next()` keeps
+  reporting the current class.
 
 Neither ever re-prices an order already resting: an order snapshots its maker
 rate and its retention at placement.
