@@ -14,10 +14,26 @@
 /// nature (once per storage unit, again only when its owner re-points it), and
 /// never on the flow of an order. Pool creation reads immutably.
 ///
-/// Schedule changes are staged: `update_class` writes `next` with
-/// `effective_epoch = now + 1`, and reads pick `next` once its epoch arrives.
-/// A pricing change is therefore pre-announced and never re-prices a trade
-/// mid-epoch, with no per-pool promotion machinery.
+/// Nothing here can re-price a live pool without notice. There are exactly two
+/// ways a pool's pricing changes, and both are announced on-chain at least one
+/// epoch boundary before they can take effect:
+///
+/// - **Its class is re-priced.** `update_class` writes `next` (the ladder and
+///   the cancel retention together) with `effective_epoch = now + 1`, and reads
+///   pick `next` once its epoch arrives. This lands exactly on the boundary, for
+///   every pool of the class, with no per-pool promotion machinery.
+/// - **It is moved to another class.** `stage_pool_fee_class` records the move
+///   here, and the pool's `apply_pool_fee_class` can only carry it out once the
+///   staged epoch has arrived. The pool keeps a single class id and reads
+///   nothing extra on the trading path, so the move lands when the admin applies
+///   it rather than on the boundary itself — never earlier than announced.
+///
+/// A class that is *created* is live immediately: it has no pools, so there is
+/// nobody to surprise, and a pool can only reach it through one of the two
+/// staged routes above (or by being born into a default class).
+///
+/// Rates are capped at `MAX_TAKER_FEE` / `MAX_MAKER_FEE`, which bounds what any
+/// of the above can ever charge.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
     use sui::{dynamic_field as df, event, table::{Self, Table}};
@@ -37,6 +53,10 @@ module triex::fee_policy {
     const EUnauthorizedAdapter: u64 = 10;
     const EAdapterPinned: u64 = 11;
     const EOperatorBeneficiaryNotRegistered: u64 = 12;
+    /// No class move is staged for this pool.
+    const ENoStagedPoolFeeClass: u64 = 13;
+    /// The staged class move's epoch has not arrived yet.
+    const EPoolFeeClassNotYetEffective: u64 = 14;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -46,9 +66,13 @@ module triex::fee_policy {
     const FEE_MULTIPLE: u64 = 100000; // 1 basis point
     const MIN_TAKER_FEE: u64 = 100000; // 1 basis point
     // Maker rates may be zero; only takers keep a floor. The caps bound what the
-    // admin can ever set.
-    const MAX_TAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
-    const MAX_MAKER_FEE: u64 = 1000000000; // 10,000 basis points (100%)
+    // admin can ever set, on any class, by any route: they are checked on every
+    // ladder `create_class` and `update_class` accept. They sit well above launch
+    // pricing (2.20% is the highest genesis rate) so the ladder can move without a
+    // redeploy, and far enough below 100% that a mis-typed or hostile schedule
+    // still behaves like a fee rather than taking the trade.
+    const MAX_TAKER_FEE: u64 = 200000000; // 2,000 basis points (20%)
+    const MAX_MAKER_FEE: u64 = 200000000; // 2,000 basis points (20%)
 
     /// Share of released bid-maker escrow the protocol keeps on cancel, modify-down
     /// or expiry. Full basis points, so the cap is a 100% retention (no refund).
@@ -175,10 +199,25 @@ module triex::fee_policy {
         quote: TypeName,
         current: FeeSchedule,
         next: FeeSchedule,
-        /// Epoch at which `next` takes over. Reads compare against the running
-        /// epoch, so promotion needs no write.
+        /// Epoch at which `next` and `next_cancel_retention_bps` take over.
+        /// Reads compare against the running epoch, so promotion needs no write.
         effective_epoch: u64,
         cancel_retention_bps: u64,
+        /// Retention staged alongside `next`. An order snapshots its retention
+        /// at placement, so this is what orders placed from `effective_epoch`
+        /// on are held to; applying it any sooner would re-price placements
+        /// mid-epoch, which the ladder is staged precisely to avoid.
+        next_cancel_retention_bps: u64,
+    }
+
+    /// Dynamic-field key for a pool's staged move to another class.
+    public struct StagedPoolFeeClassKey has copy, drop, store { pool_id: ID }
+
+    /// A pool's staged move: the class it goes to, and the first epoch in which
+    /// the pool may apply it.
+    public struct StagedPoolFeeClass has copy, drop, store {
+        class_id: u16,
+        effective_epoch: u64,
     }
 
     // === Events ===
@@ -200,12 +239,23 @@ module triex::fee_policy {
         multicoin: bool,
     }
 
-    /// A pool joined `class_id`: at creation, into its quote's default class, or
-    /// on an admin reassignment. Emitted by both pool flavors, so a pool's class
-    /// history is on the event stream rather than only in its inner object.
+    /// A pool joined `class_id`, effective at once: at creation, into its quote's
+    /// default class, or when a staged move is applied. Emitted for both pool
+    /// flavors, so a pool's class history is on the event stream rather than only
+    /// in its inner object.
     public struct PoolFeeClassSet has copy, drop {
         pool_id: ID,
         class_id: u16,
+    }
+
+    /// A pool's move to `class_id` was announced. Nothing changes yet: the pool
+    /// keeps trading under its current class until the move is applied, which
+    /// cannot happen before `effective_epoch`. A later announcement for the same
+    /// pool replaces this one. `PoolFeeClassSet` follows when the move lands.
+    public struct PoolFeeClassStaged has copy, drop {
+        pool_id: ID,
+        class_id: u16,
+        effective_epoch: u64,
     }
 
     // === Init ===
@@ -351,6 +401,7 @@ module triex::fee_policy {
                     next: schedule,
                     effective_epoch: ctx.epoch(),
                     cancel_retention_bps,
+                    next_cancel_retention_bps: cancel_retention_bps,
                 },
             );
 
@@ -363,8 +414,10 @@ module triex::fee_policy {
         });
     }
 
-    /// Re-price an existing class, staged for the next epoch. One transaction
-    /// re-prices every pool of the class; no per-pool fan-out exists.
+    /// Re-price an existing class, staged for the next epoch: the ladder and the
+    /// cancel retention move together, and neither touches an order placed before
+    /// `effective_epoch`. One transaction re-prices every pool of the class; no
+    /// per-pool fan-out exists.
     public fun update_class(
         self: &mut FeePolicy,
         class_id: u16,
@@ -385,10 +438,11 @@ module triex::fee_policy {
         // never the present.
         if (ctx.epoch() >= class.effective_epoch) {
             class.current = class.next;
+            class.cancel_retention_bps = class.next_cancel_retention_bps;
         };
         class.next = schedule;
+        class.next_cancel_retention_bps = cancel_retention_bps;
         class.effective_epoch = ctx.epoch() + 1;
-        class.cancel_retention_bps = cancel_retention_bps;
 
         event::emit(FeeClassUpdated {
             class_id,
@@ -456,9 +510,32 @@ module triex::fee_policy {
         self.classes[class_id].quote
     }
 
-    public fun cancel_retention_bps(self: &FeePolicy, class_id: u16): u64 {
+    /// The cancel retention an order placed under `class_id` in `epoch` is held
+    /// to. Staged with the ladder, so asking for the epoch after a pending
+    /// `update_class` takes effect shows what is coming.
+    public fun cancel_retention_bps(self: &FeePolicy, class_id: u16, epoch: u64): u64 {
         assert!(self.classes.contains(class_id), EClassDoesNotExist);
-        self.classes[class_id].cancel_retention_bps
+        let class = &self.classes[class_id];
+        if (epoch >= class.effective_epoch) {
+            class.next_cancel_retention_bps
+        } else {
+            class.cancel_retention_bps
+        }
+    }
+
+    /// The class staged for `pool_id` and the first epoch it can be applied in.
+    /// When nothing is staged this is `current` and epoch 0 — mirroring
+    /// `next_schedule`, which reports the active ladder when nothing is pending —
+    /// so a caller can read "what is this pool about to become" without a
+    /// separate existence check.
+    public fun staged_pool_fee_class(self: &FeePolicy, pool_id: ID, current: u16): (u16, u64) {
+        let key = StagedPoolFeeClassKey { pool_id };
+        if (!df::exists_with_type<StagedPoolFeeClassKey, StagedPoolFeeClass>(&self.id, key)) {
+            return (current, 0)
+        };
+        let staged = df::borrow<StagedPoolFeeClassKey, StagedPoolFeeClass>(&self.id, key);
+
+        (staged.class_id, staged.effective_epoch)
     }
 
     // === Public-Package Functions ===
@@ -489,10 +566,16 @@ module triex::fee_policy {
     ): (u64, u64, u64, u64) {
         assert!(self.classes.contains(class_id), EClassDoesNotExist);
         let class = &self.classes[class_id];
-        let schedule = if (epoch >= class.effective_epoch) &class.next else &class.current;
+        // One comparison decides both, so an order can never be priced off the
+        // new ladder and the old retention, or the reverse.
+        let (schedule, cancel_retention_bps) = if (epoch >= class.effective_epoch) {
+            (&class.next, class.next_cancel_retention_bps)
+        } else {
+            (&class.current, class.cancel_retention_bps)
+        };
         let (tier, taker_fee, maker_fee) = schedule.resolve(turnover);
 
-        (tier, taker_fee, maker_fee, class.cancel_retention_bps)
+        (tier, taker_fee, maker_fee, cancel_retention_bps)
     }
 
     /// Class a permissionless coin pool quoted in `quote` is born into.
@@ -518,9 +601,57 @@ module triex::fee_policy {
     }
 
     /// Record that `pool_id` now trades under `class_id`. Called by both pool
-    /// flavors on creation and on `set_pool_fee_class`.
+    /// flavors on creation; a later move emits it from `take_due_pool_fee_class`.
     public(package) fun emit_pool_fee_class_set(pool_id: ID, class_id: u16) {
         event::emit(PoolFeeClassSet { pool_id, class_id });
+    }
+
+    /// Announce that `pool_id` moves to `class_id`, no earlier than the next
+    /// epoch. This is the only way an existing pool changes class, and it changes
+    /// nothing by itself: the pool keeps its class until `take_due_pool_fee_class`
+    /// consumes the announcement.
+    ///
+    /// Staging again replaces the pending move and restarts its clock, so an
+    /// announcement can be corrected but never brought forward. Staging the
+    /// pool's present class is how a pending move is called off: applying it is
+    /// then a no-op.
+    public(package) fun stage_pool_fee_class(
+        self: &mut FeePolicy,
+        pool_id: ID,
+        class_id: u16,
+        quote: TypeName,
+        ctx: &TxContext,
+    ) {
+        self.assert_class_matches_quote(class_id, quote);
+        let effective_epoch = ctx.epoch() + 1;
+        upsert(
+            &mut self.id,
+            StagedPoolFeeClassKey { pool_id },
+            StagedPoolFeeClass { class_id, effective_epoch },
+        );
+
+        event::emit(PoolFeeClassStaged { pool_id, class_id, effective_epoch });
+    }
+
+    /// Consume the move staged for `pool_id` and return the class the pool now
+    /// belongs to. Aborts if nothing is staged, or if the staged epoch has not
+    /// arrived — the gate that makes the announcement mean something.
+    public(package) fun take_due_pool_fee_class(
+        self: &mut FeePolicy,
+        pool_id: ID,
+        ctx: &TxContext,
+    ): u16 {
+        let key = StagedPoolFeeClassKey { pool_id };
+        assert!(
+            df::exists_with_type<StagedPoolFeeClassKey, StagedPoolFeeClass>(&self.id, key),
+            ENoStagedPoolFeeClass,
+        );
+        let StagedPoolFeeClass { class_id, effective_epoch } = df::remove(&mut self.id, key);
+        assert!(ctx.epoch() >= effective_epoch, EPoolFeeClassNotYetEffective);
+
+        event::emit(PoolFeeClassSet { pool_id, class_id });
+
+        class_id
     }
 
     // === Private Functions ===
@@ -559,6 +690,11 @@ module triex::fee_policy {
     #[test_only]
     public fun pool_fee_class_set_parts(self: &PoolFeeClassSet): (ID, u16) {
         (self.pool_id, self.class_id)
+    }
+
+    #[test_only]
+    public fun pool_fee_class_staged_parts(self: &PoolFeeClassStaged): (ID, u16, u64) {
+        (self.pool_id, self.class_id, self.effective_epoch)
     }
 
     #[test_only]

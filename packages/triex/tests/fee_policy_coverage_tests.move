@@ -69,7 +69,7 @@ module triex::fee_policy_coverage_tests {
         let mut test = begin(OWNER);
         let (mut policy, cap) = new_policy(&mut test);
         add_class<USDC>(&mut policy, CLASS_A, TAKER, 10_000, &cap, &mut test);
-        assert_eq!(policy.cancel_retention_bps(CLASS_A), 10_000);
+        assert_eq!(policy.cancel_retention_bps(CLASS_A, test.ctx().epoch()), 10_000);
         assert_eq!(policy.class_quote(CLASS_A), type_name::with_defining_ids<USDC>());
         destroy(cap);
         destroy(policy);
@@ -143,7 +143,7 @@ module triex::fee_policy_coverage_tests {
     fun cancel_retention_of_a_missing_class_aborts() {
         let mut test = begin(OWNER);
         let (policy, _cap) = new_policy(&mut test);
-        policy.cancel_retention_bps(MISSING);
+        policy.cancel_retention_bps(MISSING, 0);
         abort 0
     }
 
@@ -225,7 +225,9 @@ module triex::fee_policy_coverage_tests {
     }
 
     #[test]
-    /// A staged update prices from its effective epoch on, and not before.
+    /// A staged update prices from its effective epoch on, and not before — the
+    /// ladder and the cancel retention together. (The retention used to apply
+    /// at once while the ladder waited; `fee_staging_tests` pins the staging.)
     fun resolve_with_retention_selects_by_epoch() {
         let mut test = begin(OWNER);
         let (mut policy, cap) = new_policy(&mut test);
@@ -244,10 +246,11 @@ module triex::fee_policy_coverage_tests {
         assert_eq!(tier, 0);
         assert_eq!(taker, TAKER);
         assert_eq!(maker, MAKER);
-        assert_eq!(retention, 3_000);
+        assert_eq!(retention, RETENTION);
 
-        let (_, taker, _, _) = policy.resolve_with_retention(CLASS_A, 0, 1);
+        let (_, taker, _, retention) = policy.resolve_with_retention(CLASS_A, 0, 1);
         assert_eq!(taker, 2 * TAKER);
+        assert_eq!(retention, 3_000);
         let (_, taker, _) = policy.resolve(CLASS_A, 0, 1);
         assert_eq!(taker, 2 * TAKER);
 

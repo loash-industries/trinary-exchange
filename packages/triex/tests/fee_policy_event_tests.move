@@ -19,7 +19,8 @@ module triex::fee_policy_event_tests {
             OperatorBeneficiaryDestroyed,
             OperatorBeneficiaryRegistered,
             OperatorShareClassUpdated,
-            PoolFeeClassSet
+            PoolFeeClassSet,
+            PoolFeeClassStaged
         },
         integration_multicoin_test_utils as multicoin_test_utils,
         multicoin_pool::MultiCoinPool,
@@ -135,7 +136,7 @@ module triex::fee_policy_event_tests {
     }
 
     #[test]
-    fun coin_pool_announces_its_class_at_creation_and_on_reassignment() {
+    fun coin_pool_announces_its_class_at_creation_when_staged_and_when_applied() {
         let mut test = begin(OWNER);
         let registry_id = pool_test_utils::setup_test(OWNER, &mut test);
         let pool_id = pool_test_utils::setup_pool_with_default_fees<SPAM, USDC>(
@@ -151,11 +152,29 @@ module triex::fee_policy_event_tests {
         assert_eq!(class_id, standard_class<USDC>());
 
         test.next_tx(OWNER);
-        let mut pool = test.take_shared_by_id<Pool<SPAM, USDC>>(pool_id);
-        let policy = test.take_shared<FeePolicy>();
+        let pool = test.take_shared_by_id<Pool<SPAM, USDC>>(pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let staged_in = test.ctx().epoch();
         // The multicoin class is also USDC-quoted, so a coin pool may join it.
-        pool.set_pool_fee_class(&policy, multicoin_class<USDC>(), &cap);
+        pool.stage_pool_fee_class(&mut policy, multicoin_class<USDC>(), &cap, test.ctx());
+
+        // Staging announces the move and says when it can land. It is not a
+        // `PoolFeeClassSet`: the pool has not changed class.
+        let staged = event::events_by_type<PoolFeeClassStaged>();
+        assert_eq!(staged.length(), 1);
+        let (id, class_id, effective_epoch) = staged[0].pool_fee_class_staged_parts();
+        assert_eq!(id, pool_id);
+        assert_eq!(class_id, multicoin_class<USDC>());
+        assert_eq!(effective_epoch, staged_in + 1);
+        assert!(event::events_by_type<PoolFeeClassSet>().is_empty());
+        return_shared(pool);
+        return_shared(policy);
+
+        test.next_epoch(OWNER);
+        let mut pool = test.take_shared_by_id<Pool<SPAM, USDC>>(pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
+        pool.apply_pool_fee_class(&mut policy, &cap, test.ctx());
 
         let reassigned = event::events_by_type<PoolFeeClassSet>();
         assert_eq!(reassigned.length(), 1);
@@ -163,6 +182,7 @@ module triex::fee_policy_event_tests {
         assert_eq!(id, pool_id);
         assert_eq!(class_id, multicoin_class<USDC>());
         assert_eq!(pool.pool_fee_class(), multicoin_class<USDC>());
+        assert!(event::events_by_type<PoolFeeClassStaged>().is_empty());
 
         return_shared(pool);
         return_shared(policy);
@@ -171,7 +191,7 @@ module triex::fee_policy_event_tests {
     }
 
     #[test]
-    fun multicoin_pool_announces_its_class_at_creation_and_on_reassignment() {
+    fun multicoin_pool_announces_its_class_at_creation_when_staged_and_when_applied() {
         let mut test = begin(OWNER);
         let (
             registry_id,
@@ -195,10 +215,26 @@ module triex::fee_policy_event_tests {
         assert_eq!(class_id, multicoin_class<USDC>());
 
         test.next_tx(OWNER);
-        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let policy = test.take_shared<FeePolicy>();
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
-        pool.set_pool_fee_class(&policy, standard_class<USDC>(), &cap);
+        let staged_in = test.ctx().epoch();
+        pool.stage_pool_fee_class(&mut policy, standard_class<USDC>(), &cap, test.ctx());
+
+        let staged = event::events_by_type<PoolFeeClassStaged>();
+        assert_eq!(staged.length(), 1);
+        let (id, class_id, effective_epoch) = staged[0].pool_fee_class_staged_parts();
+        assert_eq!(id, pool_id);
+        assert_eq!(class_id, standard_class<USDC>());
+        assert_eq!(effective_epoch, staged_in + 1);
+        assert!(event::events_by_type<PoolFeeClassSet>().is_empty());
+        return_shared(pool);
+        return_shared(policy);
+
+        test.next_epoch(OWNER);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
+        pool.apply_pool_fee_class(&mut policy, &cap, test.ctx());
 
         let reassigned = event::events_by_type<PoolFeeClassSet>();
         assert_eq!(reassigned.length(), 1);

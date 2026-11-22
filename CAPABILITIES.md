@@ -44,8 +44,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | Function | What the operator can do |
 |---|---|
 | `create_pool_admin` | Create a pool with **zero creation fee**, bypassing the fee charged on the permissionless `create_pool` path. |
-| `set_next_epoch_fee` | Directly set the taker and maker trading fees and the cancel-retention rate for the next epoch. Per the in-code comment, this deliberately **replaces DeepBook's upstream proposal/voting system** (disabled in this fork; CRED carries no voting rights) with direct admin control. Each order snapshots these at placement, so a change never re-prices orders already resting. See the fee-bound note below for how high these can go. |
-| `set_next_epoch_fee_schedule` | Set the whole **fee-tier ladder** for the next epoch, plus the cancel-retention rate. Takes parallel columns (thresholds, taker rates, maker rates) because entry functions cannot accept Move structs. `fee_schedule::validate` rejects ladders that are empty, exceed 16 tiers, do not start at zero turnover, have non-ascending thresholds, or price more turnover *higher* on either side. Like `set_next_epoch_fee`, it takes effect at the next epoch boundary and never re-prices resting orders. Setting either one overwrites the other — a flat fee is stored as a one-rung ladder so both share a single resolution path. |
+| `stage_pool_fee_class` / `apply_pool_fee_class` | Move a pool to another pricing class, in two steps. `stage_pool_fee_class` announces the move on the shared `FeePolicy` (`PoolFeeClassStaged`) and changes nothing; `apply_pool_fee_class` carries it out, and aborts until the **next epoch** has arrived. This is the only per-pool fee operation: rates themselves live in `triex::fee_policy` (below). A resting order keeps the rates it snapshotted at placement, so a move never re-prices it. |
 | `unregister_pool_admin` | Unregister a pool from the registry so the trading pair can be redeployed. The pool object itself keeps operating for existing state, but is marked unregistered. |
 | `update_allowed_versions` | Sync a pool's allowed-versions set from the registry. Note: a permissionless equivalent, `update_pool_allowed_versions`, exists, so this is not an exclusive power. |
 | `withdraw_pool_fees` | **Withdraw earned quote-denominated trading fees** from the pool vault into a `Coin<QuoteAsset>` for treasury custody. This is the operator's revenue-collection path. Capped at `withdrawable_pool_fees()` — the reserve minus `locked_maker_fees()`, the escrow backing open bid orders — so a sweep can never spend a maker's refundable fee (`EFeesLocked`). Emits a `PoolFeesWithdrawn` event. |
@@ -59,30 +58,51 @@ tick/min-size adjustment.
 Mirrors the pool module, per collection asset:
 
 - `create_pool_admin` — fee-free pool creation for a `(Collection, asset_id)` pair
-- `set_next_epoch_fee`
-- `set_next_epoch_fee_schedule` — the tier ladder, same bounds and activation
+- `stage_pool_fee_class` / `apply_pool_fee_class` — the same staged class move
 - `unregister_pool_admin`
 - `update_allowed_versions` (permissionless equivalent also exists)
 - `withdraw_pool_fees` — sweep earned quote fees to treasury, capped at `withdrawable_pool_fees()`
 
-#### How high fees can be set
+### Fee policy administration (`triex::fee_policy`)
 
-Worth stating plainly, because it bounds everything in the section above.
-`MAX_TAKER_FEE` and `MAX_MAKER_FEE` are both **100%** (`governance.move`), and
-`MAX_CANCEL_RETENTION_BPS` is 100% as well — so a cancel can be configured to
-refund nothing. Taker rates keep a 1 bp floor; maker rates may be zero. The same
-bounds apply to every rung of a tier ladder.
+Every fee schedule on the exchange lives in one shared `FeePolicy` object. A
+pool stores only the id of the pricing class it belongs to.
 
-At the ceiling these stop behaving like fees: a 100% taker fee leaves an ask
-taker settling `cumulative_quote_quantity - total_taker_fee`, i.e. zero — they
-deliver base and receive nothing, and the proceeds land in the fee reserve the
-operator can sweep. Launch defaults are far below this (2.2% / 1.8% taker /
-maker; 1.1% / 0.9% for multicoin pools, 20% cancel retention), and the practical
-brakes are that a change only takes effect at the **next epoch boundary**, is
-visible on-chain beforehand through `pool_fee_schedule_next()` and
-`pool_trade_params_next()`, and never re-prices an order already resting. But
-the ceiling is what the cap permits, and users assessing operator trust should
-read it as such.
+| Function | What the operator can do |
+|---|---|
+| `bootstrap_quote` | Stand up launch pricing for a quote currency: create its coin and multicoin classes on the genesis ladder and register both as the defaults new pools of that quote are born into. |
+| `create_class` | Create a pricing class: a **fee-tier ladder** (thresholds, taker rates, maker rates) plus a cancel-retention rate. Live immediately, which is safe because a new class has no pools: a trading pool can only reach it through the staged move above. `fee_schedule::validate` rejects ladders that are empty, exceed 16 tiers, do not start at zero turnover, have non-ascending thresholds, or price more turnover *higher* on either side. |
+| `update_class` | Re-price an existing class for **every pool in it**: the ladder and the cancel retention together, staged for the next epoch. Direct admin control of pricing deliberately **replaces DeepBook's upstream proposal/voting system**, which is disabled in this fork (CRED carries no voting rights). |
+| `set_default_class` / `set_multicoin_default_class` | Choose the class new pools of a quote are born into. Affects pools created afterwards only. |
+
+#### How high fees can be set, and how fast
+
+Worth stating plainly, because it bounds everything in the sections above.
+
+**The cap.** `MAX_TAKER_FEE` and `MAX_MAKER_FEE` are both **20%**
+(`fee_policy.move`), checked on every rung of every ladder `create_class` and
+`update_class` accept. Taker rates keep a 1 bp floor; maker rates may be zero.
+`MAX_CANCEL_RETENTION_BPS` is 100%, so a cancel can be configured to refund
+none of a bid's fee escrow (never its principal). Launch defaults are far below
+the cap: 2.2% / 1.8% taker / maker for multicoin pools, 1.1% / 0.9% for coin
+pools, 20% cancel retention — see
+[`packages/triex/docs/fee-tiers-explained.md`](packages/triex/docs/fee-tiers-explained.md).
+
+**The notice.** Nothing re-prices a live pool without notice. A pool's pricing
+changes in exactly two ways, and both are announced on-chain at least one epoch
+boundary before they can take effect:
+
+- *Its class is re-priced* (`update_class`). The new ladder and retention take
+  over exactly at the **next epoch boundary**, and are visible beforehand
+  through `pool_fee_schedule_next()` and `fee_policy::cancel_retention_bps()`.
+- *It is moved to another class* (`stage_pool_fee_class`, then
+  `apply_pool_fee_class`). The move is visible from the moment it is staged
+  through `pool_fee_class_next()` and `pool_fee_schedule_next()`, and cannot be
+  applied before the next epoch. It lands when the operator applies it, which
+  may be later than the boundary but never earlier.
+
+Neither ever re-prices an order already resting: an order snapshots its maker
+rate and its retention at placement.
 
 #### How much of a fee can be diverted to a hub operator
 
@@ -189,8 +209,7 @@ claim events are the record of it.
 ### What the AdminCap can NOT do
 
 The cap's financial reach is limited to **fee revenue and fee rates** — subject
-to the ceiling noted above, which is high enough that "fee rates" is a broader
-power than it sounds. It cannot:
+to the 20% cap and the one-epoch notice described above. It cannot:
 
 - Touch user funds held in any `TradingAccount` (deposit, withdraw, or freeze them)
 - Take a hub operator's accrued share: `withdrawable_pool_fees()` subtracts
@@ -315,8 +334,9 @@ With the `TriexAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
 1. **Collect revenue** — sweep trading fees from every pool and redirect
    pool-creation fees.
 2. **Set prices of participation** — taker, maker and cancel-retention rates
-   per epoch per pool, as a flat pair or a turnover-tiered ladder, up to a 100%
-   ceiling on each; and which quote currencies are allowed.
+   per pricing class, as a flat pair or a turnover-tiered ladder, with at least
+   one epoch boundary of notice; taker and maker rates up to a 20% cap, cancel
+   retention up to 100%; and which quote currencies are allowed.
 3. **Control the pool set** — create fee-free pools, unregister pools for
    redeployment.
 4. **Gate protocol versions** — enable/disable package versions, the de facto

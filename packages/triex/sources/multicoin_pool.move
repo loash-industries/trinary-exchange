@@ -981,23 +981,43 @@ module triex::multicoin_pool {
 
     // === Public-Mutative Functions * ADMIN * ===
 
-    /// Admin function to reassign this pool to another pricing class — the only
-    /// per-pool policy operation left. Rates themselves are set on the shared
-    /// `FeePolicy` object, one transaction per class, never per pool.
+    /// Admin function to announce that this pool moves to another pricing class
+    /// — the only per-pool policy operation left. Rates themselves are set on the
+    /// shared `FeePolicy` object, one transaction per class, never per pool.
+    ///
+    /// Nothing changes yet. The move is recorded on the policy and emitted as
+    /// `PoolFeeClassStaged`, and `apply_pool_fee_class` can only carry it out from
+    /// the next epoch on, so a pool is never re-priced without notice. Staging
+    /// again replaces the pending move and restarts its clock.
     /// #ref:functions
-    public fun set_pool_fee_class<QuoteAsset>(
-        self: &mut MultiCoinPool<QuoteAsset>,
-        policy: &FeePolicy,
+    public fun stage_pool_fee_class<QuoteAsset>(
+        self: &MultiCoinPool<QuoteAsset>,
+        policy: &mut FeePolicy,
         fee_class: u16,
         _cap: &TriexAdminCap,
+        ctx: &TxContext,
     ) {
-        policy.assert_class_matches_quote(
+        policy.stage_pool_fee_class(
+            self.load_inner().pool_id,
             fee_class,
             type_name::with_defining_ids<QuoteAsset>(),
+            ctx,
         );
+    }
+
+    /// Admin function to carry out the move staged by `stage_pool_fee_class`.
+    /// Aborts if nothing is staged or if the staged epoch has not arrived.
+    /// Emits `PoolFeeClassSet`; from this transaction on the pool prices under
+    /// its new class.
+    /// #ref:functions
+    public fun apply_pool_fee_class<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        policy: &mut FeePolicy,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
         let pool_inner = self.load_inner_mut();
-        pool_inner.fee_class = fee_class;
-        fee_policy::emit_pool_fee_class_set(pool_inner.pool_id, fee_class);
+        pool_inner.fee_class = policy.take_due_pool_fee_class(pool_inner.pool_id, ctx);
     }
 
     /// Unregister a pool in case it needs to be redeployed.
@@ -1411,6 +1431,17 @@ module triex::multicoin_pool {
         self.load_inner().fee_class
     }
 
+    /// The class staged for this pool by `stage_pool_fee_class`, and the first
+    /// epoch `apply_pool_fee_class` can move it there. When nothing is staged
+    /// this is the pool's current class and epoch 0.
+    public fun pool_fee_class_next<QuoteAsset>(
+        self: &MultiCoinPool<QuoteAsset>,
+        policy: &FeePolicy,
+    ): (u16, u64) {
+        let pool_inner = self.load_inner();
+        policy.staged_pool_fee_class(pool_inner.pool_id, pool_inner.fee_class)
+    }
+
     /// Returns the (taker_fee, maker_fee) entry rung for the pool — what an
     /// account with no turnover pays.
     public fun pool_trade_params<QuoteAsset>(
@@ -1433,13 +1464,21 @@ module triex::multicoin_pool {
         policy.active_schedule(self.load_inner().fee_class, ctx.epoch())
     }
 
-    /// Returns the ladder staged to take over, and the epoch it does. Equal to
-    /// the active one when nothing is pending.
+    /// Returns the ladder staged to take over, and the epoch it can do so from.
+    /// Equal to the active one when nothing is pending.
+    ///
+    /// Covers both ways a pool's pricing changes: a re-pricing of its class, and
+    /// a staged move to another class. For a staged move this is the destination
+    /// class's ladder, from the later of the two staged epochs — the move lands
+    /// when `apply_pool_fee_class` runs, which that epoch is the earliest for.
     public fun pool_fee_schedule_next<QuoteAsset>(
         self: &MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
     ): (FeeSchedule, u64) {
-        policy.next_schedule(self.load_inner().fee_class)
+        let (class_id, class_epoch) = self.pool_fee_class_next(policy);
+        let (schedule, schedule_epoch) = policy.next_schedule(class_id);
+
+        (schedule, schedule_epoch.max(class_epoch))
     }
 
     /// Returns the (taker_fee, maker_fee) this trading account currently trades at.
