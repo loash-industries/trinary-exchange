@@ -14,7 +14,7 @@ module triex::integration_multicoin_pool_resting_value_tests {
     use sui::{clock::Clock, test_scenario::{Scenario, begin, end, return_shared}};
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         order_info::OrderInfo,
@@ -70,12 +70,14 @@ module triex::integration_multicoin_pool_resting_value_tests {
             transfer::public_transfer(gold, BOB);
         };
         test.next_tx(BOB);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut ta = test.take_shared_by_id<TradingAccount>(bob);
             let gold = test.take_from_sender<multicoin::Balance>();
-            ta.deposit_multicoin(gold, test.ctx());
+            ta.deposit_multicoin(&gate, gold, test.ctx());
             return_shared(ta);
         };
+        unit_test::destroy(gate);
 
         (Fixture { pool_id, alice, bob }, collection_cap)
     }
@@ -101,7 +103,7 @@ module triex::integration_multicoin_pool_resting_value_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         let order_info = pool.place_limit_order(
             &policy,
             &mut ta,

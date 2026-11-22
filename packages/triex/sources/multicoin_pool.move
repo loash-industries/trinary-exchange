@@ -463,11 +463,11 @@ module triex::multicoin_pool {
                 self.get_quantity_out_input_fee(policy, 0, quote_quantity, clock, ctx)
         };
 
-        let mut temp_trading_account = trading_account::new(ctx);
-        let trade_proof = temp_trading_account.generate_proof_as_owner(ctx);
-        temp_trading_account.deposit_multicoin(base_in, ctx);
-        temp_trading_account.deposit(quote_in, ctx);
-        temp_trading_account.deposit(cred_in, ctx);
+        let mut temp_trading_account = trading_account::new(policy, ctx);
+        let trade_proof = temp_trading_account.generate_proof_as_owner(policy, ctx);
+        temp_trading_account.deposit_multicoin(policy, base_in, ctx);
+        temp_trading_account.deposit(policy, quote_in, ctx);
+        temp_trading_account.deposit(policy, cred_in, ctx);
 
         self.place_market_order(
             policy,
@@ -480,9 +480,14 @@ module triex::multicoin_pool {
             ctx,
         );
 
-        let base_out = temp_trading_account.withdraw_all_multicoin(collection_id, asset_id, ctx);
-        let quote_out = temp_trading_account.withdraw_all<QuoteAsset>(ctx);
-        let cred_out = temp_trading_account.withdraw_all<CRED>(ctx);
+        let base_out = temp_trading_account.withdraw_all_multicoin(
+            policy,
+            collection_id,
+            asset_id,
+            ctx,
+        );
+        let quote_out = temp_trading_account.withdraw_all<QuoteAsset>(policy, ctx);
+        let cred_out = temp_trading_account.withdraw_all<CRED>(policy, ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);
@@ -544,9 +549,9 @@ module triex::multicoin_pool {
             adjusted_base_quantity = base_quantity - base_remaining;
         };
 
-        trading_account.deposit_multicoin_with_cap(deposit_cap, base_in, ctx);
-        trading_account.deposit_with_cap(deposit_cap, quote_in, ctx);
-        let trade_proof = trading_account.generate_proof_as_trader(trade_cap, ctx);
+        trading_account.deposit_multicoin_with_cap(policy, deposit_cap, base_in, ctx);
+        trading_account.deposit_with_cap(policy, deposit_cap, quote_in, ctx);
+        let trade_proof = trading_account.generate_proof_as_trader(policy, trade_cap, ctx);
         let order_info = self.place_market_order(
             policy,
             trading_account,
@@ -576,6 +581,7 @@ module triex::multicoin_pool {
             multicoin::zero(collection_id, asset_id, ctx)
         } else {
             trading_account.withdraw_multicoin_with_cap(
+                policy,
                 withdraw_cap,
                 collection_id,
                 asset_id,
@@ -583,7 +589,7 @@ module triex::multicoin_pool {
                 ctx,
             )
         };
-        let quote_out = trading_account.withdraw_with_cap(withdraw_cap, quote_out, ctx);
+        let quote_out = trading_account.withdraw_with_cap(policy, withdraw_cap, quote_out, ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);

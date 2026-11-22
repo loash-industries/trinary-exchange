@@ -6,6 +6,7 @@ module triex::coin_vault_coverage_tests {
     use triex::{
         balances,
         coin_vault::{Self, Vault},
+        fee_policy,
         trading_account::{Self, TradingAccount},
         trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds}
     };
@@ -24,7 +25,9 @@ module triex::coin_vault_coverage_tests {
         let id = create_acct_and_share_with_funds(ALICE, FUNDS, test);
         test.next_tx(ALICE);
         let mut alice = test.take_shared_by_id<TradingAccount>(id);
-        let proof = alice.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let proof = alice.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
         let mut vault = coin_vault::empty<SPAM, USDC>();
         vault.settle_trading_account(
             balances::new(0, 0, 0),
@@ -43,8 +46,10 @@ module triex::coin_vault_coverage_tests {
         let (_, _, cred) = vault.balances();
         assert_eq!(cred, 5_000);
         assert_eq!(alice.balance<CRED>(), FUNDS - 5_000);
+        let gate = fee_policy::gate_for_testing(test.ctx());
 
-        let proof = alice.generate_proof_as_owner(test.ctx());
+        let proof = alice.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account(
             balances::new(0, 0, 2_000),
             balances::new(0, 0, 0),
@@ -67,7 +72,9 @@ module triex::coin_vault_coverage_tests {
         let (mut vault, alice) = funded_vault(0, 1_000, 1_000, &mut test);
 
         test.next_tx(BOB);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(0, 300, 0),
             balances::new(0, 0, 0),
@@ -97,7 +104,9 @@ module triex::coin_vault_coverage_tests {
     fun test_permissionless_with_owed_cred_e() {
         let mut test = begin(ALICE);
         let (mut vault, alice) = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(0, 0, 1),
@@ -114,7 +123,9 @@ module triex::coin_vault_coverage_tests {
     fun test_permissionless_with_owed_base_e() {
         let mut test = begin(ALICE);
         let (mut vault, alice) = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(1, 0, 0),
@@ -131,7 +142,9 @@ module triex::coin_vault_coverage_tests {
     fun test_permissionless_with_owed_quote_e() {
         let mut test = begin(ALICE);
         let (mut vault, alice) = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(0, 1, 0),

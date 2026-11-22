@@ -6,6 +6,7 @@ module triex::coin_vault_tests {
         balances,
         coin_vault,
         constants,
+        fee_policy,
         trading_account::{Self, TradingAccount},
         trading_account_tests::{USDC, SPAM, create_acct_and_share_with_funds}
     };
@@ -35,7 +36,9 @@ fun borrow_flashloan_ok() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -81,7 +84,9 @@ fun borrow_flashloan_single_ok() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -121,7 +126,9 @@ fun borrow_flashloan_not_enough_base_e() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -163,7 +170,9 @@ fun borrow_flashloan_not_enough_quote_e() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -205,7 +214,9 @@ fun borrow_flashloan_incorrect_pool_id_e() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -243,7 +254,9 @@ fun borrow_flashloan_incorrect_return_base_e() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -282,7 +295,9 @@ fun borrow_flashloan_incorrect_return_quote_e() {
     let mut trading_account = test.take_shared_by_id<TradingAccount>(
         trading_account_id,
     );
-    let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+    let gate = fee_policy::gate_for_testing(test.ctx());
+    let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+    destroy(gate);
 
     // move funds into the vault
     vault.settle_trading_account(
@@ -323,7 +338,9 @@ fun borrow_flashloan_incorrect_return_quote_e() {
         let mut trading_account = test.take_shared_by_id<TradingAccount>(
             trading_account_id,
         );
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // move funds into the vault
         vault.settle_trading_account(
@@ -363,7 +380,9 @@ fun borrow_flashloan_incorrect_return_quote_e() {
         let mut trading_account_bob = test.take_shared_by_id<TradingAccount>(
             trading_account_id_bob,
         );
-        let trade_proof = trading_account_alice.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account_alice.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // move funds into the vault
         vault.settle_trading_account(
@@ -590,7 +609,9 @@ fun borrow_flashloan_incorrect_return_quote_e() {
         let settled_balances = balances::new(0, 0, 0);
         let owed_balances = balances::new(0, 50_000, 0);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
 
         // Move quote funds into vault
         vault.settle_trading_account(

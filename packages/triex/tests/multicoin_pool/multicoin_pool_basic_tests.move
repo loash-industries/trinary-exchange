@@ -10,7 +10,7 @@ module triex::integration_multicoin_pool_basic_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         fill::Fill,
         integration_multicoin_test_utils as mc_utils,
         math,
@@ -170,7 +170,9 @@ module triex::integration_multicoin_pool_basic_tests {
         test.next_tx(ALICE);
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let silver = test.take_from_sender<multicoin::Balance>();
-        ta.deposit_multicoin(silver, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        ta.deposit_multicoin(&gate, silver, test.ctx());
+        unit_test::destroy(gate);
         return_shared(ta);
 
         // Try to place order in GOLD pool - should fail because ALICE has no GOLD
@@ -179,7 +181,7 @@ module triex::integration_multicoin_pool_basic_tests {
         let policy = test.take_shared<FeePolicy>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let clock = test.take_shared<Clock>();
-        let trade_proof = ta.generate_proof_as_owner(test.ctx());
+        let trade_proof = ta.generate_proof_as_owner(&policy, test.ctx());
 
         // This should fail with EMultiCoinBalanceTooLow when trying to withdraw GOLD for an ask order
         // (Ask order = selling GOLD, so user needs GOLD balance)
@@ -222,16 +224,19 @@ module triex::integration_multicoin_pool_basic_tests {
 
         // Create trading account with USDC and CRED, share immediately
         test.next_tx(ALICE);
-        let mut trading_account = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut trading_account = trading_account::new(&gate, test.ctx());
         trading_account.deposit(
+            &gate,
             mint_for_testing<USDC>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
         trading_account.deposit(
+            &gate,
             mint_for_testing<CRED>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
-        let trade_cap = trading_account.mint_trade_cap(test.ctx());
+        let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
         let ta_id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
         transfer::public_transfer(trade_cap, ALICE);
@@ -253,7 +258,8 @@ module triex::integration_multicoin_pool_basic_tests {
         test.next_tx(ALICE);
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        ta.deposit_multicoin(gold, test.ctx());
+        ta.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(ta);
 
         // Place a limit bid order
@@ -263,26 +269,30 @@ module triex::integration_multicoin_pool_basic_tests {
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let trade_cap = test.take_from_sender<TradeCap>();
-        let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
+        let trade_proof = ta.generate_proof_as_trader(&policy, &trade_cap, test.ctx());
 
         ta.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
 
         ta.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
 
         // Top up quote to cover quote-denominated maker fees before cancel
         ta.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
 
         // Top up quote to cover quote-denominated maker fees before cancel
         ta.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
@@ -337,16 +347,19 @@ module triex::integration_multicoin_pool_basic_tests {
 
         // Create trading account for BOB with USDC and CRED, share immediately
         test.next_tx(BOB);
-        let mut bob_bm = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob_bm = trading_account::new(&gate, test.ctx());
         bob_bm.deposit(
+            &gate,
             mint_for_testing<USDC>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
         bob_bm.deposit(
+            &gate,
             mint_for_testing<CRED>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
-        let bob_trade_cap = bob_bm.mint_trade_cap(test.ctx());
+        let bob_trade_cap = bob_bm.mint_trade_cap(&gate, test.ctx());
         let bob_bm_id = object::id(&bob_bm);
         transfer::public_share_object(bob_bm);
         transfer::public_transfer(bob_trade_cap, BOB);
@@ -368,7 +381,7 @@ module triex::integration_multicoin_pool_basic_tests {
         test.next_tx(BOB);
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob_bm.deposit_multicoin(gold, test.ctx());
+        bob_bm.deposit_multicoin(&gate, gold, test.ctx());
         return_shared(bob_bm);
 
         // ALICE places a bid at price 2
@@ -378,21 +391,24 @@ module triex::integration_multicoin_pool_basic_tests {
         let clock = test.take_shared<Clock>();
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
-        let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
+        let alice_proof = alice_bm.generate_proof_as_trader(&policy, &alice_trade_cap, test.ctx());
 
         alice_bm.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
 
         // Top up quote to cover quote-denominated maker fees before cancel
         alice_bm.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
 
         // Top up quote to cover quote-denominated maker fees before cancel
         alice_bm.deposit(
+            &policy,
             mint_for_testing<USDC>(1_000_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
@@ -425,7 +441,7 @@ module triex::integration_multicoin_pool_basic_tests {
         let clock = test.take_shared<Clock>();
         let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
         let bob_trade_cap = test.take_from_sender<TradeCap>();
-        let bob_proof = bob_bm.generate_proof_as_trader(&bob_trade_cap, test.ctx());
+        let bob_proof = bob_bm.generate_proof_as_trader(&policy, &bob_trade_cap, test.ctx());
 
         let bob_order = pool.place_limit_order(
             &policy,
@@ -455,7 +471,8 @@ module triex::integration_multicoin_pool_basic_tests {
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let alice_trade_cap = test.take_from_sender<TradeCap>();
-        let alice_proof = alice_bm.generate_proof_as_trader(&alice_trade_cap, test.ctx());
+        let alice_proof = alice_bm.generate_proof_as_trader(&gate, &alice_trade_cap, test.ctx());
+        unit_test::destroy(gate);
         pool.withdraw_settled_amounts(&mut alice_bm, &alice_proof, test.ctx());
         return_shared(pool);
         return_shared(alice_bm);
@@ -508,7 +525,7 @@ module triex::integration_multicoin_pool_basic_tests {
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let trade_cap = test.take_from_sender<TradeCap>();
-        let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
+        let trade_proof = ta.generate_proof_as_trader(&policy, &trade_cap, test.ctx());
 
         let order_info = pool.place_limit_order(
             &policy,
@@ -583,7 +600,9 @@ module triex::integration_multicoin_pool_basic_tests {
         test.next_tx(ALICE);
         let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
         let gold_balance = test.take_from_sender<multicoin::Balance>();
-        alice_bm.deposit_multicoin(gold_balance, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        alice_bm.deposit_multicoin(&gate, gold_balance, test.ctx());
+        unit_test::destroy(gate);
         return_shared(alice_bm);
 
         test.next_tx(ALICE);
@@ -592,7 +611,7 @@ module triex::integration_multicoin_pool_basic_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut alice_bm = test.take_shared_by_id<TradingAccount>(alice_bm_id);
-            let trade_proof = alice_bm.generate_proof_as_owner(test.ctx());
+            let trade_proof = alice_bm.generate_proof_as_owner(&policy, test.ctx());
 
             pool.place_limit_order(
                 &policy,
@@ -620,7 +639,7 @@ module triex::integration_multicoin_pool_basic_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut bob_bm = test.take_shared_by_id<TradingAccount>(bob_bm_id);
-            let trade_proof = bob_bm.generate_proof_as_owner(test.ctx());
+            let trade_proof = bob_bm.generate_proof_as_owner(&policy, test.ctx());
 
             let reserve_before = pool.quote_fee_reserve_balance();
             let order_info = pool.place_limit_order_with_quote_fees(
@@ -671,16 +690,19 @@ module triex::integration_multicoin_pool_basic_tests {
 
         // Create trading account with funds and share immediately
         test.next_tx(ALICE);
-        let mut ta = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut ta = trading_account::new(&gate, test.ctx());
         ta.deposit(
+            &gate,
             mint_for_testing<USDC>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
         ta.deposit(
+            &gate,
             mint_for_testing<CRED>(1_000_000 * constants::float_scaling(), test.ctx()),
             test.ctx(),
         );
-        let trade_cap = ta.mint_trade_cap(test.ctx());
+        let trade_cap = ta.mint_trade_cap(&gate, test.ctx());
         let ta_id = object::id(&ta);
         transfer::public_share_object(ta);
         transfer::public_transfer(trade_cap, ALICE);
@@ -702,7 +724,8 @@ module triex::integration_multicoin_pool_basic_tests {
         test.next_tx(ALICE);
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let gold = test.take_from_sender<multicoin::Balance>();
-        ta.deposit_multicoin(gold, test.ctx());
+        ta.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(ta);
 
         // Place bid at price 1
@@ -712,7 +735,7 @@ module triex::integration_multicoin_pool_basic_tests {
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
         let trade_cap = test.take_from_sender<TradeCap>();
-        let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
+        let trade_proof = ta.generate_proof_as_trader(&policy, &trade_cap, test.ctx());
 
         pool.place_limit_order(
             &policy,

@@ -12,7 +12,7 @@ module triex::multicoin_pool_turnover_fold_tests {
     use sui::{clock::Clock, test_scenario::{Scenario, begin, end, return_shared}};
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         trading_account::TradingAccount,
@@ -77,12 +77,14 @@ module triex::multicoin_pool_turnover_fold_tests {
             transfer::public_transfer(gold, owner);
         };
         test.next_tx(owner);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
             let gold = test.take_from_sender<multicoin::Balance>();
-            ta.deposit_multicoin(gold, test.ctx());
+            ta.deposit_multicoin(&gate, gold, test.ctx());
             return_shared(ta);
         };
+        destroy(gate);
     }
 
     fun place(
@@ -98,7 +100,7 @@ module triex::multicoin_pool_turnover_fold_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         let order = pool.place_limit_order(
             &policy,
             &mut ta,
@@ -198,14 +200,16 @@ module triex::multicoin_pool_turnover_fold_tests {
         let (_, credit) = alice_earns_maker_credit(gold, alice, bob, QUANTITY, &mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(gold);
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&gate, test.ctx());
             pool.withdraw_settled_amounts(&mut ta, &proof, test.ctx());
             return_shared(ta);
             return_shared(pool);
         };
+        destroy(gate);
 
         assert_eq!(ring(alice, &mut test), credit);
         // Exchange-wide now: the silver pool prices against it too ...
@@ -249,14 +253,16 @@ module triex::multicoin_pool_turnover_fold_tests {
         // permissionless variant aborts on an empty settlement, so only the
         // owner's withdraw reaches this case.)
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(gold);
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&gate, test.ctx());
             pool.withdraw_settled_amounts(&mut ta, &proof, test.ctx());
             return_shared(ta);
             return_shared(pool);
         };
+        destroy(gate);
 
         assert_eq!(ring(alice, &mut test), 0);
         assert_eq!(pool_turnover(gold, alice, &mut test), 0);
@@ -284,7 +290,7 @@ module triex::multicoin_pool_turnover_fold_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
             return_shared(ta);
             return_shared(clock);
@@ -318,7 +324,7 @@ module triex::multicoin_pool_turnover_fold_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&policy, test.ctx());
             pool.modify_order(
                 &policy,
                 &mut ta,
@@ -372,15 +378,17 @@ module triex::multicoin_pool_turnover_fold_tests {
         // One PTB: Alice withdraws her quote balance and folds gold's credit,
         // touching no order and no settled balance on the pool.
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(gold);
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let coin = ta.withdraw_all<USDC>(test.ctx());
+            let coin = ta.withdraw_all<USDC>(&gate, test.ctx());
             pool.fold_pending_turnover(&mut ta, test.ctx());
             destroy(coin);
             return_shared(ta);
             return_shared(pool);
         };
+        destroy(gate);
 
         assert_eq!(pending(gold, alice, &mut test), 0);
         assert_eq!(ring(alice, &mut test), credit);

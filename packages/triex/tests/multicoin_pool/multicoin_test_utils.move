@@ -11,7 +11,7 @@ module triex::integration_multicoin_test_utils {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         multicoin_pool as multicoin_pool,
         pool::{Self as pool, Pool},
         pool_test_utils,
@@ -91,10 +91,12 @@ module triex::integration_multicoin_test_utils {
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
-        let mut trading_account = trading_account::new(test.ctx());
-        trading_account.deposit(mint_for_testing<USDC>(usdc_amount, test.ctx()), test.ctx());
-        trading_account.deposit(mint_for_testing<CRED>(cred_amount, test.ctx()), test.ctx());
-        let trade_cap = trading_account.mint_trade_cap(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut trading_account = trading_account::new(&gate, test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<USDC>(usdc_amount, test.ctx()), test.ctx());
+        trading_account.deposit(&gate, mint_for_testing<CRED>(cred_amount, test.ctx()), test.ctx());
+        let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
+        unit_test::destroy(gate);
         transfer::public_transfer(trade_cap, sender);
         let id = object::id(&trading_account);
         transfer::public_share_object(trading_account);
@@ -169,7 +171,7 @@ module triex::integration_multicoin_test_utils {
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
             let trade_cap = test.take_from_sender<TradeCap>();
-            let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
+            let trade_proof = ta.generate_proof_as_trader(&policy, &trade_cap, test.ctx());
 
             pool.place_limit_order(
                 &policy,
@@ -199,7 +201,7 @@ module triex::integration_multicoin_test_utils {
             let clock = test.take_shared<Clock>();
             let mut ta = test.take_shared_by_id<TradingAccount>(trading_account_id);
             let trade_cap = test.take_from_sender<TradeCap>();
-            let trade_proof = ta.generate_proof_as_trader(&trade_cap, test.ctx());
+            let trade_proof = ta.generate_proof_as_trader(&policy, &trade_cap, test.ctx());
 
             pool.place_limit_order(
                 &policy,

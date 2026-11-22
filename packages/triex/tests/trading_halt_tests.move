@@ -1,10 +1,12 @@
 /// The exchange-wide halt (TRIEX-146).
 ///
-/// The kill switch used to be `registry::disable_version`, which reaches a pool
-/// only once that pool's cached version set is refreshed — one call per pool,
+/// The kill switch used to be `registry::disable_version`, which reached a pool
+/// only once that pool's cached version set was refreshed — one call per pool,
 /// 518 multicoin pools on testnet. `fee_policy::halt_trading` is one admin
 /// transaction, and every pool sees it at once because every order already
-/// reads the shared `FeePolicy`.
+/// reads the shared `FeePolicy`. (Disabling a version now reaches every pool at
+/// once too, through the same object, but it also closes every account; see
+/// `version_gate_tests`. The halt is the lever that traps no funds.)
 ///
 /// Pinned here, on both pool kinds:
 ///
@@ -344,50 +346,6 @@ module triex::trading_halt_tests {
         );
 
         abort 0
-    }
-
-    #[test]
-    /// Why the halt exists. Disabling the running version reaches a pool only
-    /// once that pool's cached version set is refreshed with
-    /// `update_pool_allowed_versions`, one call per pool. Until then the pool
-    /// keeps trading — exactly what the halt above does not allow.
-    fun disabling_the_running_version_does_not_reach_an_unrefreshed_pool() {
-        let mut test = begin(OWNER);
-        let m = coin_market(&mut test);
-
-        test.next_tx(OWNER);
-        {
-            let cap = registry::get_admin_cap_for_testing(test.ctx());
-            let mut registry = test.take_shared_by_id<Registry>(m.registry_id);
-            registry.disable_version(constants::current_version(), &cap);
-            return_shared(registry);
-            destroy(cap);
-        };
-
-        let ask = coin_limit(
-            &mut test,
-            ALICE,
-            m.pool_id,
-            m.alice,
-            PRICE,
-            QUANTITY,
-            false,
-            constants::max_u64(),
-        );
-        assert!(ask.order_inserted());
-        let bid = coin_limit(
-            &mut test,
-            BOB,
-            m.pool_id,
-            m.bob,
-            PRICE,
-            QUANTITY,
-            true,
-            constants::max_u64(),
-        );
-        assert_eq!(bid.executed_quantity(), QUANTITY);
-
-        end(test);
     }
 
     /// A registry approving `COIN_DEC6` and a policy pricing it, for the
@@ -742,12 +700,14 @@ module triex::trading_halt_tests {
             transfer::public_transfer(gold, BOB);
         };
         test.next_tx(BOB);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut ta = test.take_shared_by_id<TradingAccount>(bob);
             let gold = test.take_from_sender<multicoin::Balance>();
-            ta.deposit_multicoin(gold, test.ctx());
+            ta.deposit_multicoin(&gate, gold, test.ctx());
             return_shared(ta);
         };
+        destroy(gate);
 
         (MulticoinMarket { registry_id, collection_id, pool_id, alice, bob }, collection_cap)
     }
@@ -767,7 +727,7 @@ module triex::trading_halt_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(account);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         let order_info = pool.place_limit_order(
             &policy,
             &mut ta,
@@ -841,7 +801,7 @@ module triex::trading_halt_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(m.alice);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         pool.place_market_order(
             &policy,
             &mut ta,
@@ -1052,7 +1012,7 @@ module triex::trading_halt_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut bob = test.take_shared_by_id<TradingAccount>(m.bob);
-            let proof = bob.generate_proof_as_owner(test.ctx());
+            let proof = bob.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&policy, &mut bob, &proof, to_cancel.order_id(), &clock, test.ctx());
             pool.modify_order(
                 &policy,
@@ -1097,7 +1057,7 @@ module triex::trading_halt_tests {
             let policy = test.take_shared<FeePolicy>();
             let clock = test.take_shared<Clock>();
             let mut bob = test.take_shared_by_id<TradingAccount>(m.bob);
-            let proof = bob.generate_proof_as_owner(test.ctx());
+            let proof = bob.generate_proof_as_owner(&policy, test.ctx());
             pool.fold_pending_turnover(&mut bob, test.ctx());
             pool.cancel_all_orders(&policy, &mut bob, &proof, &clock, test.ctx());
             return_shared(bob);

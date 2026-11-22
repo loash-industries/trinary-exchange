@@ -1,10 +1,12 @@
 #[test_only]
 module triex::integration_test_utils {
+    use std::unit_test::destroy;
     use sui::{clock::Clock, sui::SUI, test_scenario::{Scenario, return_shared}};
     use token::cred::{Self as cred, ProtectedTreasury};
     use triex::{
         balances::Balances,
         constants,
+        fee_policy,
         math,
         pool::{Self as pool, Pool},
         pool_tests,
@@ -137,15 +139,17 @@ module triex::integration_test_utils {
         test: &mut Scenario,
     ): ID {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            let trade_cap = trading_account.mint_trade_cap(test.ctx());
+            let trade_cap = trading_account.mint_trade_cap(&gate, test.ctx());
             let trade_cap_id = object::id(&trade_cap);
             transfer::public_transfer(trade_cap, trader);
             return_shared(trading_account);
 
+            destroy(gate);
             trade_cap_id
         }
     }
@@ -157,13 +161,15 @@ module triex::integration_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&gate, &trade_cap_id, test.ctx());
             return_shared(trading_account);
-        }
+        };
+        destroy(gate);
     }
 
     public fun execute_cross_trading<BaseAsset, QuoteAsset>(
@@ -257,12 +263,13 @@ module triex::integration_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut my_trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
-            let trade_proof = my_trading_account.generate_proof_as_owner(test.ctx());
+            let trade_proof = my_trading_account.generate_proof_as_owner(&gate, test.ctx());
             pool::withdraw_settled_amounts<BaseAsset, QuoteAsset>(
                 &mut pool,
                 &mut my_trading_account,
@@ -270,7 +277,8 @@ module triex::integration_test_utils {
             );
             return_shared(my_trading_account);
             return_shared(pool);
-        }
+        };
+        destroy(gate);
     }
 
     public fun check_balance(

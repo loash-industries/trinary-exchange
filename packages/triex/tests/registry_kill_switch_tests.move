@@ -1,15 +1,16 @@
-/// Full-freeze tests for `registry::disable_version`.
+/// Full-freeze tests for a pool, driven through `fee_policy::disable_version`.
 ///
 /// The version passed may be the one currently running. `pool::load_inner` /
 /// `load_inner_mut` assert the running version is in the pool's cached copy of the
-/// allowed set, so a disable freezes a pool once that copy is refreshed with
-/// `update_pool_allowed_versions` — one call per pool, and these tests make it.
-/// These tests pin both halves of that: the freeze lands, and it is recoverable.
+/// allowed set, so a disable freezes a pool, exits included, once that copy is
+/// refreshed with `update_pool_allowed_versions` — one call per pool, and these
+/// tests make it. These tests pin both halves of that: the freeze lands, and it
+/// is recoverable.
 ///
-/// The one-transaction stop of new trading on every pool is
-/// `fee_policy::halt_trading`, pinned in `trading_halt_tests` along with the
-/// counterpart to this module: a disable that has not been propagated does not
-/// stop a pool.
+/// What the same disable does before any pool is refreshed — stop new exposure
+/// and every account everywhere at once — is pinned in `version_gate_tests`; the
+/// stop of new trading that traps nobody's funds is `fee_policy::halt_trading`,
+/// in `trading_halt_tests`.
 #[test_only]
 module triex::registry_kill_switch_tests {
     use std::unit_test::destroy;
@@ -17,6 +18,7 @@ module triex::registry_kill_switch_tests {
     use token::cred::CRED;
     use triex::{
         constants,
+        fee_policy::FeePolicy,
         pool::Pool,
         pool_test_utils,
         registry::{Self, Registry},
@@ -44,13 +46,15 @@ module triex::registry_kill_switch_tests {
         (registry_id, pool_id)
     }
 
-    /// Disable `version` on the registry as admin.
+    /// Disable `version` exchange-wide as admin.
     fun disable(registry_id: ID, version: u64, test: &mut sui::test_scenario::Scenario) {
         test.next_tx(OWNER);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let mut policy = test.take_shared<FeePolicy>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
-        registry.disable_version(version, &cap);
+        policy.disable_version(&mut registry, version, &cap);
         destroy(cap);
+        return_shared(policy);
         return_shared(registry);
     }
 
@@ -64,9 +68,11 @@ module triex::registry_kill_switch_tests {
     ) {
         test.next_tx(OWNER);
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
+        let mut policy = test.take_shared<FeePolicy>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
-        registry.enable_version(version, &cap);
+        policy.enable_version(&mut registry, version, &cap);
         destroy(cap);
+        return_shared(policy);
 
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         pool.update_pool_allowed_versions(&registry);
@@ -84,8 +90,8 @@ module triex::registry_kill_switch_tests {
 
         disable(registry_id, constants::current_version(), &mut test);
 
-        // The registry itself stays usable — `disable_version` and `enable_version`
-        // are ungated, which is what makes the halt recoverable.
+        // The switches stay usable — `disable_version` and `enable_version` are
+        // ungated, which is what makes the freeze recoverable.
         enable_and_refresh(registry_id, pool_id, constants::current_version(), &mut test);
 
         test.end();

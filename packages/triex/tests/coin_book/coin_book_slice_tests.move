@@ -11,6 +11,7 @@
 /// within what a single account may hold.
 #[test_only]
 module triex::coin_book_slice_tests {
+    use std::unit_test::destroy;
     use sui::{
         coin::mint_for_testing,
         sui::SUI,
@@ -20,6 +21,7 @@ module triex::coin_book_slice_tests {
     use triex::{
         coin_order_query::iter_orders,
         constants,
+        fee_policy,
         pool::Pool,
         pool_test_utils,
         trading_account::TradingAccount,
@@ -106,8 +108,10 @@ module triex::coin_book_slice_tests {
         let clock = test.take_shared<sui::clock::Clock>();
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
         let top_up = mint_for_testing<USDC>(1_000 * constants::float_scaling(), test.ctx());
-        trading_account.deposit(top_up, test.ctx());
-        let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        trading_account.deposit(&gate, top_up, test.ctx());
+        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
         pool.cancel_orders<SUI, USDC>(
             &mut trading_account,
             &trade_proof,

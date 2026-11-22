@@ -399,11 +399,11 @@ module triex::pool {
                 self.get_quantity_out_input_fee(policy, 0, quote_quantity, clock, ctx)
         };
 
-        let mut temp_trading_account = trading_account::new(ctx);
-        let trade_proof = temp_trading_account.generate_proof_as_owner(ctx);
-        temp_trading_account.deposit(base_in, ctx);
-        temp_trading_account.deposit(quote_in, ctx);
-        temp_trading_account.deposit(cred_in, ctx);
+        let mut temp_trading_account = trading_account::new(policy, ctx);
+        let trade_proof = temp_trading_account.generate_proof_as_owner(policy, ctx);
+        temp_trading_account.deposit(policy, base_in, ctx);
+        temp_trading_account.deposit(policy, quote_in, ctx);
+        temp_trading_account.deposit(policy, cred_in, ctx);
 
         self.place_market_order(
             policy,
@@ -416,9 +416,9 @@ module triex::pool {
             ctx,
         );
 
-        let base_out = temp_trading_account.withdraw_all<BaseAsset>(ctx);
-        let quote_out = temp_trading_account.withdraw_all<QuoteAsset>(ctx);
-        let cred_out = temp_trading_account.withdraw_all<CRED>(ctx);
+        let base_out = temp_trading_account.withdraw_all<BaseAsset>(policy, ctx);
+        let quote_out = temp_trading_account.withdraw_all<QuoteAsset>(policy, ctx);
+        let cred_out = temp_trading_account.withdraw_all<CRED>(policy, ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);
@@ -485,9 +485,9 @@ module triex::pool {
             adjusted_base_quantity = base_quantity - base_remaining;
         };
 
-        trading_account.deposit_with_cap(deposit_cap, base_in, ctx);
-        trading_account.deposit_with_cap(deposit_cap, quote_in, ctx);
-        let trade_proof = trading_account.generate_proof_as_trader(trade_cap, ctx);
+        trading_account.deposit_with_cap(policy, deposit_cap, base_in, ctx);
+        trading_account.deposit_with_cap(policy, deposit_cap, quote_in, ctx);
+        let trade_proof = trading_account.generate_proof_as_trader(policy, trade_cap, ctx);
         let order_info = self.place_market_order(
             policy,
             trading_account,
@@ -511,8 +511,8 @@ module triex::pool {
             (base_left, order_info.cumulative_quote_quantity() - order_info.paid_fees())
         };
 
-        let base_out = trading_account.withdraw_with_cap(withdraw_cap, base_out, ctx);
-        let quote_out = trading_account.withdraw_with_cap(withdraw_cap, quote_out, ctx);
+        let base_out = trading_account.withdraw_with_cap(policy, withdraw_cap, base_out, ctx);
+        let quote_out = trading_account.withdraw_with_cap(policy, withdraw_cap, quote_out, ctx);
 
         if (is_bid) {
             assert!(base_out.value() >= min_out, EMinimumQuantityOutNotMet);

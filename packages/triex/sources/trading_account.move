@@ -3,6 +3,12 @@
 /// owner directly, or by any `TradeCap` owner. The owner can generate a `TradeProof` without the risk of
 /// equivocation. The `TradeCap` owner, due to it being an owned object, risks equivocation when generating
 /// a `TradeProof`. Generally, a high frequency trading engine will trade as the default owner.
+///
+/// Every entry point that creates an account, moves funds in or out, mints or revokes a cap, or
+/// produces a `TradeProof` takes the shared `FeePolicy` for one reason: to check that the package
+/// version running it has not been retired (`fee_policy::disable_version`). An account cannot carry
+/// that gate itself, because a retired version would have to be fenced off account by account; one
+/// shared set retires it from every account at once. Views take no policy.
 module triex::trading_account {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
     use std::type_name::{Self, TypeName};
@@ -15,7 +21,11 @@ module triex::trading_account {
         event,
         vec_set::{Self, VecSet}
     };
-    use triex::{fee_turnover::{Self, EpochAmount, FeeTurnover}, registry::Registry};
+    use triex::{
+        fee_policy::FeePolicy,
+        fee_turnover::{Self, EpochAmount, FeeTurnover},
+        registry::Registry
+    };
 
     // use fun df::borrow as UID.borrow;
     // use fun df::exists_ as UID.exists_;
@@ -136,20 +146,10 @@ module triex::trading_account {
     }
 
     // === Public-Mutative Functions ===
+    /// Create a new trading account owned by the sender.
     /// #ref:functions
-    public fun new(ctx: &mut TxContext): TradingAccount {
-        let id = object::new(ctx);
-        event::emit(TradingAccountEvent {
-            trading_account_id: id.to_inner(),
-            owner: ctx.sender(),
-        });
-
-        TradingAccount {
-            id,
-            owner: ctx.sender(),
-            balances: bag::new(ctx),
-            allow_listed: vec_set::empty(),
-        }
+    public fun new(policy: &FeePolicy, ctx: &mut TxContext): TradingAccount {
+        new_with_custom_owner(policy, ctx.sender(), ctx)
     }
 
     // #[deprecated(note = b"This function is deprecated, use `new_with_custom_owner` instead.")]
@@ -159,7 +159,12 @@ module triex::trading_account {
 
     /// Create a new trading account with an owner.
     /// #ref:functions
-    public fun new_with_custom_owner(owner: address, ctx: &mut TxContext): TradingAccount {
+    public fun new_with_custom_owner(
+        policy: &FeePolicy,
+        owner: address,
+        ctx: &mut TxContext,
+    ): TradingAccount {
+        policy.assert_version_enabled();
         let id = object::new(ctx);
         event::emit(TradingAccountEvent {
             trading_account_id: id.to_inner(),
@@ -179,8 +184,12 @@ module triex::trading_account {
     /// returned to the caller: a caller holding caps on an account someone else owns
     /// could drain whatever that owner deposits.
     /// #ref:functions
-    public fun new_with_custom_owner_and_caps(owner: address, ctx: &mut TxContext): TradingAccount {
-        let mut trading_account = new_with_custom_owner(owner, ctx);
+    public fun new_with_custom_owner_and_caps(
+        policy: &FeePolicy,
+        owner: address,
+        ctx: &mut TxContext,
+    ): TradingAccount {
+        let mut trading_account = new_with_custom_owner(policy, owner, ctx);
 
         let deposit_cap = mint_deposit_cap_internal(&mut trading_account, ctx);
         let withdraw_cap = mint_withdraw_cap_internal(&mut trading_account, ctx);
@@ -205,10 +214,11 @@ module triex::trading_account {
     /// them where only the owning module can reach them.
     /// #ref:functions
     public fun new_with_uid_owner_and_caps(
+        policy: &FeePolicy,
         owner: &mut UID,
         ctx: &mut TxContext,
     ): (TradingAccount, DepositCap, WithdrawCap, TradeCap) {
-        let mut trading_account = new_with_custom_owner(owner.to_address(), ctx);
+        let mut trading_account = new_with_custom_owner(policy, owner.to_address(), ctx);
 
         let deposit_cap = mint_deposit_cap_internal(&mut trading_account, ctx);
         let withdraw_cap = mint_withdraw_cap_internal(&mut trading_account, ctx);
@@ -276,7 +286,12 @@ module triex::trading_account {
 
     /// Mint a `TradeCap`, only owner can mint a `TradeCap`.
     /// #ref:functions
-    public fun mint_trade_cap(trading_account: &mut TradingAccount, ctx: &mut TxContext): TradeCap {
+    public fun mint_trade_cap(
+        trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
+        ctx: &mut TxContext,
+    ): TradeCap {
+        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
         trading_account.mint_trade_cap_internal(ctx)
     }
@@ -285,8 +300,10 @@ module triex::trading_account {
     /// #ref:functions
     public fun mint_deposit_cap(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         ctx: &mut TxContext,
     ): DepositCap {
+        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
         trading_account.mint_deposit_cap_internal(ctx)
     }
@@ -295,8 +312,10 @@ module triex::trading_account {
     /// #ref:functions
     public fun mint_withdraw_cap(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         ctx: &mut TxContext,
     ): WithdrawCap {
+        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
         trading_account.mint_withdraw_cap_internal(ctx)
     }
@@ -306,9 +325,11 @@ module triex::trading_account {
     /// #ref:functions
     public fun revoke_trade_cap(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         trade_cap_id: &ID,
         ctx: &TxContext,
     ) {
+        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
 
         assert!(trading_account.allow_listed.contains(trade_cap_id), ECapNotInList);
@@ -320,8 +341,10 @@ module triex::trading_account {
     /// #ref:functions
     public fun generate_proof_as_owner(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         ctx: &TxContext,
     ): TradeProof {
+        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
 
         TradeProof {
@@ -335,9 +358,11 @@ module triex::trading_account {
     /// #ref:functions
     public fun generate_proof_as_trader(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         trade_cap: &TradeCap,
         ctx: &TxContext,
     ): TradeProof {
+        policy.assert_version_enabled();
         trading_account.validate_trader(trade_cap);
 
         TradeProof {
@@ -350,6 +375,7 @@ module triex::trading_account {
     /// #ref:functions
     public fun deposit<T>(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         coin: Coin<T>,
         ctx: &mut TxContext,
     ) {
@@ -359,7 +385,7 @@ module triex::trading_account {
             true,
         );
 
-        let proof = trading_account.generate_proof_as_owner(ctx);
+        let proof = trading_account.generate_proof_as_owner(policy, ctx);
         trading_account.deposit_with_proof(&proof, coin.into_balance());
     }
 
@@ -367,10 +393,12 @@ module triex::trading_account {
     /// #ref:functions
     public fun deposit_with_cap<T>(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         deposit_cap: &DepositCap,
         coin: Coin<T>,
         ctx: &TxContext,
     ) {
+        policy.assert_version_enabled();
         trading_account.emit_balance_event(
             type_name::with_defining_ids<T>(),
             coin.value(),
@@ -385,10 +413,12 @@ module triex::trading_account {
     /// #ref:functions
     public fun withdraw_with_cap<T>(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         withdraw_cap: &WithdrawCap,
         withdraw_amount: u64,
         ctx: &mut TxContext,
     ): Coin<T> {
+        policy.assert_version_enabled();
         let proof = trading_account.generate_proof_as_withdrawer(
             withdraw_cap,
             ctx,
@@ -411,10 +441,11 @@ module triex::trading_account {
     /// #ref:functions
     public fun withdraw<T>(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         withdraw_amount: u64,
         ctx: &mut TxContext,
     ): Coin<T> {
-        let proof = generate_proof_as_owner(trading_account, ctx);
+        let proof = generate_proof_as_owner(trading_account, policy, ctx);
         let coin = trading_account
             .withdraw_with_proof(&proof, withdraw_amount, false)
             .into_coin(ctx);
@@ -428,8 +459,12 @@ module triex::trading_account {
     }
 
     /// #ref:functions
-    public fun withdraw_all<T>(trading_account: &mut TradingAccount, ctx: &mut TxContext): Coin<T> {
-        let proof = generate_proof_as_owner(trading_account, ctx);
+    public fun withdraw_all<T>(
+        trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
+        ctx: &mut TxContext,
+    ): Coin<T> {
+        let proof = generate_proof_as_owner(trading_account, policy, ctx);
         let coin = trading_account.withdraw_with_proof(&proof, 0, true).into_coin(ctx);
         trading_account.emit_balance_event(
             type_name::with_defining_ids<T>(),
@@ -446,6 +481,7 @@ module triex::trading_account {
     /// #ref:functions
     public fun deposit_multicoin(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         multicoin_balance: MultiCoinBalance,
         ctx: &mut TxContext,
     ) {
@@ -456,7 +492,7 @@ module triex::trading_account {
             true,
         );
 
-        let proof = trading_account.generate_proof_as_owner(ctx);
+        let proof = trading_account.generate_proof_as_owner(policy, ctx);
         trading_account.deposit_multicoin_with_proof(&proof, multicoin_balance, ctx);
     }
 
@@ -464,10 +500,12 @@ module triex::trading_account {
     /// #ref:functions
     public fun deposit_multicoin_with_cap(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         deposit_cap: &DepositCap,
         multicoin_balance: MultiCoinBalance,
         ctx: &mut TxContext,
     ) {
+        policy.assert_version_enabled();
         trading_account.emit_multicoin_balance_event(
             multicoin_balance.collection_id(),
             multicoin_balance.asset_id(),
@@ -483,12 +521,13 @@ module triex::trading_account {
     /// #ref:functions
     public fun withdraw_multicoin(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         collection_id: ID,
         asset_id: u64,
         withdraw_amount: u64,
         ctx: &mut TxContext,
     ): MultiCoinBalance {
-        let proof = generate_proof_as_owner(trading_account, ctx);
+        let proof = generate_proof_as_owner(trading_account, policy, ctx);
         let bal = trading_account.withdraw_multicoin_with_proof(
             &proof,
             collection_id,
@@ -511,11 +550,12 @@ module triex::trading_account {
     /// #ref:functions
     public fun withdraw_all_multicoin(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         collection_id: ID,
         asset_id: u64,
         ctx: &mut TxContext,
     ): MultiCoinBalance {
-        let proof = generate_proof_as_owner(trading_account, ctx);
+        let proof = generate_proof_as_owner(trading_account, policy, ctx);
         let bal = trading_account.withdraw_multicoin_with_proof(
             &proof,
             collection_id,
@@ -538,12 +578,14 @@ module triex::trading_account {
     /// #ref:functions
     public fun withdraw_multicoin_with_cap(
         trading_account: &mut TradingAccount,
+        policy: &FeePolicy,
         withdraw_cap: &WithdrawCap,
         collection_id: ID,
         asset_id: u64,
         withdraw_amount: u64,
         ctx: &mut TxContext,
     ): MultiCoinBalance {
+        policy.assert_version_enabled();
         let proof = trading_account.generate_proof_as_withdrawer(withdraw_cap, ctx);
         let bal = trading_account.withdraw_multicoin_with_proof(
             &proof,

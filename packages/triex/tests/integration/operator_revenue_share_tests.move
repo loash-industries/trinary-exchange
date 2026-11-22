@@ -142,7 +142,9 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(BOB);
         let mut bob = test.take_shared_by_id<TradingAccount>(bob_ta);
         let gold = test.take_from_sender<multicoin::Balance>();
-        bob.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        bob.deposit_multicoin(&gate, gold, test.ctx());
+        unit_test::destroy(gate);
         return_shared(bob);
 
         // The treasury leg of a claim pays a configured address, not the admin
@@ -198,7 +200,7 @@ module triex::integration_hub_revenue_share_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
 
         let order = pool.place_limit_order(
             &policy,
@@ -231,7 +233,7 @@ module triex::integration_hub_revenue_share_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
 
         pool.place_limit_order(
             &policy,
@@ -259,7 +261,7 @@ module triex::integration_hub_revenue_share_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         pool.cancel_order(&policy, &mut ta, &proof, order_id, &clock, test.ctx());
         return_shared(ta);
         return_shared(clock);
@@ -274,7 +276,7 @@ module triex::integration_hub_revenue_share_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         pool.cancel_all_orders(&policy, &mut ta, &proof, &clock, test.ctx());
         return_shared(ta);
         return_shared(clock);
@@ -289,7 +291,7 @@ module triex::integration_hub_revenue_share_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
         pool.cancel_orders(&policy, &mut ta, &proof, order_ids, &clock, test.ctx());
         return_shared(ta);
         return_shared(clock);
@@ -392,7 +394,9 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(trader);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
         let mut ta = test.take_shared_by_id<TradingAccount>(ta_id);
-        let proof = ta.generate_proof_as_owner(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let proof = ta.generate_proof_as_owner(&gate, test.ctx());
+        unit_test::destroy(gate);
         pool.withdraw_settled_amounts(&mut ta, &proof, test.ctx());
         return_shared(ta);
         return_shared(pool);

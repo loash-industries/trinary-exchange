@@ -119,15 +119,23 @@ signals congestion.
 ### Versioning
 
 The package uses a versioned inner-object pattern: the registry keeps a set of
-allowed package versions (`enable_version` / `disable_version`,
-`update_pool_allowed_versions`), letting old package versions be disabled
-after upgrades. Each pool caches the set, so a change reaches a pool when that
-pool is refreshed, one call per pool.
+allowed package versions, and the shared `FeePolicy` keeps an identical copy.
+`fee_policy::enable_version` / `disable_version` change both in one call,
+letting old package versions be retired after upgrades. The copy on
+`FeePolicy` is the exchange-wide gate: every `TradingAccount` entry point that
+creates an account, moves funds or makes a proof takes the policy to read it,
+and so does every order, swap and pool creation, so retiring a version stops
+all of that at once. Each pool also caches the registry's set for its own
+gate, which covers exits as well and reaches a pool when that pool is
+refreshed (`update_pool_allowed_versions`, one call per pool). Packages that
+call Triex keep calling the version they were linked against, so upgrade them
+before retiring the version they use.
 
-The one-transaction emergency stop is `fee_policy::halt_trading`: every order
-already reads the shared `FeePolicy`, so a halt stops new orders, swaps and
-permissionless pool creation on every pool at once, while cancels, withdrawals,
-expired-order cleanup and claims stay open.
+The one-transaction emergency stop that traps nobody's funds is
+`fee_policy::halt_trading`: every order already reads the shared `FeePolicy`,
+so a halt stops new orders, swaps and permissionless pool creation on every
+pool at once, while cancels, withdrawals, expired-order cleanup and claims stay
+open.
 
 ## Source layout
 

@@ -95,41 +95,34 @@ module triex::registry {
         self.treasury_address = treasury_address;
     }
 
-    /// Enables a package version
-    /// Only Admin can enable a package version
-    /// This function does not have version restrictions
-    public fun enable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
+    /// Enables a package version. Reached only through
+    /// `fee_policy::enable_version`, which adds it to `FeePolicy`'s copy of the
+    /// set in the same call, so the two sets never disagree.
+    ///
+    /// Not version-gated: it reaches `load_value_mut` directly rather than
+    /// through `load_inner_mut`, so a disabled version can be re-enabled.
+    public(package) fun enable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
         let self: &mut RegistryInner = self.inner.load_value_mut();
         assert!(!self.allowed_versions.contains(&version), EVersionAlreadyEnabled);
         self.allowed_versions.insert(version);
     }
 
-    /// Disables a package version.
+    /// Disables a package version, which may be the one running. Reached only
+    /// through `fee_policy::disable_version`, which removes it from
+    /// `FeePolicy`'s copy of the set in the same call; that copy is what stops
+    /// the version's trading and account code everywhere at once. See there for
+    /// the whole reach.
     ///
-    /// **The full freeze, pool by pool.** The version passed may be the one
-    /// currently running. `pool::load_inner` / `load_inner_mut` assert that the
-    /// running version is in the pool's *own cached copy* of the allowed set, so
-    /// a disable stops everything on a pool, exits included — but only once that
-    /// pool's copy has been refreshed with the permissionless
-    /// `update_pool_allowed_versions`, one call per pool. Until then the pool
-    /// keeps trading. Anyone can run the refresh, and it works while the version
-    /// is disabled (`allowed_versions` is ungated), so the fan-out can be scripted
-    /// in batches; but it is not one transaction.
+    /// Here, it gates the registry itself (`load_inner` / `load_inner_mut`), and
+    /// it reaches a pool's own gate — which stops everything on that pool, exits
+    /// included — once the pool's cached copy has been refreshed with the
+    /// permissionless `update_pool_allowed_versions`, one call per pool. The
+    /// refresh works while the version is disabled (`allowed_versions` is
+    /// ungated), so anyone can script the fan-out.
     ///
-    /// The one-transaction stop is `fee_policy::halt_trading`: every pool reads
-    /// the shared `FeePolicy` on every order, so a halt reaches all of them at
-    /// once. It stops new orders, swaps and pool creation and leaves exits open.
-    /// Reach for it first; it buys the time to refresh pools if a full freeze is
-    /// needed.
-    ///
-    /// It is recoverable. `enable_version` is deliberately ungated (it reaches
-    /// `load_value_mut` directly rather than through `load_inner_mut`), so an admin
-    /// can re-enable a version they disabled; pools then pick the change up the
-    /// same way, through `update_pool_allowed_versions`.
-    ///
-    /// Only Admin can disable a package version.
-    /// This function does not have version restrictions.
-    public fun disable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
+    /// Not version-gated, and `enable_version` undoes it; pools pick the
+    /// change up the same way.
+    public(package) fun disable_version(self: &mut Registry, version: u64, _cap: &TriexAdminCap) {
         let self: &mut RegistryInner = self.inner.load_value_mut();
         assert!(self.allowed_versions.contains(&version), EVersionNotEnabled);
         self.allowed_versions.remove(&version);

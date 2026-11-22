@@ -4,11 +4,12 @@
 /// fold; `fold_pending_turnover` alongside it in the same PTB does instead.
 #[test_only]
 module triex::pool_turnover_fold_tests {
-    use std::unit_test::assert_eq;
+    use std::unit_test::{assert_eq, destroy};
     use sui::{sui::SUI, test_scenario::{Scenario, begin, end, return_shared}};
     use token::cred::CRED;
     use triex::{
         constants,
+        fee_policy,
         pool::Pool,
         pool_test_utils,
         trading_account::TradingAccount,
@@ -120,10 +121,11 @@ module triex::pool_turnover_fold_tests {
         let (pool_id, alice, _, credit) = alice_earns_maker_credit(&mut test);
 
         test.next_tx(ALICE);
+        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let mut ta = test.take_shared_by_id<TradingAccount>(alice);
-            let proof = ta.generate_proof_as_owner(test.ctx());
+            let proof = ta.generate_proof_as_owner(&gate, test.ctx());
             pool.withdraw_settled_amounts(&mut ta, &proof);
             assert_eq!(pool.account_pending_fee_turnover(&ta, test.ctx()), credit);
             pool.fold_pending_turnover(&mut ta, test.ctx());
@@ -131,6 +133,7 @@ module triex::pool_turnover_fold_tests {
             return_shared(ta);
             return_shared(pool);
         };
+        destroy(gate);
 
         assert_eq!(ring(alice, &mut test), credit);
         end(test);

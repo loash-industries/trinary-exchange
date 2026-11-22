@@ -27,10 +27,12 @@
 /// what store invariance needs.
 #[test_only]
 module triex::pool_deep_book_tests {
+    use std::unit_test::destroy;
     use sui::{coin::mint_for_testing, sui::SUI, test_scenario::{begin, return_shared, Scenario}};
     use token::cred::CRED;
     use triex::{
         constants,
+        fee_policy,
         pool::Pool,
         pool_test_utils,
         trading_account::TradingAccount,
@@ -370,6 +372,7 @@ module triex::pool_deep_book_tests {
 
         let (_, locked_before) = escrow(pool_id, &mut test);
         assert!(locked_before > 0);
+        let gate = fee_policy::gate_for_testing(test.ctx());
 
         // Batched: one top-up per batch, because each cancel refunds into the
         // account and the helper's per-call mint overflows it on a long run.
@@ -389,8 +392,8 @@ module triex::pool_deep_book_tests {
                 1_000 * constants::float_scaling(),
                 test.ctx(),
             );
-            trading_account.deposit(top_up, test.ctx());
-            let trade_proof = trading_account.generate_proof_as_owner(test.ctx());
+            trading_account.deposit(&gate, top_up, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
             pool.cancel_orders<SUI, USDC>(
                 &mut trading_account,
                 &trade_proof,
@@ -402,6 +405,7 @@ module triex::pool_deep_book_tests {
             return_shared(clock);
             return_shared(pool);
         };
+        destroy(gate);
 
         assert!(side_length(pool_id, &mut test) == 0);
         test.next_tx(ALICE);

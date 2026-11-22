@@ -6,6 +6,7 @@ module triex::multicoin_vault_permissionless_tests {
     use token::cred::CRED;
     use triex::{
         balances,
+        fee_policy,
         multicoin_vault::{Self, MultiCoinVault},
         trading_account,
         trading_account_tests::USDC
@@ -23,14 +24,17 @@ module triex::multicoin_vault_permissionless_tests {
     fun funded_vault(base: u64, quote: u64, cred: u64, test: &mut Scenario): MultiCoinVault<USDC> {
         test.next_tx(ALICE);
         let mut vault = multicoin_vault::empty<USDC>(collection_id(), ASSET_ID, test.ctx());
-        let mut alice = trading_account::new(test.ctx());
-        alice.deposit(mint_for_testing<USDC>(quote + 1, test.ctx()), test.ctx());
-        alice.deposit(mint_for_testing<CRED>(cred + 1, test.ctx()), test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut alice = trading_account::new(&gate, test.ctx());
+        alice.deposit(&gate, mint_for_testing<USDC>(quote + 1, test.ctx()), test.ctx());
+        alice.deposit(&gate, mint_for_testing<CRED>(cred + 1, test.ctx()), test.ctx());
         alice.deposit_multicoin(
+            &gate,
             multicoin::create_balance_for_testing(collection_id(), ASSET_ID, base + 1, test.ctx()),
             test.ctx(),
         );
-        let proof = alice.generate_proof_as_owner(test.ctx());
+        let proof = alice.generate_proof_as_owner(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account(
             balances::new(0, 0, 0),
             balances::new(base, quote, cred),
@@ -49,7 +53,9 @@ module triex::multicoin_vault_permissionless_tests {
         let mut vault = funded_vault(5_000, 4_000, 3_000, &mut test);
 
         test.next_tx(BOB);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(2_000, 1_500, 1_000),
             balances::new(0, 0, 0),
@@ -85,7 +91,9 @@ module triex::multicoin_vault_permissionless_tests {
         let mut vault = funded_vault(0, 1_000, 1_000, &mut test);
 
         test.next_tx(BOB);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(0, 300, 0),
             balances::new(0, 0, 0),
@@ -116,7 +124,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_with_owed_cred_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(0, 0, 1),
@@ -133,7 +143,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_with_owed_base_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(1, 0, 0),
@@ -150,7 +162,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_with_owed_quote_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(100, 0, 0),
             balances::new(0, 1, 0),
@@ -167,7 +181,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_nothing_to_settle_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(0, 0, 0),
             balances::new(0, 0, 0),
@@ -184,7 +200,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_insufficient_base_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(100, 1_000, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(101, 0, 0),
             balances::new(0, 0, 0),
@@ -201,7 +219,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_insufficient_quote_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 100, 1_000, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(0, 101, 0),
             balances::new(0, 0, 0),
@@ -218,7 +238,9 @@ module triex::multicoin_vault_permissionless_tests {
     fun test_permissionless_insufficient_cred_e() {
         let mut test = begin(BOB);
         let mut vault = funded_vault(1_000, 1_000, 100, &mut test);
-        let mut bob = trading_account::new(test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        let mut bob = trading_account::new(&gate, test.ctx());
+        destroy(gate);
         vault.settle_trading_account_permissionless(
             balances::new(0, 0, 101),
             balances::new(0, 0, 0),

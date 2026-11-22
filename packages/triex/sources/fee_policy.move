@@ -47,6 +47,12 @@
 /// where the exchange-wide halt lives: `halt_trading` flips one flag and the
 /// next order, swap or permissionless pool creation anywhere aborts, with no
 /// per-pool step. See `halt_trading` for what a halt does and does not stop.
+///
+/// For the same reason it carries the version gate. `allowed_versions` names
+/// the package versions allowed to take on new exposure, to write this object
+/// and to use any `TradingAccount` at all, so `disable_version` retires a
+/// version's code across the exchange in one transaction rather than pool by
+/// pool and account by account. See `disable_version` for what it reaches.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
     use sui::{
@@ -54,9 +60,10 @@ module triex::fee_policy {
         dynamic_field as df,
         event,
         package::{Self, UpgradeCap},
-        table::{Self, Table}
+        table::{Self, Table},
+        vec_set::{Self, VecSet}
     };
-    use triex::{constants, fee_schedule::{Self, FeeSchedule}, registry::TriexAdminCap};
+    use triex::{constants, fee_schedule::{Self, FeeSchedule}, registry::{Registry, TriexAdminCap}};
 
     // === Errors ===
     const EClassAlreadyExists: u64 = 0;
@@ -85,6 +92,9 @@ module triex::fee_policy {
     /// package version that defines the witness type: it is another package's,
     /// or its package has been upgraded past that version.
     const EAdapterUpgradeCapMismatch: u64 = 17;
+    /// The package version running this call has been retired with
+    /// `disable_version`. Call the current package instead.
+    const EPackageVersionDisabled: u64 = 18;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -221,6 +231,11 @@ module triex::fee_policy {
         /// The exchange-wide halt. A plain field rather than a dynamic field:
         /// every order reads it, and this object is already loaded when it does.
         trading_halted: bool,
+        /// Package versions allowed past the version gate. Always equal to the
+        /// registry's set: `enable_version` and `disable_version` below are
+        /// the only writers of either, and change both together. A plain field
+        /// for the same reason as `trading_halted`.
+        allowed_versions: VecSet<u64>,
     }
 
     /// One class's pricing. `quote` pins the unit the schedule's turnover
@@ -347,6 +362,7 @@ module triex::fee_policy {
             default_classes: table::new(ctx),
             multicoin_default_classes: table::new(ctx),
             trading_halted: false,
+            allowed_versions: vec_set::singleton(constants::current_version()),
         };
 
         df::add(
@@ -442,18 +458,21 @@ module triex::fee_policy {
     /// trap anyone's funds, and nothing a user can still do while halted takes
     /// on new exposure. Admin functions are not restricted either.
     ///
-    /// The full freeze is a separate, slower lever: `registry::disable_version`
-    /// stops *everything* on a pool, exits included, but only once that pool's
-    /// cached version set has been refreshed with `update_pool_allowed_versions`
-    /// — one call per pool. Reach for this first; it buys the time to do that.
+    /// The full freeze is a separate lever: `disable_version` on the running
+    /// version. It closes every `TradingAccount` too, and with them every
+    /// `TradeProof`, so it does trap funds; see there. Reach for the halt first.
     ///
     /// Idempotent, so a halt can never fail because someone already halted.
+    /// Unlike every other write here it is not version-gated: it can only stop
+    /// trading, so it should work from whichever package version the
+    /// operator's tooling happens to call.
     public fun halt_trading(self: &mut FeePolicy, _cap: &TriexAdminCap) {
         self.set_trading_halted(true);
     }
 
     /// Lift the halt. Idempotent.
     public fun resume_trading(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        self.assert_version_enabled();
         self.set_trading_halted(false);
     }
 
@@ -462,6 +481,63 @@ module triex::fee_policy {
         self.trading_halted = halted;
 
         event::emit(TradingHaltChanged { halted });
+    }
+
+    /// Allow package `version` to use the exchange: the registry, this object,
+    /// every `TradingAccount`, and each pool once its cached set is refreshed
+    /// (`update_pool_allowed_versions`, permissionless, one call per pool).
+    /// After an upgrade, call this from the new package.
+    ///
+    /// The registry's set and this object's change together, here and only
+    /// here, so the two can never disagree. Like `disable_version`, this is
+    /// deliberately not version-gated: it is how a disabled version comes back.
+    public fun enable_version(
+        self: &mut FeePolicy,
+        registry: &mut Registry,
+        version: u64,
+        cap: &TriexAdminCap,
+    ) {
+        registry.enable_version(version, cap);
+        self.allowed_versions.insert(version);
+    }
+
+    /// Retire package `version`, which may be the one running. From the next
+    /// transaction on, code from that version can no longer:
+    ///
+    /// - take on new exposure anywhere: orders, swaps and pool creation on
+    ///   every pool read this object (`assert_trading_live`);
+    /// - write this object (every writer is gated except `halt_trading` and
+    ///   the two version switches);
+    /// - create, fund, drain or trade from any `TradingAccount`, or mint or
+    ///   revoke its caps: every account entry point that does any of that,
+    ///   proof generation included, reads this set.
+    ///
+    /// What it can still reach is a pool whose cached set has not been
+    /// refreshed: cancels and settled-balance withdrawals there (given a proof
+    /// from an allowed version), and the permissionless settlement and
+    /// expired-order paths. Those end pool by pool, as each pool runs
+    /// `update_pool_allowed_versions`.
+    ///
+    /// Retiring an old version after an upgrade leaves the new one running.
+    /// Retiring the running one is the full freeze, and unlike the halt it
+    /// traps funds: no deposit, withdrawal or proof works until a version is
+    /// enabled again. So does retiring a version that another package is
+    /// still linked against: any package calling into Triex keeps calling the
+    /// version it was published or upgraded against, and has to be upgraded
+    /// to the new one before the old one is disabled. The pinned hub adapter
+    /// is the one exception that can never be relinked, which is why
+    /// `OperatorPayouts` takes no part in this gate.
+    ///
+    /// Not version-gated, so it works from any version, and `enable_version`
+    /// undoes it.
+    public fun disable_version(
+        self: &mut FeePolicy,
+        registry: &mut Registry,
+        version: u64,
+        cap: &TriexAdminCap,
+    ) {
+        registry.disable_version(version, cap);
+        self.allowed_versions.remove(&version);
     }
 
     /// Create a pricing class denominated in `QuoteAsset`, effective immediately —
@@ -477,6 +553,7 @@ module triex::fee_policy {
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
+        self.assert_version_enabled();
         assert!(!self.classes.contains(class_id), EClassAlreadyExists);
         let schedule = validated_schedule(min_turnovers, taker_fees, maker_fees);
         assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
@@ -519,6 +596,7 @@ module triex::fee_policy {
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
+        self.assert_version_enabled();
         assert!(self.classes.contains(class_id), EClassDoesNotExist);
         let schedule = validated_schedule(min_turnovers, taker_fees, maker_fees);
         assert!(cancel_retention_bps <= MAX_CANCEL_RETENTION_BPS, EInvalidCancelRetention);
@@ -550,6 +628,7 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        self.assert_version_enabled();
         let quote = type_name::with_defining_ids<QuoteAsset>();
         self.assert_class_matches_quote(class_id, quote);
         if (self.default_classes.contains(quote)) {
@@ -569,6 +648,7 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        self.assert_version_enabled();
         assert!(payouts.pinned_adapter.is_some(), ENoPinnedAdapter);
         let quote = type_name::with_defining_ids<QuoteAsset>();
         self.assert_class_matches_quote(class_id, quote);
@@ -584,6 +664,12 @@ module triex::fee_policy {
     /// Whether the exchange-wide halt is on.
     public fun trading_halted(self: &FeePolicy): bool {
         self.trading_halted
+    }
+
+    /// Package versions allowed past the version gate; always equal to the
+    /// registry's set.
+    public fun allowed_versions(self: &FeePolicy): VecSet<u64> {
+        self.allowed_versions
     }
 
     public fun class_exists(self: &FeePolicy, class_id: u16): bool {
@@ -679,9 +765,24 @@ module triex::fee_policy {
     }
 
     /// The gate every path that takes on new exposure passes through: order
-    /// placement (and so every swap) and permissionless pool creation.
+    /// placement (and so every swap) and permissionless pool creation. It
+    /// checks the version gate first, which is what retires a disabled
+    /// version's trading on every pool at once, refreshed or not.
     public(package) fun assert_trading_live(self: &FeePolicy) {
+        self.assert_version_enabled();
         assert!(!self.trading_halted, ETradingHalted);
+    }
+
+    /// The version gate: aborts unless the package version running this code
+    /// is allowed. Every `TradingAccount` entry point that creates an account,
+    /// moves funds, mints or revokes a cap, or produces a proof calls it, as
+    /// does every write to this object except `halt_trading` and the version
+    /// switches.
+    public(package) fun assert_version_enabled(self: &FeePolicy) {
+        assert!(
+            self.allowed_versions.contains(&constants::current_version()),
+            EPackageVersionDisabled,
+        );
     }
 
     /// Class a permissionless coin pool quoted in `quote` is born into.
@@ -728,6 +829,7 @@ module triex::fee_policy {
         quote: TypeName,
         ctx: &TxContext,
     ) {
+        self.assert_version_enabled();
         self.assert_class_matches_quote(class_id, quote);
         let effective_epoch = ctx.epoch() + 1;
         upsert(
@@ -747,6 +849,7 @@ module triex::fee_policy {
         pool_id: ID,
         ctx: &TxContext,
     ): u16 {
+        self.assert_version_enabled();
         let key = StagedPoolFeeClassKey { pool_id };
         assert!(
             df::exists_with_type<StagedPoolFeeClassKey, StagedPoolFeeClass>(&self.id, key),
@@ -786,6 +889,23 @@ module triex::fee_policy {
     #[test_only]
     public fun share_for_testing(self: FeePolicy) {
         transfer::share_object(self)
+    }
+
+    #[test_only]
+    /// A `FeePolicy` carrying nothing but a version gate that allows the
+    /// running version: no classes, no hub-share state, no events. For fixtures
+    /// that create, fund or trade from a `TradingAccount` without the shared
+    /// policy at hand, since the account entry points read nothing else from
+    /// it. Tests of the gate itself go through the shared policy.
+    public fun gate_for_testing(ctx: &mut TxContext): FeePolicy {
+        FeePolicy {
+            id: object::new(ctx),
+            classes: table::new(ctx),
+            default_classes: table::new(ctx),
+            multicoin_default_classes: table::new(ctx),
+            trading_halted: false,
+            allowed_versions: vec_set::singleton(constants::current_version()),
+        }
     }
 
     #[test_only]
@@ -918,6 +1038,12 @@ module triex::fee_policy {
     // `OperatorPayouts` is read or written must stay compatible with that
     // frozen caller — an upgrade here does not reach hub registrations.
     //
+    // It is also why nothing on `OperatorPayouts` sits behind the version gate:
+    // the first `disable_version` after an upgrade would cut that frozen caller
+    // off for good. Registration's off switch is `clear_operator_adapter`
+    // instead. It changes the object rather than the code, so it closes the
+    // witness path in every package version at once.
+    //
     // The rates are admin-written at epoch cadence, which is what the
     // module invariant allows. The payout address is written and re-pointed
     // only on presentation of the registered adapter's witness — the adapter
@@ -1041,6 +1167,7 @@ module triex::fee_policy {
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
+        self.assert_version_enabled();
         assert!(bps <= constants::max_operator_share_bps(), EOperatorShareAboveCeiling);
 
         let from_epoch = ctx.epoch() + 1;
@@ -1082,6 +1209,7 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        self.assert_version_enabled();
         // An unconfigured class resolves to zero, so a mistyped id would leave the
         // hub silently earning nothing — the one failure this configuration can have
         // that nobody notices until an operator asks where their payment is.
@@ -1107,6 +1235,7 @@ module triex::fee_policy {
         class_id: u16,
         _cap: &TriexAdminCap,
     ) {
+        self.assert_version_enabled();
         assert!(self.operator_share_class_exists(class_id), EOperatorShareClassDoesNotExist);
 
         upsert(&mut self.id, DefaultOperatorShareKey {}, class_id);
@@ -1142,6 +1271,7 @@ module triex::fee_policy {
         _cap: &TriexAdminCap,
         ctx: &TxContext,
     ) {
+        self.assert_version_enabled();
         let class_key = OperatorShareClassKey { class_id: 0 };
         if (!df::exists_with_type<OperatorShareClassKey, OperatorShareClass>(&self.id, class_key)) {
             df::add(

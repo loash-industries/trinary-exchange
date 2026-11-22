@@ -10,7 +10,7 @@ module triex::multicoin_pool_coverage_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{Self, FeePolicy},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::{Self, MultiCoinPool},
         pool_test_utils,
@@ -69,7 +69,9 @@ module triex::multicoin_pool_coverage_tests {
             test.ctx(),
         );
         let mut account = test.take_shared_by_id<TradingAccount>(account_id);
-        account.deposit_multicoin(gold, test.ctx());
+        let gate = fee_policy::gate_for_testing(test.ctx());
+        account.deposit_multicoin(&gate, gold, test.ctx());
+        destroy(gate);
         return_shared(account);
         return_shared(collection);
     }
@@ -80,7 +82,7 @@ module triex::multicoin_pool_coverage_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut account = test.take_shared_by_id<TradingAccount>(account_id);
-        let proof = account.generate_proof_as_owner(test.ctx());
+        let proof = account.generate_proof_as_owner(&policy, test.ctx());
         let order_id = pool
             .place_limit_order(
                 &policy,
@@ -347,7 +349,7 @@ module triex::multicoin_pool_coverage_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bob = test.take_shared_by_id<TradingAccount>(env.bob_id);
-        let proof = bob.generate_proof_as_owner(test.ctx());
+        let proof = bob.generate_proof_as_owner(&policy, test.ctx());
         pool.cancel_order(&policy, &mut bob, &proof, order_id, &clock, test.ctx());
         abort 0
     }
@@ -363,7 +365,7 @@ module triex::multicoin_pool_coverage_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut bob = test.take_shared_by_id<TradingAccount>(env.bob_id);
-        let proof = bob.generate_proof_as_owner(test.ctx());
+        let proof = bob.generate_proof_as_owner(&policy, test.ctx());
         pool.modify_order(&policy, &mut bob, &proof, order_id, QTY / 2, &clock, test.ctx());
         abort 0
     }
@@ -382,7 +384,7 @@ module triex::multicoin_pool_coverage_tests {
         let policy = test.take_shared<FeePolicy>();
         let clock = test.take_shared<Clock>();
         let mut alice = test.take_shared_by_id<TradingAccount>(env.alice_id);
-        let proof = alice.generate_proof_as_owner(test.ctx());
+        let proof = alice.generate_proof_as_owner(&policy, test.ctx());
         let locked_before = pool.locked_maker_fees();
 
         pool.cancel_orders(&policy, &mut alice, &proof, vector[], &clock, test.ctx());
