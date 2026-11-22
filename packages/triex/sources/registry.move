@@ -106,17 +106,26 @@ module triex::registry {
 
     /// Disables a package version.
     ///
-    /// **This is the protocol's kill switch.** The version passed may be the one
-    /// currently running: disabling it halts every pool at once, because
-    /// `pool::load_inner` / `load_inner_mut` assert that the running version is
-    /// still allowed. That is the point — on a live exploit there has to be a way
-    /// to stop trading in one transaction, without first shipping a package
-    /// upgrade.
+    /// **The full freeze, pool by pool.** The version passed may be the one
+    /// currently running. `pool::load_inner` / `load_inner_mut` assert that the
+    /// running version is in the pool's *own cached copy* of the allowed set, so
+    /// a disable stops everything on a pool, exits included — but only once that
+    /// pool's copy has been refreshed with the permissionless
+    /// `update_pool_allowed_versions`, one call per pool. Until then the pool
+    /// keeps trading. Anyone can run the refresh, and it works while the version
+    /// is disabled (`allowed_versions` is ungated), so the fan-out can be scripted
+    /// in batches; but it is not one transaction.
+    ///
+    /// The one-transaction stop is `fee_policy::halt_trading`: every pool reads
+    /// the shared `FeePolicy` on every order, so a halt reaches all of them at
+    /// once. It stops new orders, swaps and pool creation and leaves exits open.
+    /// Reach for it first; it buys the time to refresh pools if a full freeze is
+    /// needed.
     ///
     /// It is recoverable. `enable_version` is deliberately ungated (it reaches
     /// `load_value_mut` directly rather than through `load_inner_mut`), so an admin
-    /// can re-enable a version they disabled; pools then pick the change up via the
-    /// permissionless `pool::update_pool_allowed_versions`.
+    /// can re-enable a version they disabled; pools then pick the change up the
+    /// same way, through `update_pool_allowed_versions`.
     ///
     /// Only Admin can disable a package version.
     /// This function does not have version restrictions.

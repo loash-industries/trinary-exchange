@@ -1,10 +1,15 @@
-/// Kill-switch tests for `registry::disable_version`.
+/// Full-freeze tests for `registry::disable_version`.
 ///
-/// The version passed may be the one currently running. Disabling it halts every
-/// pool, because `pool::load_inner` / `load_inner_mut` assert the running version is
-/// still allowed — that is how the protocol stops trading in one transaction on a
-/// live exploit, without first shipping a package upgrade. These tests pin both
-/// halves of that: the halt lands, and it is recoverable.
+/// The version passed may be the one currently running. `pool::load_inner` /
+/// `load_inner_mut` assert the running version is in the pool's cached copy of the
+/// allowed set, so a disable freezes a pool once that copy is refreshed with
+/// `update_pool_allowed_versions` — one call per pool, and these tests make it.
+/// These tests pin both halves of that: the freeze lands, and it is recoverable.
+///
+/// The one-transaction stop of new trading on every pool is
+/// `fee_policy::halt_trading`, pinned in `trading_halt_tests` along with the
+/// counterpart to this module: a disable that has not been propagated does not
+/// stop a pool.
 #[test_only]
 module triex::registry_kill_switch_tests {
     use std::unit_test::destroy;

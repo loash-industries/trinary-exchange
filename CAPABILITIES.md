@@ -35,7 +35,7 @@ Every admin entry point takes it as a read-only reference (`_cap:
 | Function | What the operator can do |
 |---|---|
 | `set_treasury_address` | Redirect where pool-creation fees are sent. Defaults to the publisher. |
-| `enable_version` / `disable_version` | Control which package versions may interact with the protocol, **including the version currently running**. These two functions are themselves exempt from version checks, and `disable_version` is reversible by `enable_version`, so an admin can always recover from a bad version state. |
+| `enable_version` / `disable_version` | Control which package versions may interact with the protocol, **including the version currently running**. A change reaches each pool when that pool's cached version set is refreshed (`update_pool_allowed_versions`, permissionless, one call per pool). These two functions are themselves exempt from version checks, and `disable_version` is reversible by `enable_version`, so an admin can always recover from a bad version state. |
 | `add_approved_quote` / `remove_approved_quote` | Manage the approved quote-currency list. Adding enforces a minimum-decimals check on the coin metadata so fee precision stays meaningful (an unchecked variant exists but is `#[test_only]`). |
 | `init_trading_account_map` | One-time creation of the owner → trading-account-IDs table on the registry. Idempotent. |
 
@@ -74,6 +74,7 @@ pool stores only the id of the pricing class it belongs to.
 | `create_class` | Create a pricing class: a **fee-tier ladder** (thresholds, taker rates, maker rates) plus a cancel-retention rate. Live immediately, which is safe because a new class has no pools: a trading pool can only reach it through the staged move above. `fee_schedule::validate` rejects ladders that are empty, exceed 16 tiers, do not start at zero turnover, have non-ascending thresholds, or price more turnover *higher* on either side. |
 | `update_class` | Re-price an existing class for **every pool in it**: the ladder and the cancel retention together, staged for the next epoch. Direct admin control of pricing deliberately **replaces DeepBook's upstream proposal/voting system**, which is disabled in this fork (CRED carries no voting rights). |
 | `set_default_class` / `set_multicoin_default_class` | Choose the class new pools of a quote are born into. Affects pools created afterwards only. |
+| `halt_trading` / `resume_trading` | **The kill switch.** One transaction stops every new order, swap and permissionless pool creation on every pool, because they all read this object. Exits stay open; see below. Idempotent, and announced with `TradingHaltChanged`. |
 
 #### How high fees can be set, and how fast
 
@@ -230,18 +231,31 @@ to the 20% cap and the one-epoch notice described above. It cannot:
   still settles for a non-zero quote — so it is a property of the arithmetic and
   not an operator-tunable parameter
 
-The most systemic lever is `enable_version` / `disable_version`: disabling a
-version freezes all protocol interaction through that package version. This is
-a real kill switch, not only a way to retire old code — the operator can disable
-the version that is currently running and halt live trading in one transaction.
-Resting orders are not cancelled and funds are not moved, but nothing can be
-placed, cancelled, or settled until a version is re-enabled.
+The most systemic levers are the halt and the version gate.
 
-The halt is reversible: `enable_version` restores service, and both functions
-bypass the version gate themselves so the operator cannot lock itself out.
-Disabled version numbers are not recycled, so an archived decoder can never
-resolve a retired version to a new meaning. Users should weigh this when
-assessing operator trust.
+**`fee_policy::halt_trading` is the kill switch.** One transaction, and from the
+next one on every order placement, every swap and every permissionless pool
+creation on every pool aborts, with no per-pool step, because every one of them
+already reads the shared `FeePolicy`. A halt stops new activity and nothing
+else: cancels, modifies (which can only reduce an order), settled-balance
+withdrawals, expired-order cleanup and hub-operator claims stay open, as do
+deposits to and withdrawals from a `TradingAccount`. A halt cannot trap anyone's
+funds. `resume_trading` lifts it, and resting orders carry on where they were.
+
+**`enable_version` / `disable_version` is the full freeze.** The operator can
+disable the version that is currently running, which stops all interaction with
+a pool through that version, exits included: resting orders are not cancelled
+and funds are not moved, but nothing can be placed, cancelled or settled. It
+reaches a pool only once that pool's cached version set has been refreshed with
+`update_pool_allowed_versions` — one call per pool, which anyone can make and
+which keeps working while the version is disabled. It is therefore not a
+one-transaction stop; the halt is what buys the time to run it.
+
+Both are reversible: `resume_trading` and `enable_version` restore service, and
+`disable_version` / `enable_version` bypass the version gate themselves so the
+operator cannot lock itself out. Disabled version numbers are not recycled, so
+an archived decoder can never resolve a retired version to a new meaning. Users
+should weigh this when assessing operator trust.
 
 ---
 

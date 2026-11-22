@@ -133,6 +133,7 @@ module triex::pool {
         creation_fee: Coin<CRED>,
         ctx: &mut TxContext,
     ): ID {
+        policy.assert_trading_live();
         assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
 
         create_pool<BaseAsset, QuoteAsset>(
@@ -1720,6 +1721,9 @@ module triex::pool {
         market_order: bool,
         ctx: &TxContext,
     ): OrderInfo {
+        // Every order and every swap on this pool comes through here, so this
+        // one check is the whole of the exchange-wide halt for a coin pool.
+        policy.assert_trading_live();
         // #feat:ewma
         // self.update_ewma_state(clock, ctx);
         // let ewma_state = self.load_ewma_state();
@@ -1879,6 +1883,7 @@ module triex::pool {
         creation_fee: Coin<CRED>,
         ctx: &mut TxContext,
     ): ID {
+        policy.assert_trading_live();
         assert!(creation_fee.value() == constants::pool_creation_fee(), EInvalidFee);
 
         create_pool<BaseAsset, QuoteAsset>(

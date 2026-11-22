@@ -4,9 +4,9 @@
 /// "multicoin pools", or a single negotiated market-maker deal, which is just a
 /// class with one pool in it.
 ///
-/// INVARIANT: `FeePolicy` must stay read-mostly. Writes are admin-only and
-/// epoch-cadence by design; nothing on any *trading* path may ever take it
-/// `&mut`. Immutable reads of a shared object commute, so arbitrarily many
+/// INVARIANT: `FeePolicy` must stay read-mostly. Admin writes are rare by
+/// design — pricing at epoch cadence, and the emergency halt — and nothing on
+/// any *trading* path may ever take it `&mut`. Immutable reads of a shared object commute, so arbitrarily many
 /// trades read this object in parallel — exactly as the whole network reads
 /// `Clock` — but a write path on user flow would serialize the entire exchange.
 /// The one user-reachable write is the operator beneficiary mapping, through
@@ -34,6 +34,11 @@
 ///
 /// Rates are capped at `MAX_TAKER_FEE` / `MAX_MAKER_FEE`, which bounds what any
 /// of the above can ever charge.
+///
+/// Because every order on every pool already reads this object, it is also
+/// where the exchange-wide halt lives: `halt_trading` flips one flag and the
+/// next order, swap or permissionless pool creation anywhere aborts, with no
+/// per-pool step. See `halt_trading` for what a halt does and does not stop.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
     use sui::{dynamic_field as df, event, table::{Self, Table}};
@@ -57,6 +62,8 @@ module triex::fee_policy {
     const ENoStagedPoolFeeClass: u64 = 13;
     /// The staged class move's epoch has not arrived yet.
     const EPoolFeeClassNotYetEffective: u64 = 14;
+    /// Trading is halted exchange-wide: no new orders, swaps or pools.
+    const ETradingHalted: u64 = 15;
 
     // === Constants ===
     /// Rates are quoted in whole basis points. The scaled representation is finer
@@ -190,6 +197,9 @@ module triex::fee_policy {
         /// Same, for multicoin pools, which price differently from coin pools
         /// with the same quote.
         multicoin_default_classes: Table<TypeName, u16>,
+        /// The exchange-wide halt. A plain field rather than a dynamic field:
+        /// every order reads it, and this object is already loaded when it does.
+        trading_halted: bool,
     }
 
     /// One class's pricing. `quote` pins the unit the schedule's turnover
@@ -248,6 +258,11 @@ module triex::fee_policy {
         class_id: u16,
     }
 
+    /// The exchange-wide halt was switched on or off. Emitted only on a change.
+    public struct TradingHaltChanged has copy, drop {
+        halted: bool,
+    }
+
     /// A pool's move to `class_id` was announced. Nothing changes yet: the pool
     /// keeps trading under its current class until the move is applied, which
     /// cannot happen before `effective_epoch`. A later announcement for the same
@@ -297,6 +312,7 @@ module triex::fee_policy {
             classes: table::new(ctx),
             default_classes: table::new(ctx),
             multicoin_default_classes: table::new(ctx),
+            trading_halted: false,
         };
 
         df::add(
@@ -371,6 +387,40 @@ module triex::fee_policy {
             ctx,
         );
         self.set_multicoin_default_class<QuoteAsset>(multicoin_class_id, cap);
+    }
+
+    /// **The protocol's kill switch.** One transaction, and from the next one on
+    /// every order placement, every swap and every permissionless pool creation
+    /// on every pool aborts with `ETradingHalted` — without touching a single
+    /// pool, because they all read this object already.
+    ///
+    /// A halt stops new activity and nothing else. Cancels, modifies (which can
+    /// only reduce an order), settled-balance withdrawals, expired-order cleanup
+    /// and operator-share claims stay open, as do deposits to and withdrawals
+    /// from a `TradingAccount`, which never touch a pool at all: a halt must not
+    /// trap anyone's funds, and nothing a user can still do while halted takes
+    /// on new exposure. Admin functions are not restricted either.
+    ///
+    /// The full freeze is a separate, slower lever: `registry::disable_version`
+    /// stops *everything* on a pool, exits included, but only once that pool's
+    /// cached version set has been refreshed with `update_pool_allowed_versions`
+    /// — one call per pool. Reach for this first; it buys the time to do that.
+    ///
+    /// Idempotent, so a halt can never fail because someone already halted.
+    public fun halt_trading(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        self.set_trading_halted(true);
+    }
+
+    /// Lift the halt. Idempotent.
+    public fun resume_trading(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+        self.set_trading_halted(false);
+    }
+
+    fun set_trading_halted(self: &mut FeePolicy, halted: bool) {
+        if (self.trading_halted == halted) return;
+        self.trading_halted = halted;
+
+        event::emit(TradingHaltChanged { halted });
     }
 
     /// Create a pricing class denominated in `QuoteAsset`, effective immediately —
@@ -486,6 +536,11 @@ module triex::fee_policy {
     }
 
     // === Public-View Functions ===
+    /// Whether the exchange-wide halt is on.
+    public fun trading_halted(self: &FeePolicy): bool {
+        self.trading_halted
+    }
+
     public fun class_exists(self: &FeePolicy, class_id: u16): bool {
         self.classes.contains(class_id)
     }
@@ -576,6 +631,12 @@ module triex::fee_policy {
         let (tier, taker_fee, maker_fee) = schedule.resolve(turnover);
 
         (tier, taker_fee, maker_fee, cancel_retention_bps)
+    }
+
+    /// The gate every path that takes on new exposure passes through: order
+    /// placement (and so every swap) and permissionless pool creation.
+    public(package) fun assert_trading_live(self: &FeePolicy) {
+        assert!(!self.trading_halted, ETradingHalted);
     }
 
     /// Class a permissionless coin pool quoted in `quote` is born into.
@@ -690,6 +751,11 @@ module triex::fee_policy {
     #[test_only]
     public fun pool_fee_class_set_parts(self: &PoolFeeClassSet): (ID, u16) {
         (self.pool_id, self.class_id)
+    }
+
+    #[test_only]
+    public fun trading_halt_changed_halted(self: &TradingHaltChanged): bool {
+        self.halted
     }
 
     #[test_only]
