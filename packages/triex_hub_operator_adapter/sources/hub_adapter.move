@@ -4,7 +4,7 @@
 /// `fee_policy::OperatorPayouts` records a `collection_id -> address` payout
 /// mapping, written and
 /// re-pointed only through a witness of the single adapter type the admin
-/// pinned with `set_operator_adapter`. The witness proves nothing by itself —
+/// pinned with `pin_operator_adapter`. The witness proves nothing by itself —
 /// Triex cannot read a payload off it — so the binding between the collection
 /// and the person writing is checked here, on every write, before
 /// `HubAdapterWitness` is minted:
@@ -41,9 +41,10 @@
 /// Trust: the canonical-cap holder is the only *user* who can write, but these
 /// parties can also re-point a hub, and the guarantee holds only as far as
 /// they are trusted:
-/// - this package's `UpgradeCap` — the pin is by defining id and survives
-///   upgrades, so an upgrade could mint `HubAdapterWitness` freely. Make the
-///   package immutable once published and audited, before the admin pins it;
+/// - nobody through this package's `UpgradeCap`: an upgrade could mint
+///   `HubAdapterWitness` freely, so `fee_policy::pin_operator_adapter` takes
+///   that cap and deletes it in the same transaction as the pin. A pinned
+///   adapter is always immutable;
 /// - world AdminACL sponsors — `character::update_address` is sponsor-gated,
 ///   so a sponsor can point the owner's character at itself, borrow the
 ///   canonical cap and write. `verify_sponsor` accepts the gas sponsor, so a
@@ -78,7 +79,7 @@ module triex_hub_operator_adapter::hub_adapter {
 
     // === Structs ===
 
-    /// The witness `fee_policy::set_operator_adapter` pins. Constructible only
+    /// The witness `fee_policy::pin_operator_adapter` pins. Constructible only
     /// in this module, and only after `assert_storage_unit_owner`.
     public struct HubAdapterWitness has drop {}
 

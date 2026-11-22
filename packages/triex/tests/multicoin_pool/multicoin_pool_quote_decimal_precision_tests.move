@@ -36,7 +36,7 @@ module triex::multicoin_pool_quote_decimal_precision_tests {
     };
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{FeePolicy, OperatorPayouts},
         math,
         multicoin_pool::{Self, MultiCoinPool},
         pool_test_utils,
@@ -122,6 +122,7 @@ module triex::multicoin_pool_quote_decimal_precision_tests {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
         let mut policy = test.take_shared<FeePolicy>();
+        let payouts = test.take_shared<OperatorPayouts>();
         let collection = test.take_shared<Collection>();
         registry.add_approved_quote_unchecked<QuoteAsset>(&admin_cap);
         // Register a flat multicoin class for the bespoke quote at the multicoin
@@ -135,7 +136,7 @@ module triex::multicoin_pool_quote_decimal_precision_tests {
             &admin_cap,
             test.ctx(),
         );
-        policy.set_multicoin_default_class<QuoteAsset>(QUOTE_FEE_CLASS, &admin_cap);
+        policy.set_multicoin_default_class<QuoteAsset>(&payouts, QUOTE_FEE_CLASS, &admin_cap);
         let pool_id = multicoin_pool::create_pool_admin<QuoteAsset>(
             &mut registry,
             &policy,
@@ -146,6 +147,7 @@ module triex::multicoin_pool_quote_decimal_precision_tests {
         );
         return_shared(registry);
         return_shared(policy);
+        return_shared(payouts);
         return_shared(collection);
         destroy(admin_cap);
         pool_id

@@ -20,7 +20,7 @@ module triex::integration_hub_revenue_share_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::{FeePolicy, OperatorPayouts},
+        fee_policy::{Self, FeePolicy, OperatorPayouts},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         multicoin_vault::OperatorShareClaimed,
@@ -49,10 +49,6 @@ module triex::integration_hub_revenue_share_tests {
     /// carries, mirrored here because the source constant is private.
     const GENESIS_SHARE_BPS: u64 = 2000;
 
-    /// Stands in for the witness the audited adapter package mints after
-    /// checking the caller's `OwnerCap<StorageUnit>` against the collection.
-    public struct HubAdapterWitness has drop {}
-
     // === Helpers ===
 
     fun funds(): u64 {
@@ -60,18 +56,19 @@ module triex::integration_hub_revenue_share_tests {
     }
 
     /// Register `beneficiary` as `collection_id`'s payout address the way
-    /// production does: the admin registers the adapter type once, and the
-    /// adapter's witness authorizes the write.
+    /// production does: the shared fixture already pinned the stand-in
+    /// adapter (multicoin pricing requires one), the admin re-opens it, and
+    /// the adapter's witness authorizes the write.
     fun pin_beneficiary(collection_id: ID, beneficiary: address, test: &mut Scenario) {
         test.next_tx(OWNER);
         let mut payouts = test.take_shared<OperatorPayouts>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        payouts.set_operator_adapter<HubAdapterWitness>(&cap);
+        payouts.set_operator_adapter<fee_policy::TestAdapter>(&cap);
         payouts.register_operator_beneficiary_with_witness(
             collection_id,
             beneficiary,
-            HubAdapterWitness {},
+            fee_policy::test_adapter_witness(),
         );
 
         unit_test::destroy(cap);

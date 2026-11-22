@@ -96,9 +96,10 @@ module triex::fee_policy_event_tests {
         let mut test = begin(OWNER);
         let mut policy = fee_policy::create_for_testing(test.ctx());
         let cap = registry::get_admin_cap_for_testing(test.ctx());
+        let payouts = fee_policy::create_pinned_payouts_for_testing(&cap, test.ctx());
 
         // Creates classes 0 and 1 and points the coin and multicoin defaults at them.
-        policy.bootstrap_quote<USDC>(0, 1, SIX_DP, &cap, test.ctx());
+        policy.bootstrap_quote<USDC>(&payouts, 0, 1, SIX_DP, &cap, test.ctx());
 
         let sets = event::events_by_type<DefaultFeeClassSet>();
         assert_eq!(sets.length(), 2);
@@ -110,6 +111,8 @@ module triex::fee_policy_event_tests {
         assert_eq!(quote, type_name::with_defining_ids<USDC>());
         assert_eq!(class_id, 1);
         assert_eq!(multicoin, true);
+
+        destroy(payouts);
 
         destroy(cap);
         destroy(policy);
@@ -262,7 +265,7 @@ module triex::fee_policy_event_tests {
         let cap = registry::get_admin_cap_for_testing(test.ctx());
         let collection = object::id_from_address(@0xC0FFEE);
 
-        payouts.set_operator_adapter<Adapter>(&cap);
+        payouts.pin_operator_adapter_for_testing<Adapter>(&cap, test.ctx());
         payouts.register_operator_beneficiary_with_witness(collection, @0xB0B, Adapter {});
         // A no-op second registration announces nothing.
         payouts.register_operator_beneficiary_with_witness(collection, @0xBAD, Adapter {});
