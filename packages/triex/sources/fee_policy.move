@@ -805,10 +805,10 @@ module triex::fee_policy {
     /// promotion needs no write.
     ///
     /// The `effective_epoch` gate is written here deliberately rather than
-    /// inherited by analogy — `cancel_retention_bps` on the fee classes is *not*
-    /// staged, so "`FeePolicy` stages every rate change" is not a uniform
-    /// precedent. A hub rate must be pre-announced: it is what an operator
-    /// underwrites a hosting decision with.
+    /// inherited by analogy, because a hub rate must be pre-announced: it is
+    /// what an operator underwrites a hosting decision with. (The fee classes
+    /// now stage their cancel retention with their ladder for the same reason;
+    /// it used to apply at once.)
     public struct OperatorShareClass has copy, drop, store {
         current_bps: u64,
         next_bps: u64,
