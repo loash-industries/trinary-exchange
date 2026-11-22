@@ -175,6 +175,14 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
 
 ### Scripts
 
+- [`build_scripts/check-fee-policy-writers.sh`](build_scripts/check-fee-policy-writers.sh)
+  — checks that only the admin can ever take the shared `FeePolicy` `&mut`:
+  every public function that does must take `&TriexAdminCap`, and every
+  package or private one must be reachable only from such functions. Every
+  order reads `FeePolicy`, so a user-reachable write would let any sender
+  serialize all trading (TRIEX-149). Run it after touching `fee_policy` or the
+  hub adapter; it reads the sources, so it needs no build.
+
 - [`build_scripts/verify-bytecode-meter.sh`](build_scripts/verify-bytecode-meter.sh)
   — runs `sui client verify-bytecode-meter` over every compiled module to
   confirm the package stays within Sui's bytecode metering limits. This is a

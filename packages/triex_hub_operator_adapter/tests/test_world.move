@@ -9,7 +9,7 @@
 module triex_hub_operator_adapter::test_world {
     use std::{string::utf8, unit_test};
     use sui::{clock, test_scenario::{Self as ts, Scenario}};
-    use triex::{fee_policy::{Self, FeePolicy}, registry::{Self, Registry}};
+    use triex::{fee_policy::{Self, OperatorPayouts}, registry::{Self, Registry}};
     use triex_hub_operator_adapter::hub_adapter::{Self, HubAdapterWitness};
     use warehouse_receipts::{receipt::{Self, VaultAuth}, vault::VaultConfig};
     use world::{
@@ -65,8 +65,9 @@ module triex_hub_operator_adapter::test_world {
 
     // === Bootstrap ===
 
-    /// World, `FeePolicy` (multicoin class for `HUB_USD`), `Registry` with
-    /// `TREASURY` as treasury, and a shared `Clock`.
+    /// World, `FeePolicy` (multicoin class for `HUB_USD`) and an empty
+    /// `OperatorPayouts`, `Registry` with `TREASURY` as treasury, and a shared
+    /// `Clock`.
     public fun setup(sc: &mut Scenario) {
         world::test_helpers::setup_world(sc);
         world::test_helpers::configure_assembly_energy(sc);
@@ -78,6 +79,7 @@ module triex_hub_operator_adapter::test_world {
             let cap = registry::get_admin_cap_for_testing(sc.ctx());
             policy.bootstrap_quote<HUB_USD>(COIN_CLASS, MULTICOIN_CLASS, SIX_DP, &cap, sc.ctx());
             policy.share_for_testing();
+            fee_policy::share_payouts_for_testing(fee_policy::create_payouts_for_testing(sc.ctx()));
             unit_test::destroy(cap);
             clock::create_for_testing(sc.ctx()).share_for_testing();
         };
@@ -256,12 +258,12 @@ module triex_hub_operator_adapter::test_world {
         let mut character = ts::take_shared_by_id<Character>(sc, site.character);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
         let mut storage_unit = ts::take_shared_by_id<StorageUnit>(sc, site.storage_unit);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
 
         let pending = receipt::new_vault(&storage_unit, &cap, sc.ctx());
         storage_unit.authorize_extension<VaultAuth>(&cap);
         hub_adapter::register_operator_for_new_vault(
-            &mut policy,
+            &mut payouts,
             &pending,
             &storage_unit,
             &cap,
@@ -271,7 +273,7 @@ module triex_hub_operator_adapter::test_world {
         pending.share_vault();
 
         character.return_owner_cap(cap, receipt);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
         ts::return_shared(storage_unit);
         ts::return_shared(character);
     }
@@ -289,32 +291,33 @@ module triex_hub_operator_adapter::test_world {
 
     // === Adapter calls, as the cap holder's PTB makes them ===
 
-    /// What the admin does once per `FeePolicy`, after publishing the adapter.
+    /// What the admin does once per `OperatorPayouts`, after publishing the
+    /// adapter.
     public fun pin_adapter(sc: &mut Scenario) {
         ts::next_tx(sc, ADMIN);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let cap = registry::get_admin_cap_for_testing(sc.ctx());
-        policy.set_operator_adapter<HubAdapterWitness>(&cap);
+        payouts.set_operator_adapter<HubAdapterWitness>(&cap);
         unit_test::destroy(cap);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
     }
 
     public fun clear_adapter(sc: &mut Scenario) {
         ts::next_tx(sc, ADMIN);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let cap = registry::get_admin_cap_for_testing(sc.ctx());
-        policy.clear_operator_adapter(&cap);
+        payouts.clear_operator_adapter(&cap);
         unit_test::destroy(cap);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
     }
 
     public fun destroy_beneficiary(sc: &mut Scenario, collection_id: ID) {
         ts::next_tx(sc, ADMIN);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let cap = registry::get_admin_cap_for_testing(sc.ctx());
-        policy.destroy_operator_beneficiary(collection_id, &cap);
+        payouts.destroy_operator_beneficiary(collection_id, &cap);
         unit_test::destroy(cap);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
     }
 
     /// `caller` borrows the storage unit cap held by character `cap_holder`
@@ -365,19 +368,19 @@ module triex_hub_operator_adapter::test_world {
         rotate: bool,
     ) {
         ts::next_tx(sc, caller);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let mut character = ts::take_shared_by_id<Character>(sc, cap_holder);
         let config = ts::take_shared_by_id<VaultConfig>(sc, config_of.vault_config());
         let storage_unit = ts::take_shared_by_id<StorageUnit>(sc, storage_unit_id);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, cap_holder);
 
-        call_adapter(&mut policy, &config, &storage_unit, &cap, beneficiary, rotate, sc.ctx());
+        call_adapter(&mut payouts, &config, &storage_unit, &cap, beneficiary, rotate, sc.ctx());
 
         character.return_owner_cap(cap, receipt);
         ts::return_shared(storage_unit);
         ts::return_shared(config);
         ts::return_shared(character);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
     }
 
     /// A world sponsor mints a second `OwnerCap<StorageUnit>` for `site`'s
@@ -404,21 +407,21 @@ module triex_hub_operator_adapter::test_world {
         };
 
         ts::next_tx(sc, holder);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let config = ts::take_shared_by_id<VaultConfig>(sc, site.vault_config());
         let storage_unit = ts::take_shared_by_id<StorageUnit>(sc, site.storage_unit);
         let cap = ts::take_from_sender<OwnerCap<StorageUnit>>(sc);
 
-        call_adapter(&mut policy, &config, &storage_unit, &cap, beneficiary, rotate, sc.ctx());
+        call_adapter(&mut payouts, &config, &storage_unit, &cap, beneficiary, rotate, sc.ctx());
 
         ts::return_to_sender(sc, cap);
         ts::return_shared(storage_unit);
         ts::return_shared(config);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
     }
 
     fun call_adapter(
-        policy: &mut FeePolicy,
+        payouts: &mut OperatorPayouts,
         config: &VaultConfig,
         storage_unit: &StorageUnit,
         cap: &OwnerCap<StorageUnit>,
@@ -427,9 +430,9 @@ module triex_hub_operator_adapter::test_world {
         ctx: &mut TxContext,
     ) {
         if (rotate) {
-            hub_adapter::update_operator(policy, config, storage_unit, cap, beneficiary, ctx);
+            hub_adapter::update_operator(payouts, config, storage_unit, cap, beneficiary, ctx);
         } else {
-            hub_adapter::register_operator(policy, config, storage_unit, cap, beneficiary, ctx);
+            hub_adapter::register_operator(payouts, config, storage_unit, cap, beneficiary, ctx);
         };
     }
 
@@ -476,14 +479,14 @@ module triex_hub_operator_adapter::test_world {
         buyer_character: ID,
     ) {
         ts::next_tx(sc, site.owner);
-        let mut policy = ts::take_shared<FeePolicy>(sc);
+        let mut payouts = ts::take_shared<OperatorPayouts>(sc);
         let mut character = ts::take_shared_by_id<Character>(sc, site.character);
         let config = ts::take_shared_by_id<VaultConfig>(sc, site.vault_config());
         let storage_unit = ts::take_shared_by_id<StorageUnit>(sc, site.storage_unit);
         let (cap, receipt) = borrow_storage_unit_cap(sc, &mut character, site.character);
 
         hub_adapter::update_operator(
-            &mut policy,
+            &mut payouts,
             &config,
             &storage_unit,
             &cap,
@@ -500,7 +503,7 @@ module triex_hub_operator_adapter::test_world {
         ts::return_shared(storage_unit);
         ts::return_shared(config);
         ts::return_shared(character);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
 
         site.owner = buyer;
         site.character = buyer_character;
@@ -508,9 +511,9 @@ module triex_hub_operator_adapter::test_world {
 
     public fun beneficiary(sc: &mut Scenario, collection_id: ID): Option<address> {
         ts::next_tx(sc, ADMIN);
-        let policy = ts::take_shared<FeePolicy>(sc);
-        let beneficiary = policy.operator_beneficiary(collection_id);
-        ts::return_shared(policy);
+        let payouts = ts::take_shared<OperatorPayouts>(sc);
+        let beneficiary = payouts.operator_beneficiary(collection_id);
+        ts::return_shared(payouts);
         beneficiary
     }
 

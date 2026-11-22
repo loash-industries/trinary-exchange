@@ -263,17 +263,18 @@ module triex::fee_policy_coverage_tests {
     /// Clearing a registered adapter removes it; clearing again is a no-op.
     fun clearing_a_registered_adapter_revokes_it() {
         let mut test = begin(OWNER);
-        let (mut policy, cap) = new_policy(&mut test);
+        let mut payouts = fee_policy::create_payouts_for_testing(test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.set_operator_adapter<Adapter>(&cap);
-        assert!(policy.operator_adapter().is_some());
-        policy.clear_operator_adapter(&cap);
-        assert_eq!(policy.operator_adapter(), option::none());
-        policy.clear_operator_adapter(&cap);
-        assert_eq!(policy.operator_adapter(), option::none());
+        payouts.set_operator_adapter<Adapter>(&cap);
+        assert!(payouts.operator_adapter().is_some());
+        payouts.clear_operator_adapter(&cap);
+        assert_eq!(payouts.operator_adapter(), option::none());
+        payouts.clear_operator_adapter(&cap);
+        assert_eq!(payouts.operator_adapter(), option::none());
 
         destroy(cap);
-        destroy(policy);
+        destroy(payouts);
         end(test);
     }
 }

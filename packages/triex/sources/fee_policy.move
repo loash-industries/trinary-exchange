@@ -4,15 +4,23 @@
 /// "multicoin pools", or a single negotiated market-maker deal, which is just a
 /// class with one pool in it.
 ///
-/// INVARIANT: `FeePolicy` must stay read-mostly. Admin writes are rare by
-/// design — pricing at epoch cadence, and the emergency halt — and nothing on
-/// any *trading* path may ever take it `&mut`. Immutable reads of a shared object commute, so arbitrarily many
-/// trades read this object in parallel — exactly as the whole network reads
-/// `Clock` — but a write path on user flow would serialize the entire exchange.
-/// The one user-reachable write is the operator beneficiary mapping, through
-/// the admin-registered adapter witness — registration and rotation, rare by
-/// nature (once per storage unit, again only when its owner re-points it), and
-/// never on the flow of an order. Pool creation reads immutably.
+/// INVARIANT: only the admin ever writes `FeePolicy`. Admin writes are rare by
+/// design — pricing at epoch cadence, and the emergency halt — and no function
+/// a user can call takes it `&mut`. Immutable reads of a shared object commute,
+/// so arbitrarily many trades read this object in parallel, but a user-reachable
+/// write would let any sender serialize every trade on the exchange behind
+/// their own transaction. That is why the one piece of fee configuration users
+/// do write — where a hub's operator share is paid — lives in a separate
+/// shared object, `OperatorPayouts`, which no order reads. Pool creation reads
+/// immutably.
+///
+/// What Move cannot prevent: Sui lets any transaction declare a shared input
+/// mutable even if it only passes it to functions taking `&FeePolicy`, and
+/// schedules that transaction as a write. A sender willing to keep paying for
+/// it can still crowd this object, and with it all trading, at the cost of gas
+/// on every such transaction. Removing that exposure would mean taking the
+/// shared read off the trading path altogether (a per-pool copy of the
+/// schedule, or frozen epoch snapshots); see TRIEX-149.
 ///
 /// Nothing here can re-price a live pool without notice. There are exactly two
 /// ways a pool's pricing changes, and both are announced on-chain at least one
@@ -280,6 +288,18 @@ module triex::fee_policy {
     /// hub-share side ships configured instead: see `new_policy`.
     fun init(ctx: &mut TxContext) {
         transfer::share_object(new_policy(ctx));
+        transfer::share_object(new_payouts(ctx));
+    }
+
+    /// The payout object ships empty and closed: no adapter, so no beneficiary
+    /// can be registered until the admin pins one.
+    fun new_payouts(ctx: &mut TxContext): OperatorPayouts {
+        OperatorPayouts {
+            id: object::new(ctx),
+            beneficiaries: table::new(ctx),
+            pinned_adapter: option::none(),
+            authorized_adapter: option::none(),
+        }
     }
 
     /// The one constructor. Seeds the genesis hub-share state
@@ -744,6 +764,16 @@ module triex::fee_policy {
     }
 
     #[test_only]
+    public fun create_payouts_for_testing(ctx: &mut TxContext): OperatorPayouts {
+        new_payouts(ctx)
+    }
+
+    #[test_only]
+    public fun share_payouts_for_testing(self: OperatorPayouts) {
+        transfer::share_object(self)
+    }
+
+    #[test_only]
     public fun default_fee_class_set_parts(self: &DefaultFeeClassSet): (TypeName, u16, bool) {
         (self.quote, self.class_id, self.multicoin)
     }
@@ -818,8 +848,8 @@ module triex::fee_policy {
     //
     // The beneficiary write path has a second constraint: the pinned adapter is
     // published immutable and keeps calling the version of this module it was
-    // linked against, for the life of the policy. Any later change to how
-    // `OperatorBeneficiaryKey` is read or written must stay compatible with that
+    // linked against, for the life of the payouts object. Any later change to how
+    // `OperatorPayouts` is read or written must stay compatible with that
     // frozen caller — an upgrade here does not reach hub registrations.
     //
     // The rates are admin-written at epoch cadence, which is what the
@@ -850,21 +880,29 @@ module triex::fee_policy {
     /// to class 0 and never removed, only re-pointed.
     public struct DefaultOperatorShareKey has copy, drop, store {}
 
-    /// collection_id -> the address that collection's share is paid to.
-    /// Registered and rotated only through the registered adapter's witness;
-    /// destroyed only via the admin cap. Absent means a claim aborts rather
-    /// than guessing.
-    public struct OperatorBeneficiaryKey has copy, drop, store { collection_id: ID }
-
-    /// The one witness type allowed to register a beneficiary. Absent until the
-    /// admin registers an adapter, which is the shipping state: no registration
-    /// path exists at all until the adapter package has been audited and named.
-    public struct AuthorizedAdapterKey has copy, drop, store {}
-
-    /// The first adapter type ever registered, kept forever. Clearing the adapter
-    /// closes registration but never unpins it, so the cap cannot swap in a
-    /// witness of its own, destroy a mapping and re-register it elsewhere.
-    public struct PinnedAdapterKey has copy, drop, store {}
+    /// Where each collection's hub-operator share is paid, and which adapter is
+    /// trusted to say so — the one piece of fee configuration a user
+    /// transaction writes, kept out of `FeePolicy` so that no user can ever take
+    /// the object every order reads `&mut` (TRIEX-149). Only claims and the
+    /// admin fee sweep read it. Shared once, at publish, beside `FeePolicy`.
+    public struct OperatorPayouts has key {
+        id: UID,
+        /// collection_id -> the address that collection's share is paid to.
+        /// Registered and rotated only through the registered adapter's
+        /// witness; destroyed only via the admin cap. Absent means a claim
+        /// aborts rather than guessing.
+        beneficiaries: Table<ID, address>,
+        /// The first adapter type ever registered, kept forever. Clearing the
+        /// adapter closes registration but never unpins it, so the cap cannot
+        /// swap in a witness of its own, destroy a mapping and re-register it
+        /// elsewhere.
+        pinned_adapter: Option<TypeName>,
+        /// The one witness type allowed to write a beneficiary. `none` until
+        /// the admin registers an adapter, which is the shipping state: no
+        /// registration path exists at all until the adapter package has been
+        /// audited and named.
+        authorized_adapter: Option<TypeName>,
+    }
 
     /// A hub-share class's pricing, in `ClassSchedule`'s shape: `next` takes over
     /// at `effective_epoch`, and reads compare against the running epoch so
@@ -1140,7 +1178,7 @@ module triex::fee_policy {
 
     /// Register the one witness type allowed to register beneficiaries.
     ///
-    /// The first type registered is pinned for the life of the policy: later
+    /// The first type registered is pinned for the life of `OperatorPayouts`: later
     /// calls may only re-open registration for that same type after a clear.
     /// Replacing it would let the cap redirect an operator share — authorize a
     /// witness it mints itself, destroy the mapping, re-register its own
@@ -1155,18 +1193,14 @@ module triex::fee_policy {
     /// Pinning it by `TypeName` rather than by importing the adapter keeps Triex
     /// free of any dependency on the game world: it compares a name, it does not
     /// link a module.
-    public fun set_operator_adapter<W: drop>(self: &mut FeePolicy, _cap: &TriexAdminCap) {
+    public fun set_operator_adapter<W: drop>(self: &mut OperatorPayouts, _cap: &TriexAdminCap) {
         let adapter = type_name::with_defining_ids<W>();
-        let pin_key = PinnedAdapterKey {};
-        if (df::exists_with_type<PinnedAdapterKey, TypeName>(&self.id, pin_key)) {
-            assert!(
-                *df::borrow<PinnedAdapterKey, TypeName>(&self.id, pin_key) == adapter,
-                EAdapterPinned,
-            );
+        if (self.pinned_adapter.is_some()) {
+            assert!(*self.pinned_adapter.borrow() == adapter, EAdapterPinned);
         } else {
-            df::add(&mut self.id, pin_key, adapter);
+            self.pinned_adapter = option::some(adapter);
         };
-        upsert(&mut self.id, AuthorizedAdapterKey {}, adapter);
+        self.authorized_adapter = option::some(adapter);
 
         event::emit(OperatorAdapterAuthorized { adapter: option::some(adapter) });
     }
@@ -1183,33 +1217,22 @@ module triex::fee_policy {
 
     /// Withdraw the adapter, closing the registration path entirely until the
     /// pinned type is registered again. Mappings already written are untouched.
-    public fun clear_operator_adapter(self: &mut FeePolicy, _cap: &TriexAdminCap) {
-        let key = AuthorizedAdapterKey {};
-        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
-            df::remove<AuthorizedAdapterKey, TypeName>(&mut self.id, key);
+    public fun clear_operator_adapter(self: &mut OperatorPayouts, _cap: &TriexAdminCap) {
+        if (self.authorized_adapter.is_some()) {
+            self.authorized_adapter = option::none();
             event::emit(OperatorAdapterAuthorized { adapter: option::none() });
         };
     }
 
     /// The adapter type pinned by the first registration, if any. Registration
     /// can only ever be enabled for this type.
-    public fun pinned_operator_adapter(self: &FeePolicy): Option<TypeName> {
-        let key = PinnedAdapterKey {};
-        if (df::exists_with_type<PinnedAdapterKey, TypeName>(&self.id, key)) {
-            option::some(*df::borrow<PinnedAdapterKey, TypeName>(&self.id, key))
-        } else {
-            option::none()
-        }
+    public fun pinned_operator_adapter(self: &OperatorPayouts): Option<TypeName> {
+        self.pinned_adapter
     }
 
     /// The registered adapter type, if registration is enabled.
-    public fun operator_adapter(self: &FeePolicy): Option<TypeName> {
-        let key = AuthorizedAdapterKey {};
-        if (df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, key)) {
-            option::some(*df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, key))
-        } else {
-            option::none()
-        }
+    public fun operator_adapter(self: &OperatorPayouts): Option<TypeName> {
+        self.authorized_adapter
     }
 
     /// Record where a collection's operator share is paid, on presentation of
@@ -1232,7 +1255,7 @@ module triex::fee_policy {
     /// the witness. That logic is what the admin audits before registering it,
     /// which is why registration is admin-only, single-valued, and revocable.
     public fun register_operator_beneficiary_with_witness<W: drop>(
-        self: &mut FeePolicy,
+        self: &mut OperatorPayouts,
         collection_id: ID,
         beneficiary: address,
         _witness: W,
@@ -1259,19 +1282,15 @@ module triex::fee_policy {
     /// is configured then, as it always has. Clearing the adapter closes this
     /// path too.
     public fun update_operator_beneficiary_with_witness<W: drop>(
-        self: &mut FeePolicy,
+        self: &mut OperatorPayouts,
         collection_id: ID,
         beneficiary: address,
         _witness: W,
     ): address {
         self.assert_authorized_adapter<W>();
 
-        let key = OperatorBeneficiaryKey { collection_id };
-        assert!(
-            df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key),
-            EOperatorBeneficiaryNotRegistered,
-        );
-        let slot = df::borrow_mut<OperatorBeneficiaryKey, address>(&mut self.id, key);
+        assert!(self.beneficiaries.contains(collection_id), EOperatorBeneficiaryNotRegistered);
+        let slot = &mut self.beneficiaries[collection_id];
         let previous = *slot;
         if (previous == beneficiary) return previous;
         *slot = beneficiary;
@@ -1282,15 +1301,10 @@ module triex::fee_policy {
 
     /// The witness gate both beneficiary writes share: an adapter must be
     /// registered, and `W` must be exactly its type.
-    fun assert_authorized_adapter<W: drop>(self: &FeePolicy) {
-        let adapter_key = AuthorizedAdapterKey {};
+    fun assert_authorized_adapter<W: drop>(self: &OperatorPayouts) {
+        assert!(self.authorized_adapter.is_some(), ENoAuthorizedAdapter);
         assert!(
-            df::exists_with_type<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key),
-            ENoAuthorizedAdapter,
-        );
-        assert!(
-            df::borrow<AuthorizedAdapterKey, TypeName>(&self.id, adapter_key) ==
-            type_name::with_defining_ids<W>(),
+            *self.authorized_adapter.borrow() == type_name::with_defining_ids<W>(),
             EUnauthorizedAdapter,
         );
     }
@@ -1301,16 +1315,13 @@ module triex::fee_policy {
     /// Private, so no other module in the package can write a beneficiary
     /// without presenting the adapter witness.
     fun register_operator_beneficiary(
-        self: &mut FeePolicy,
+        self: &mut OperatorPayouts,
         collection_id: ID,
         beneficiary: address,
     ) {
-        let key = OperatorBeneficiaryKey { collection_id };
-        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
-            return
-        };
+        if (self.beneficiaries.contains(collection_id)) return;
 
-        df::add(&mut self.id, key, beneficiary);
+        self.beneficiaries.add(collection_id, beneficiary);
         event::emit(OperatorBeneficiaryRegistered { collection_id, beneficiary });
     }
 
@@ -1320,21 +1331,19 @@ module triex::fee_policy {
     /// share stays encumbered rather than paying an address the admin has
     /// disowned.
     public fun destroy_operator_beneficiary(
-        self: &mut FeePolicy,
+        self: &mut OperatorPayouts,
         collection_id: ID,
         _cap: &TriexAdminCap,
     ) {
-        let key = OperatorBeneficiaryKey { collection_id };
-        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
-            df::remove<OperatorBeneficiaryKey, address>(&mut self.id, key);
+        if (self.beneficiaries.contains(collection_id)) {
+            self.beneficiaries.remove(collection_id);
             event::emit(OperatorBeneficiaryDestroyed { collection_id });
         };
     }
 
-    public fun operator_beneficiary(self: &FeePolicy, collection_id: ID): Option<address> {
-        let key = OperatorBeneficiaryKey { collection_id };
-        if (df::exists_with_type<OperatorBeneficiaryKey, address>(&self.id, key)) {
-            option::some(*df::borrow<OperatorBeneficiaryKey, address>(&self.id, key))
+    public fun operator_beneficiary(self: &OperatorPayouts, collection_id: ID): Option<address> {
+        if (self.beneficiaries.contains(collection_id)) {
+            option::some(self.beneficiaries[collection_id])
         } else {
             option::none()
         }
@@ -1361,7 +1370,7 @@ module triex::fee_policy {
     /// Register a beneficiary without the adapter witness, for tests exercising
     /// the mapping itself rather than the registration gate.
     public fun register_operator_beneficiary_for_testing(
-        self: &mut FeePolicy,
+        self: &mut OperatorPayouts,
         collection_id: ID,
         beneficiary: address,
     ) {

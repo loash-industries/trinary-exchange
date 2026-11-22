@@ -20,7 +20,7 @@ module triex::multicoin_pool {
         big_vector::BigVector,
         book::{Self, Book},
         constants,
-        fee_policy::{Self, FeePolicy},
+        fee_policy::{Self, FeePolicy, OperatorPayouts},
         fee_schedule::FeeSchedule,
         multicoin_vault::{Self, MultiCoinVault},
         order::Order,
@@ -1069,7 +1069,7 @@ module triex::multicoin_pool {
     /// `withdrawable_pool_fees()` is exact, not a ceiling-rate holdback.
     public fun withdraw_pool_fees<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        policy: &FeePolicy,
+        payouts: &OperatorPayouts,
         _cap: &TriexAdminCap,
         amount: u64,
         clock: &Clock,
@@ -1080,7 +1080,7 @@ module triex::multicoin_pool {
         // The sweep must not be blockable by a misconfigured hub, so an absent
         // beneficiary skips the leg: the share stays encumbered, and the
         // treasury still cannot touch it.
-        pool_inner.pay_operator_share(policy, false, now);
+        pool_inner.pay_operator_share(payouts, false, now);
 
         let pool_id = pool_inner.pool_id;
         let fee_coin = pool_inner.vault.withdraw_quote_fees(amount, ctx);
@@ -1103,14 +1103,14 @@ module triex::multicoin_pool {
     /// cost of a claim. `OperatorShareClaimed` records the payout.
     fun pay_operator_share<QuoteAsset>(
         pool_inner: &mut MultiCoinPoolInner<QuoteAsset>,
-        policy: &FeePolicy,
+        payouts: &OperatorPayouts,
         must_have_beneficiary: bool,
         timestamp: u64,
     ): u64 {
         let owed = pool_inner.vault.operator_owed();
         if (owed == 0) return 0;
 
-        let beneficiary = policy.operator_beneficiary(pool_inner.collection_id);
+        let beneficiary = payouts.operator_beneficiary(pool_inner.collection_id);
         if (beneficiary.is_none()) {
             assert!(!must_have_beneficiary, ENoOperatorBeneficiary);
             return 0
@@ -1137,7 +1137,7 @@ module triex::multicoin_pool {
     /// leg pays.
     ///
     /// No capability required. Both destinations come from configuration —
-    /// `FeePolicy` records the beneficiary the adapter witness registered, and
+    /// `OperatorPayouts` records the beneficiary the adapter witness registered, and
     /// `Registry.treasury_address()` the treasury — not from the caller, so
     /// there is nothing to redirect by calling this. That lets Triex run a
     /// payout cron, lets an operator self-serve, and lets either batch many
@@ -1146,7 +1146,7 @@ module triex::multicoin_pool {
     /// Returns `(hub_amount, treasury_amount)`.
     public fun claim_operator_share<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
-        policy: &FeePolicy,
+        payouts: &OperatorPayouts,
         triex_registry: &Registry,
         clock: &Clock,
         // Kept for upgrade compatibility: nothing is minted any more.
@@ -1159,7 +1159,7 @@ module triex::multicoin_pool {
         // the share or bank it for the treasury: `operator_owed` stays
         // encumbered until claimed, so a registration restoring the mapping
         // still pays.
-        let hub_amount = pool_inner.pay_operator_share(policy, true, now);
+        let hub_amount = pool_inner.pay_operator_share(payouts, true, now);
 
         // The remainder is exact — no holdback, no unsettled basis — so the
         // treasury leg empties the earned revenue completely. Zero is normal for

@@ -5,7 +5,8 @@ owner of a storage unit choose and change the address that receives the hub
 operator share of fees on every multicoin pool trading that storage unit's
 warehouse-receipt collection.
 
-Triex stores one payout address per `collection_id`. Only this package can write
+Triex stores one payout address per `collection_id`, in the shared
+`fee_policy::OperatorPayouts` object. Only this package can write
 it, and it writes only for the holder of the storage unit's own
 `OwnerCap<StorageUnit>` (the cap `StorageUnit::owner_cap_id` records), against
 the warehouse_receipts `VaultConfig` for that collection.
@@ -14,9 +15,9 @@ the warehouse_receipts `VaultConfig` for that collection.
 
 | Function | When |
 |---|---|
-| `register_operator_for_new_vault(policy, &PendingVault, &StorageUnit, &OwnerCap, beneficiary)` | First-time storage unit setup, inside the same PTB as `receipt::new_vault` … `receipt::share_vault` |
-| `register_operator(policy, &VaultConfig, &StorageUnit, &OwnerCap, beneficiary)` | A vault initialized earlier, or re-registering after an admin destroy |
-| `update_operator(policy, &VaultConfig, &StorageUnit, &OwnerCap, beneficiary)` | Re-point an existing payout address (new owner, new partner, OU treasury) |
+| `register_operator_for_new_vault(payouts, &PendingVault, &StorageUnit, &OwnerCap, beneficiary)` | First-time storage unit setup, inside the same PTB as `receipt::new_vault` … `receipt::share_vault` |
+| `register_operator(payouts, &VaultConfig, &StorageUnit, &OwnerCap, beneficiary)` | A vault initialized earlier, or re-registering after an admin destroy |
+| `update_operator(payouts, &VaultConfig, &StorageUnit, &OwnerCap, beneficiary)` | Re-point an existing payout address (new owner, new partner, OU treasury) |
 
 `beneficiary` is any address: the owner, a partner, or an armature
 `TreasuryVault` (its permissionless `treasury_vault::claim_coin` sweeps coins
@@ -33,14 +34,14 @@ treasury, per pool.
 pending         = warehouse_receipts::receipt::new_vault(storageUnit, cap)
                   world::storage_unit::authorize_extension<VaultAuth>(storageUnit, cap)
                   world::storage_unit::freeze_extension_config(storageUnit, cap)
-                  hub_adapter::register_operator_for_new_vault(feePolicy, pending, storageUnit, cap, sender)
+                  hub_adapter::register_operator_for_new_vault(operatorPayouts, pending, storageUnit, cap, sender)
                   warehouse_receipts::receipt::share_vault(pending)
                   world::character::return_owner_cap<StorageUnit>(character, cap, receipt)
 ```
 
 For a storage unit whose vault already exists, replace `new_vault` /
 `register_operator_for_new_vault` / `share_vault` with
-`register_operator(feePolicy, vaultConfig, storageUnit, cap, sender)`, and skip it
+`register_operator(operatorPayouts, vaultConfig, storageUnit, cap, sender)`, and skip it
 when `fee_policy::operator_beneficiary(collection_id)` is already set (it aborts
 with `EAlreadyRegistered`).
 
@@ -93,7 +94,7 @@ From `triex::fee_policy`:
 
 ## Deploy
 
-Per `FeePolicy` (the pin is permanent on it):
+Per `OperatorPayouts` (the pin is permanent on it):
 
 1. Check that `triex`, `warehouse_receipts`, `world` and `multicoin` resolve to the
    on-chain packages the deployment uses. `warehouse_receipts` must be v2 or
@@ -106,9 +107,9 @@ Per `FeePolicy` (the pin is permanent on it):
    upgrades, so a live UpgradeCap could add a function that mints
    `HubAdapterWitness` and redirects every collection's revenue.
 4. Check `fee_policy::pinned_operator_adapter` is `none`, then the admin calls
-   `fee_policy::set_operator_adapter<<ADAPTER>::hub_adapter::HubAdapterWitness>(policy, adminCap)`.
+   `fee_policy::set_operator_adapter<<ADAPTER>::hub_adapter::HubAdapterWitness>(operatorPayouts, adminCap)`.
 
-When a cycle fresh-publishes triex (new `FeePolicy`), republish this package
+When a cycle fresh-publishes triex (new `OperatorPayouts`), republish this package
 against it and repeat. Within a cycle triex is upgraded in place, and this
 package stays as published. The pin only accepts the world and
 warehouse_receipts types this package was linked against, so fresh-publishing
@@ -131,9 +132,11 @@ Once world unanchors a storage unit or deletes its cap, its collections' payout
 addresses are frozen at their last value; an admin destroy after that cannot
 be undone by re-registration.
 
-Every adapter write takes `&mut FeePolicy`, which every trade reads. Rotation
-and vault creation are not rate-limited, so heavy rotation traffic contends
-with trading on that object.
+Every adapter write takes `&mut OperatorPayouts`, which no order reads: heavy
+registration or rotation traffic contends only with other registrations and
+with claims, never with trading. (Before Cycle 8 the mapping lived on
+`FeePolicy`, so any sender could contend with every trade through this path;
+see TRIEX-149.)
 
 ## Tests
 
