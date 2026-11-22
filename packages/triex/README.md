@@ -93,11 +93,12 @@ Pools support two fee modes:
   spend a fee still backing an open order.
 
 Trade parameters carry separate taker and maker rates (coin pools default to
-taker 2.2% / maker 1.8%; multicoin pools to taker 1.1% / maker 0.9%) and are
-admin-set per epoch
-(`set_next_epoch_fee(taker_fee, maker_fee, cancel_retention_bps)`); each order
-snapshots the maker rate and the retention rate at placement and settles
-against them for its lifetime. Cancelling, modifying down or expiring a
+taker 1.1% / maker 0.9%; multicoin pools to taker 2.2% / maker 1.8%). They are
+admin-set per pricing class on the shared `FeePolicy`, capped at 20%, and a
+change is staged for the next epoch (`fee_policy::update_class`, or
+`stage_pool_fee_class` / `apply_pool_fee_class` to move one pool to another
+class); each order snapshots the maker rate and the retention rate at
+placement and settles against them for its lifetime. Cancelling, modifying down or expiring a
 resting bid refunds `10000 - cancel_retention_bps` of the escrow on the
 released quantity (default 80%) and keeps the rest as revenue, so an
 unexecuted order costs only the retention plus gas. `OrderCanceled`,

@@ -868,23 +868,43 @@ module triex::pool {
     //     self.vault.settle_trading_account(settled, owed, trading_account, trade_proof);
     // }
 
-    /// Admin function to reassign this pool to another pricing class — the only
-    /// per-pool policy operation left. Rates themselves are set on the shared
-    /// `FeePolicy` object, one transaction per class, never per pool.
+    /// Admin function to announce that this pool moves to another pricing class
+    /// — the only per-pool policy operation left. Rates themselves are set on the
+    /// shared `FeePolicy` object, one transaction per class, never per pool.
+    ///
+    /// Nothing changes yet. The move is recorded on the policy and emitted as
+    /// `PoolFeeClassStaged`, and `apply_pool_fee_class` can only carry it out from
+    /// the next epoch on, so a pool is never re-priced without notice. Staging
+    /// again replaces the pending move and restarts its clock.
     /// #ref:functions
-    public fun set_pool_fee_class<BaseAsset, QuoteAsset>(
-        self: &mut Pool<BaseAsset, QuoteAsset>,
-        policy: &FeePolicy,
+    public fun stage_pool_fee_class<BaseAsset, QuoteAsset>(
+        self: &Pool<BaseAsset, QuoteAsset>,
+        policy: &mut FeePolicy,
         fee_class: u16,
         _cap: &TriexAdminCap,
+        ctx: &TxContext,
     ) {
-        policy.assert_class_matches_quote(
+        policy.stage_pool_fee_class(
+            self.load_inner().pool_id,
             fee_class,
             type_name::with_defining_ids<QuoteAsset>(),
+            ctx,
         );
+    }
+
+    /// Admin function to carry out the move staged by `stage_pool_fee_class`.
+    /// Aborts if nothing is staged or if the staged epoch has not arrived.
+    /// Emits `PoolFeeClassSet`; from this transaction on the pool prices under
+    /// its new class.
+    /// #ref:functions
+    public fun apply_pool_fee_class<BaseAsset, QuoteAsset>(
+        self: &mut Pool<BaseAsset, QuoteAsset>,
+        policy: &mut FeePolicy,
+        _cap: &TriexAdminCap,
+        ctx: &TxContext,
+    ) {
         let self = self.load_inner_mut();
-        self.fee_class = fee_class;
-        fee_policy::emit_pool_fee_class_set(self.pool_id, fee_class);
+        self.fee_class = policy.take_due_pool_fee_class(self.pool_id, ctx);
     }
 
     // #feat:flashloan - DISABLED
@@ -1389,6 +1409,17 @@ module triex::pool {
         self.load_inner().fee_class
     }
 
+    /// The class staged for this pool by `stage_pool_fee_class`, and the first
+    /// epoch `apply_pool_fee_class` can move it there. When nothing is staged
+    /// this is the pool's current class and epoch 0.
+    public fun pool_fee_class_next<BaseAsset, QuoteAsset>(
+        self: &Pool<BaseAsset, QuoteAsset>,
+        policy: &FeePolicy,
+    ): (u16, u64) {
+        let self = self.load_inner();
+        policy.staged_pool_fee_class(self.pool_id, self.fee_class)
+    }
+
     /// Returns the (taker_fee, maker_fee) entry rung for the pool — what an
     /// account with no turnover pays.
     public fun pool_trade_params<BaseAsset, QuoteAsset>(
@@ -1411,8 +1442,15 @@ module triex::pool {
         policy.active_schedule(self.load_inner().fee_class, ctx.epoch())
     }
 
-    /// Returns the ladder staged to take over, and the epoch it does. Equal to
-    /// the active one when nothing is pending.
+    /// Returns the ladder this pool's own class has staged to take over, and the
+    /// epoch it does. Equal to the active one when nothing is pending.
+    ///
+    /// This is what prices the pool from the next epoch boundary: a re-pricing
+    /// of its class takes over by itself. A staged move to another class does
+    /// not. It lands only when `apply_pool_fee_class` runs, and until then this
+    /// class, re-priced or not, keeps pricing the pool. The move is reported by
+    /// `pool_fee_class_next`, and the destination's ladder by
+    /// `fee_policy::next_schedule` of that class.
     public fun pool_fee_schedule_next<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
         policy: &FeePolicy,

@@ -187,16 +187,31 @@ module triex::multicoin_pool_coverage_tests {
     }
 
     #[test]
-    /// Reassigning the class switches the entry rung the pool quotes.
-    fun set_pool_fee_class_ok() {
+    /// A class move is staged, changes nothing until it is applied in a later
+    /// epoch, and then switches the entry rung the pool quotes. The staging
+    /// rules themselves are pinned in `fee_staging_tests`.
+    fun pool_fee_class_move_is_staged_then_applied() {
         let mut test = begin(OWNER);
         let (env, collection_cap) = setup(&mut test);
 
         test.next_tx(OWNER);
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
+        let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(env.pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
+        pool.stage_pool_fee_class(
+            &mut policy,
+            pool_test_utils::standard_class<USDC>(),
+            &admin_cap,
+            test.ctx(),
+        );
+        assert_eq!(pool.pool_fee_class(), pool_test_utils::multicoin_class<USDC>());
+        return_shared(pool);
+        return_shared(policy);
+
+        test.next_epoch(OWNER);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(env.pool_id);
-        let policy = test.take_shared<FeePolicy>();
-        pool.set_pool_fee_class(&policy, pool_test_utils::standard_class<USDC>(), &admin_cap);
+        let mut policy = test.take_shared<FeePolicy>();
+        pool.apply_pool_fee_class(&mut policy, &admin_cap, test.ctx());
         assert_eq!(pool.pool_fee_class(), pool_test_utils::standard_class<USDC>());
         let (taker, maker) = pool.pool_trade_params(&policy, test.ctx());
         assert_eq!(taker, pool_test_utils::default_taker_fee());
@@ -263,8 +278,8 @@ module triex::multicoin_pool_coverage_tests {
         test.next_tx(OWNER);
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(env.pool_id);
-        let policy = test.take_shared<FeePolicy>();
-        pool.set_pool_fee_class(&policy, pool_test_utils::standard_class<USDC>(), &admin_cap);
+        let mut policy = test.take_shared<FeePolicy>();
+        pool.apply_pool_fee_class(&mut policy, &admin_cap, test.ctx());
         abort 0
     }
 

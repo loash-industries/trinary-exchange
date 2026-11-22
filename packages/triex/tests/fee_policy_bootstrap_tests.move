@@ -135,8 +135,9 @@ module triex::fee_policy_bootstrap_tests {
         assert_eq!(policy.class_quote(MULTICOIN_CLASS), quote);
 
         // Launch retention: 20% of released bid escrow.
-        assert_eq!(policy.cancel_retention_bps(COIN_CLASS), 2_000);
-        assert_eq!(policy.cancel_retention_bps(MULTICOIN_CLASS), 2_000);
+        let epoch = test.ctx().epoch();
+        assert_eq!(policy.cancel_retention_bps(COIN_CLASS, epoch), 2_000);
+        assert_eq!(policy.cancel_retention_bps(MULTICOIN_CLASS, epoch), 2_000);
 
         destroy(cap);
         policy.share_for_testing();

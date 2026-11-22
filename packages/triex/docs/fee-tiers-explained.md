@@ -100,10 +100,17 @@ guardrails, enforced no matter what the admin sets:
 - **Taker fees have a floor** of 1 basis point — never discountable to zero.
   **Maker fees have no floor**; 0% is a legal top-tier maker rate.
 - Rate changes on an existing class **take effect the next epoch**, never
-  mid-epoch, so nobody's in-flight trade is re-priced out from under them.
+  mid-epoch, so nobody's in-flight trade is re-priced out from under them. The
+  cancellation retention is staged with the rates and moves at the same moment.
+- Moving a pool to a different class is **announced first** and cannot be
+  carried out until the next epoch. Until the admin carries it out, the pool
+  keeps its current class and rates.
+- No rate, on any level of any class, can be set **above 20%**.
 
-*(Code: `fee_policy.move` — `create_class`, `update_class`, `set_default_class`;
-`state/fee_schedule.move`, `validate()`.)*
+*(Code: `fee_policy.move` — `create_class`, `update_class`, `set_default_class`,
+`stage_pool_fee_class`; `pool.move` / `multicoin_pool.move` —
+`stage_pool_fee_class`, `apply_pool_fee_class`; `state/fee_schedule.move`,
+`validate()`.)*
 
 ## Setting the exchange up at launch
 
@@ -186,7 +193,7 @@ Bounds the admin must stay within when setting *any* level's rate:
 | Rule | Value |
 |---|---|
 | Minimum taker fee (floor, all levels) | 0.01% (1 basis point) |
-| Maximum taker or maker fee | 100% |
+| Maximum taker or maker fee | 20% |
 | Rate granularity | 0.01 basis points |
 | Maximum levels per class | 16 |
 | Cancellation retention (share of a cancelled bid's escrow the exchange keeps) | up to 100%; launch default 20% |
@@ -217,3 +224,5 @@ and the `MIN_TAKER_FEE` / `MAX_TAKER_FEE` / `MAX_MAKER_FEE` /
 | Admin sets up a quote at launch | `bootstrap_quote` |
 | Admin switches on the hub operator share after an upgrade | `seed_operator_share_genesis` |
 | Admin re-prices a class (next epoch) | `update_class` |
+| Admin announces a pool's move to another class | `stage_pool_fee_class` |
+| Admin carries the move out (next epoch or later) | `apply_pool_fee_class` |
