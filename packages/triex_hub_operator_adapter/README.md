@@ -137,8 +137,13 @@ with trading on that object.
 
 ## Tests
 
-`sui move test` runs unit tests (`hub_adapter_tests`) and end-to-end tests
-(`hub_operator_e2e_tests`: warehouse receipts traded on a real multicoin pool,
-fees accrued and claimed through setup, after-the-fact registration, rotation,
-sale and admin destroy). `sui move test --coverage` reports 100% for
-`hub_adapter`.
+`sui move test --package-size 16` runs unit tests (`hub_adapter_tests`) and
+end-to-end tests (`hub_operator_e2e_tests`: warehouse receipts traded on a real
+multicoin pool, fees accrued and claimed through setup, after-the-fact
+registration, rotation, sale and admin destroy). `sui move test --coverage
+--package-size 16` reports 100% for `hub_adapter`.
+
+`--package-size 16` is required here for the same reason as in `triex`: a test
+build compiles the local `triex` dependency together with its test modules,
+and that is larger than the Move VM's default 10 MB per-package arena. Without
+the flag every test fails with `PACKAGE_ARENA_LIMIT_REACHED`.
