@@ -24,8 +24,10 @@ module triex::order_info {
     const EFOKOrderCannotBeFullyFilled: u64 = 6;
     const EMarketOrderCannotBePostOnly: u64 = 7;
     const ESelfMatchingCancelTaker: u64 = 8;
-    /// The order's whole quantity, valued at its own price, is more quote than a
-    /// `u64` can hold.
+    /// The quantity about to rest, valued at the order's own price, is more quote
+    /// than a `u64` can hold. Only the remainder left after matching is measured:
+    /// an order that never rests (IOC, FOK, market) is not checked, and a limit
+    /// order whose executed part brings its remainder under the bound still rests.
     const EOrderValueOverflow: u64 = 9;
 
     // === Structs ===

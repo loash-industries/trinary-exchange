@@ -6,19 +6,27 @@
 # user can call took it `&mut`, any sender could serialize every trade on the
 # exchange behind their own transaction. The rule this enforces:
 #
-#   - a non-test `public fun` that takes `&mut FeePolicy` must also take
-#     `&TriexAdminCap`;
-#   - a `public(package)` or private `fun` that takes `&mut FeePolicy` must only
-#     ever be called from functions that satisfy the same rule.
+#   - a non-test function a transaction can call — any `public fun`, and any
+#     `entry fun` whatever its visibility — that takes `&mut FeePolicy` must
+#     also take `&TriexAdminCap`;
+#   - any other `public(package)` or private `fun` that takes `&mut FeePolicy`
+#     must only ever be called from functions that satisfy the same rule.
+#
+# The types are matched however they are written: bare, path-qualified
+# (`fee_policy::FeePolicy`, `triex::fee_policy::FeePolicy`) or renamed with
+# `use ... FeePolicy as X`. A qualified cap only counts if its path names the
+# `registry` module that defines it.
 #
 # It reads the Move sources of the triex package and of every package next to
 # it that depends on it (today, triex_hub_operator_adapter). Exits non-zero and
 # names each offending function if the rule is broken.
 #
 # What this cannot check: Sui lets a transaction declare any shared input
-# mutable, even one it only passes to functions taking `&FeePolicy`. That is a
-# property of the chain, not of these sources; see the `fee_policy` module
-# docs.
+# mutable, even one it only passes to functions taking `&FeePolicy` (or to any
+# package's generic `fun f<T: key>(x: &mut T)`). That is a property of the
+# chain, not of these sources; see the `fee_policy` module docs. It is also a
+# source scan, not a type checker: it reads declarations and call sites by
+# pattern, so treat a pass as a strong check, not a proof.
 #
 # Usage: ./build_scripts/check-fee-policy-writers.sh [packages-dir]
 set -euo pipefail
@@ -47,13 +55,25 @@ def strip_comments(text):
 
 HEADER = re.compile(
     r'(?P<attrs>(?:#\[[^\]]*\]\s*)*)'
-    r'(?P<vis>public\s*\(\s*package\s*\)\s*|public\s+)?(?:entry\s+)?'
+    r'(?P<entry1>entry\s+)?'
+    r'(?P<vis>public\s*\(\s*package\s*\)\s*|public\s+)?(?P<entry2>entry\s+)?'
     r'fun\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{]*>)?\s*\(',
 )
 
-functions = []  # (file, name, vis, params, body_start, body_end, test_only)
+def aliases(text, name):
+    # `use ... Name as Alias`, in any of its forms (plain, braced, nested).
+    return sorted(set(re.findall(r'\b' + name + r'\s+as\s+([A-Za-z_][A-Za-z0-9_]*)', text)))
+
+functions = []  # (file, name, vis, entry, params, body_start, body_end, test_only)
 for path in sources:
     text = strip_comments(open(path).read())
+    policy_names = ['FeePolicy'] + aliases(text, 'FeePolicy')
+    cap_names = ['TriexAdminCap'] + aliases(text, 'TriexAdminCap')
+    writes = re.compile(
+        r'&\s*mut\s+(?:[A-Za-z_][A-Za-z0-9_]*::)*(?:' + '|'.join(policy_names) + r')\b')
+    takes_cap = re.compile(
+        r'&\s*(?:mut\s+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*::)*registry::)?(?:'
+        + '|'.join(cap_names) + r')\b')
     for m in HEADER.finditer(text):
         # parameters: match the parenthesis opened at the end of the header
         i, depth = m.end(), 1
@@ -71,17 +91,24 @@ for path in sources:
             'file': os.path.relpath(path, packages_dir),
             'name': m.group('name'),
             'vis': 'public' if vis == 'public' else ('package' if vis else 'private'),
+            'entry': bool(m.group('entry1') or m.group('entry2')),
             'params': params,
+            'writes': writes,
+            'takes_cap': takes_cap,
             'body': (brace, j),
             'test_only': 'test_only' in m.group('attrs') or '#[test]' in m.group('attrs'),
             'text': text,
         })
 
 def writes_policy(f):
-    return re.search(r'&\s*mut\s+FeePolicy\b', f['params']) is not None
+    return f['writes'].search(f['params']) is not None
 
 def has_cap(f):
-    return re.search(r'&\s*TriexAdminCap\b', f['params']) is not None
+    return f['takes_cap'].search(f['params']) is not None
+
+def external(f):
+    # Callable from a transaction: `public`, or `entry` at any visibility.
+    return f['vis'] == 'public' or f['entry']
 
 def callers(target):
     found = []
@@ -101,11 +128,11 @@ def admin_only(f, stack=()):
         return memo[key]
     if key in stack:
         return True  # recursion: decided by the other callers
-    if f['vis'] == 'public':
+    if external(f):
         ok = has_cap(f)
     else:
         cs = callers(f)
-        ok = all(has_cap(c) or (c['vis'] != 'public' and admin_only(c, stack + (key,))) for c in cs)
+        ok = all(has_cap(c) or (not external(c) and admin_only(c, stack + (key,))) for c in cs)
     memo[key] = ok
     return ok
 
@@ -113,9 +140,10 @@ writers = [f for f in functions if writes_policy(f) and not f['test_only']]
 bad = []
 for f in writers:
     ok = admin_only(f)
-    how = 'takes &TriexAdminCap' if f['vis'] == 'public' and ok else (
+    how = 'takes &TriexAdminCap' if external(f) and ok else (
         'called only from admin functions' if ok else 'REACHABLE WITHOUT THE ADMIN CAP')
-    print(f"{'ok ' if ok else 'BAD'}  {f['file']}: {f['vis']} fun {f['name']} — {how}")
+    kind = f['vis'] + (' entry' if f['entry'] else '')
+    print(f"{'ok ' if ok else 'BAD'}  {f['file']}: {kind} fun {f['name']} — {how}")
     if not ok:
         bad.append(f)
 

@@ -681,28 +681,14 @@ module triex::fee_staging_tests {
     }
 
     #[test]
-    /// `pool_fee_schedule_next` is where a trader looks for what is coming. It
-    /// reports the pool's own class when nothing is staged, and the destination
-    /// class's ladder, with the epoch the move can land from, when one is.
-    fun schedule_next_reports_a_staged_move() {
+    /// `pool_fee_schedule_next` reports what prices the pool from the next
+    /// boundary, which is its own class's ladder: a staged move does not land by
+    /// itself. The move is reported by `pool_fee_class_next`, and its
+    /// destination's ladder by the policy.
+    fun schedule_next_keeps_the_pools_own_class_while_a_move_is_staged() {
         let mut test = begin(OWNER);
         let m = coin_market(&mut test);
         let epoch = test.ctx().epoch();
-
-        test.next_tx(OWNER);
-        {
-            let pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
-            let policy = test.take_shared<FeePolicy>();
-            let (schedule, _) = pool.pool_fee_schedule_next(&policy);
-            assert_eq!(schedule.tier_at(0).taker_fee(), pool_test_utils::default_taker_fee());
-            // Nothing staged: this is the pool's class, exactly as the policy has it.
-            let (own, own_epoch) = policy.next_schedule(standard_class<USDC>());
-            let (reported, reported_epoch) = pool.pool_fee_schedule_next(&policy);
-            assert_eq!(reported.tier_at(0).taker_fee(), own.tier_at(0).taker_fee());
-            assert_eq!(reported_epoch, own_epoch);
-            return_shared(policy);
-            return_shared(pool);
-        };
 
         coin_stage(&mut test, m.pool_id, multicoin_class<USDC>());
 
@@ -710,19 +696,20 @@ module triex::fee_staging_tests {
         {
             let pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
             let policy = test.take_shared<FeePolicy>();
-            let (schedule, from_epoch) = pool.pool_fee_schedule_next(&policy);
+            let (own, own_epoch) = policy.next_schedule(standard_class<USDC>());
+            let (reported, reported_epoch) = pool.pool_fee_schedule_next(&policy);
+            assert_eq!(reported.tier_at(0).taker_fee(), pool_test_utils::default_taker_fee());
+            assert_eq!(reported.tier_at(0).taker_fee(), own.tier_at(0).taker_fee());
+            assert_eq!(reported_epoch, own_epoch);
+            // The move is reported where it is staged, with its destination's ladder.
+            let (next_class, from_epoch) = pool.pool_fee_class_next(&policy);
+            assert_eq!(next_class, multicoin_class<USDC>());
+            assert_eq!(from_epoch, epoch + 1);
+            let (destination, _) = policy.next_schedule(next_class);
             assert_eq!(
-                schedule.tier_at(0).taker_fee(),
+                destination.tier_at(0).taker_fee(),
                 pool_test_utils::default_taker_fee_multicoin(),
             );
-            assert_eq!(
-                schedule.tier_at(0).maker_fee(),
-                pool_test_utils::default_maker_fee_multicoin(),
-            );
-            assert_eq!(from_epoch, epoch + 1);
-            // The running ladder is still the old one.
-            let now = pool.pool_fee_schedule(&policy, test.ctx());
-            assert_eq!(now.tier_at(0).taker_fee(), pool_test_utils::default_taker_fee());
             return_shared(policy);
             return_shared(pool);
         };
@@ -731,27 +718,25 @@ module triex::fee_staging_tests {
     }
 
     #[test]
-    /// When the destination class is itself being re-priced later than the move
-    /// can land, the later of the two epochs is the one reported: that is when
-    /// the reported ladder actually prices this pool.
-    fun schedule_next_reports_the_later_of_the_two_staged_epochs() {
+    /// In one epoch the admin re-prices the pool's class to the cap and stages a
+    /// move to a cheaper class. From the next boundary until the move is
+    /// applied, the re-priced class prices the pool, so that is what
+    /// `pool_fee_schedule_next` has to promise and what a trade pays. Reporting
+    /// the destination instead would have hidden a 20% fee behind a 2.2% quote.
+    fun a_repricing_of_the_current_class_is_reported_while_a_move_is_staged() {
         let mut test = begin(OWNER);
         let m = coin_market(&mut test);
         let epoch = test.ctx().epoch();
 
-        coin_stage(&mut test, m.pool_id, multicoin_class<USDC>());
-        test.next_epoch(OWNER);
-
-        // Re-price the destination class one epoch after the move was staged.
         test.next_tx(OWNER);
         {
             let cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut policy = test.take_shared<FeePolicy>();
             policy.update_class(
-                multicoin_class<USDC>(),
+                standard_class<USDC>(),
                 vector[0],
-                vector[30_000_000],
-                vector[20_000_000],
+                vector[CAP],
+                vector[CAP],
                 RETENTION,
                 &cap,
                 test.ctx(),
@@ -759,18 +744,44 @@ module triex::fee_staging_tests {
             return_shared(policy);
             destroy(cap);
         };
+        coin_stage(&mut test, m.pool_id, multicoin_class<USDC>());
 
         test.next_tx(OWNER);
         {
             let pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
             let policy = test.take_shared<FeePolicy>();
             let (schedule, from_epoch) = pool.pool_fee_schedule_next(&policy);
-            assert_eq!(schedule.tier_at(0).taker_fee(), 30_000_000);
-            // The move was due at `epoch + 1`; the re-pricing at `epoch + 2`.
-            assert_eq!(from_epoch, epoch + 2);
+            assert_eq!(schedule.tier_at(0).taker_fee(), CAP);
+            assert_eq!(schedule.tier_at(0).maker_fee(), CAP);
+            assert_eq!(from_epoch, epoch + 1);
             return_shared(policy);
             return_shared(pool);
         };
+
+        test.next_epoch(OWNER);
+
+        // The boundary has passed and nobody has applied the move: the re-priced
+        // class prices the pool, as promised.
+        let (maker_rate, taker_fee) = coin_trade(&mut test, &m);
+        assert_eq!(maker_rate, CAP);
+        assert_eq!(taker_fee, quote_fee::fee_from_scaled_rate(CAP, coin_quote()));
+
+        // Once applied, the destination prices it and the view follows.
+        coin_apply(&mut test, m.pool_id);
+        test.next_tx(OWNER);
+        {
+            let pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
+            let policy = test.take_shared<FeePolicy>();
+            let (schedule, _) = pool.pool_fee_schedule_next(&policy);
+            assert_eq!(
+                schedule.tier_at(0).taker_fee(),
+                pool_test_utils::default_taker_fee_multicoin(),
+            );
+            return_shared(policy);
+            return_shared(pool);
+        };
+        let (maker_rate, _) = coin_trade(&mut test, &m);
+        assert_eq!(maker_rate, pool_test_utils::default_maker_fee_multicoin());
 
         end(test);
     }
@@ -1028,10 +1039,14 @@ module triex::fee_staging_tests {
     }
 
     #[test]
-    fun multicoin_schedule_next_reports_a_staged_move() {
+    /// The same on a multicoin pool: the view reports its own class until the
+    /// staged move is applied, then follows it.
+    fun multicoin_schedule_next_keeps_the_pools_own_class_while_a_move_is_staged() {
         let mut test = begin(OWNER);
         let (m, collection_cap) = multicoin_market(&mut test);
         let epoch = test.ctx().epoch();
+
+        multicoin_stage(&mut test, m.pool_id, standard_class<USDC>());
 
         test.next_tx(OWNER);
         {
@@ -1042,21 +1057,22 @@ module triex::fee_staging_tests {
                 schedule.tier_at(0).taker_fee(),
                 pool_test_utils::default_taker_fee_multicoin(),
             );
+            let (next_class, from_epoch) = pool.pool_fee_class_next(&policy);
+            assert_eq!(next_class, standard_class<USDC>());
+            assert_eq!(from_epoch, epoch + 1);
             return_shared(policy);
             return_shared(pool);
         };
 
-        multicoin_stage(&mut test, m.pool_id, standard_class<USDC>());
+        test.next_epoch(OWNER);
+        multicoin_apply(&mut test, m.pool_id);
 
         test.next_tx(OWNER);
         {
             let pool = test.take_shared_by_id<MultiCoinPool<USDC>>(m.pool_id);
             let policy = test.take_shared<FeePolicy>();
-            let (schedule, from_epoch) = pool.pool_fee_schedule_next(&policy);
+            let (schedule, _) = pool.pool_fee_schedule_next(&policy);
             assert_eq!(schedule.tier_at(0).taker_fee(), pool_test_utils::default_taker_fee());
-            assert_eq!(from_epoch, epoch + 1);
-            let now = pool.pool_fee_schedule(&policy, test.ctx());
-            assert_eq!(now.tier_at(0).taker_fee(), pool_test_utils::default_taker_fee_multicoin());
             return_shared(policy);
             return_shared(pool);
         };
