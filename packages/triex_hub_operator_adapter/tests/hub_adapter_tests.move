@@ -124,7 +124,7 @@ module triex_hub_operator_adapter::hub_adapter_tests {
         ts::end(sc);
     }
 
-    /// `FeePolicy` keeps the first registration and ignores later ones; the
+    /// `OperatorPayouts` keeps the first registration and ignores later ones; the
     /// adapter turns that silent no-op into an abort.
     #[test, expected_failure(abort_code = hub_adapter::EAlreadyRegistered)]
     fun second_registration_aborts() {

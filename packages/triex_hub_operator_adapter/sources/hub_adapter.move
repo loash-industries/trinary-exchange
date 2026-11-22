@@ -1,7 +1,8 @@
 /// The operator adapter `triex::fee_policy` trusts to say who a collection's
 /// hub share is paid to.
 ///
-/// `FeePolicy` records a `collection_id -> address` payout mapping, written and
+/// `fee_policy::OperatorPayouts` records a `collection_id -> address` payout
+/// mapping, written and
 /// re-pointed only through a witness of the single adapter type the admin
 /// pinned with `set_operator_adapter`. The witness proves nothing by itself —
 /// Triex cannot read a payload off it — so the binding between the collection
@@ -56,17 +57,17 @@
 /// payout address is frozen at its last value for good, and if the admin then
 /// destroys it, nobody can register again.
 ///
-/// Lifecycle: the pin lives on one `FeePolicy` for good, and it only accepts
-/// the world and warehouse_receipts types this package was linked against. An
-/// immutable adapter also keeps calling the `fee_policy` version it was linked
-/// against. So this package is published and pinned once per `FeePolicy`; a
-/// cycle that fresh-publishes triex gets a new `FeePolicy`, and this package is
-/// republished against it and pinned there. Fresh-publishing world or
+/// Lifecycle: the pin lives on one `OperatorPayouts` for good, and it only
+/// accepts the world and warehouse_receipts types this package was linked
+/// against. An immutable adapter also keeps calling the `fee_policy` version it
+/// was linked against. So this package is published and pinned once per
+/// `OperatorPayouts`; a cycle that fresh-publishes triex gets a new one, and
+/// this package is republished against it and pinned there. Fresh-publishing world or
 /// warehouse_receipts *without* a fresh triex leaves new storage units unable
 /// to register until triex itself is republished or upgraded.
 module triex_hub_operator_adapter::hub_adapter {
     use sui::event;
-    use triex::fee_policy::FeePolicy;
+    use triex::fee_policy::OperatorPayouts;
     use warehouse_receipts::{receipt::PendingVault, vault::VaultConfig};
     use world::{access::OwnerCap, storage_unit::StorageUnit};
 
@@ -112,11 +113,11 @@ module triex_hub_operator_adapter::hub_adapter {
     /// collection, including pools created later, and releases any share
     /// already accrued on them to the next claim.
     ///
-    /// Aborts if an address is already registered — `FeePolicy` would
+    /// Aborts if an address is already registered — `OperatorPayouts` would
     /// otherwise keep the first one silently; re-pointing is
     /// `update_operator`.
     public fun register_operator(
-        policy: &mut FeePolicy,
+        payouts: &mut OperatorPayouts,
         vault_config: &VaultConfig,
         storage_unit: &StorageUnit,
         owner_cap: &OwnerCap<StorageUnit>,
@@ -126,9 +127,9 @@ module triex_hub_operator_adapter::hub_adapter {
         assert_storage_unit_owner(vault_config, storage_unit, owner_cap);
 
         let collection_id = vault_config.collection_id();
-        assert!(policy.operator_beneficiary(collection_id).is_none(), EAlreadyRegistered);
+        assert!(payouts.operator_beneficiary(collection_id).is_none(), EAlreadyRegistered);
 
-        policy.register_operator_beneficiary_with_witness(
+        payouts.register_operator_beneficiary_with_witness(
             collection_id,
             beneficiary,
             HubAdapterWitness {},
@@ -149,7 +150,7 @@ module triex_hub_operator_adapter::hub_adapter {
     /// storage unit's first-time setup, in one transaction:
     /// `new_vault` → `register_operator_for_new_vault` → `share_vault`.
     public fun register_operator_for_new_vault(
-        policy: &mut FeePolicy,
+        payouts: &mut OperatorPayouts,
         pending: &PendingVault,
         storage_unit: &StorageUnit,
         owner_cap: &OwnerCap<StorageUnit>,
@@ -157,7 +158,7 @@ module triex_hub_operator_adapter::hub_adapter {
         ctx: &mut TxContext,
     ) {
         register_operator(
-            policy,
+            payouts,
             pending.pending_vault_config(),
             storage_unit,
             owner_cap,
@@ -175,7 +176,7 @@ module triex_hub_operator_adapter::hub_adapter {
     /// a no-op with no events, so every `HubOperatorChanged` is a real change
     /// and the hand-over PTB above never fails on an unchanged payee.
     public fun update_operator(
-        policy: &mut FeePolicy,
+        payouts: &mut OperatorPayouts,
         vault_config: &VaultConfig,
         storage_unit: &StorageUnit,
         owner_cap: &OwnerCap<StorageUnit>,
@@ -185,7 +186,7 @@ module triex_hub_operator_adapter::hub_adapter {
         assert_storage_unit_owner(vault_config, storage_unit, owner_cap);
 
         let collection_id = vault_config.collection_id();
-        let previous = policy.update_operator_beneficiary_with_witness(
+        let previous = payouts.update_operator_beneficiary_with_witness(
             collection_id,
             beneficiary,
             HubAdapterWitness {},

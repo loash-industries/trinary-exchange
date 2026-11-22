@@ -20,7 +20,7 @@ module triex::integration_hub_revenue_share_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{FeePolicy, OperatorPayouts},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::MultiCoinPool,
         multicoin_vault::OperatorShareClaimed,
@@ -64,18 +64,18 @@ module triex::integration_hub_revenue_share_tests {
     /// adapter's witness authorizes the write.
     fun pin_beneficiary(collection_id: ID, beneficiary: address, test: &mut Scenario) {
         test.next_tx(OWNER);
-        let mut policy = test.take_shared<FeePolicy>();
+        let mut payouts = test.take_shared<OperatorPayouts>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
 
-        policy.set_operator_adapter<HubAdapterWitness>(&cap);
-        policy.register_operator_beneficiary_with_witness(
+        payouts.set_operator_adapter<HubAdapterWitness>(&cap);
+        payouts.register_operator_beneficiary_with_witness(
             collection_id,
             beneficiary,
             HubAdapterWitness {},
         );
 
         unit_test::destroy(cap);
-        return_shared(policy);
+        return_shared(payouts);
     }
 
     /// A pool, an adapter-registered beneficiary (`OPERATOR` — deployment
@@ -181,11 +181,11 @@ module triex::integration_hub_revenue_share_tests {
     /// rate but no payout address.
     fun destroy_beneficiary(collection_id: ID, test: &mut Scenario) {
         test.next_tx(OWNER);
-        let mut policy = test.take_shared<FeePolicy>();
+        let mut payouts = test.take_shared<OperatorPayouts>();
         let cap = registry::get_admin_cap_for_testing(test.ctx());
-        policy.destroy_operator_beneficiary(collection_id, &cap);
+        payouts.destroy_operator_beneficiary(collection_id, &cap);
         unit_test::destroy(cap);
-        return_shared(policy);
+        return_shared(payouts);
     }
 
     /// Alice rests a bid. Returns (order_id, taker_fee_paid, maker_fee_escrowed).
@@ -505,12 +505,12 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(BOB); // any caller
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
 
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &policy,
+                &payouts,
                 &triex_reg,
                 &clock,
                 test.ctx(),
@@ -525,7 +525,7 @@ module triex::integration_hub_revenue_share_tests {
 
             return_shared(clock);
             return_shared(triex_reg);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
         };
         assert_no_payout_coins(&mut test);
@@ -551,7 +551,7 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let clock = test.take_shared<Clock>();
             let cap = registry::get_admin_cap_for_testing(test.ctx());
 
@@ -559,7 +559,7 @@ module triex::integration_hub_revenue_share_tests {
             let remainder = pool.withdrawable_pool_fees();
             assert!(share > 0);
 
-            let swept = pool.withdraw_pool_fees(&policy, &cap, remainder, &clock, test.ctx());
+            let swept = pool.withdraw_pool_fees(&payouts, &cap, remainder, &clock, test.ctx());
             assert!(swept.value() == remainder);
             assert!(pool.operator_owed() == 0);
             assert!(pool.quote_fee_reserve_balance() == 0);
@@ -570,7 +570,7 @@ module triex::integration_hub_revenue_share_tests {
             unit_test::destroy(swept);
             unit_test::destroy(cap);
             return_shared(clock);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
         };
         assert!(!test_scenario::has_most_recent_for_address<Coin<USDC>>(OPERATOR));
@@ -689,13 +689,13 @@ module triex::integration_hub_revenue_share_tests {
         test.next_tx(OWNER);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let triex_reg = test.take_shared<Registry>();
             let clock = test.take_shared<Clock>();
 
-            assert!(policy.operator_beneficiary(collection_id).is_none());
+            assert!(payouts.operator_beneficiary(collection_id).is_none());
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &policy,
+                &payouts,
                 &triex_reg,
                 &clock,
                 test.ctx(),
@@ -708,7 +708,7 @@ module triex::integration_hub_revenue_share_tests {
 
             return_shared(clock);
             return_shared(triex_reg);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
         };
 
@@ -736,15 +736,15 @@ module triex::integration_hub_revenue_share_tests {
 
         test.next_tx(OWNER);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-        let policy = test.take_shared<FeePolicy>();
+        let payouts = test.take_shared<OperatorPayouts>();
         let triex_reg = test.take_shared<Registry>();
         let clock = test.take_shared<Clock>();
 
-        pool.claim_operator_share(&policy, &triex_reg, &clock, test.ctx());
+        pool.claim_operator_share(&payouts, &triex_reg, &clock, test.ctx());
 
         return_shared(clock);
         return_shared(triex_reg);
-        return_shared(policy);
+        return_shared(payouts);
         return_shared(pool);
         unit_test::destroy(collection_cap);
         end(test);
@@ -905,9 +905,9 @@ module triex::integration_hub_revenue_share_tests {
         mc_utils::setup_multicoin_pool(ALICE, registry_id, collection_id, ASSET_GOLD, &mut test);
         test.next_tx(OWNER);
         {
-            let policy = test.take_shared<FeePolicy>();
-            assert!(policy.operator_beneficiary(collection_id).is_none());
-            return_shared(policy);
+            let payouts = test.take_shared<OperatorPayouts>();
+            assert!(payouts.operator_beneficiary(collection_id).is_none());
+            return_shared(payouts);
         };
 
         // The adapter-witnessed registration is what pins, and first write
@@ -919,9 +919,9 @@ module triex::integration_hub_revenue_share_tests {
         pin_beneficiary(collection_id, ALICE, &mut test);
         test.next_tx(OWNER);
         {
-            let policy = test.take_shared<FeePolicy>();
-            assert!(policy.operator_beneficiary(collection_id) == option::some(OPERATOR));
-            return_shared(policy);
+            let payouts = test.take_shared<OperatorPayouts>();
+            assert!(payouts.operator_beneficiary(collection_id) == option::some(OPERATOR));
+            return_shared(payouts);
         };
 
         unit_test::destroy(collection_cap);
@@ -1022,11 +1022,11 @@ module triex::integration_hub_revenue_share_tests {
         let (hub_paid, treasury_paid) = {
             test.next_tx(BOB); // any caller
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let triex_reg = test.take_shared_by_id<Registry>(registry_id);
             let clock = test.take_shared<Clock>();
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &policy,
+                &payouts,
                 &triex_reg,
                 &clock,
                 test.ctx(),
@@ -1036,7 +1036,7 @@ module triex::integration_hub_revenue_share_tests {
             assert_payout_events(pool_id, collection_id, hub_paid, treasury_paid);
             return_shared(clock);
             return_shared(triex_reg);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
             (hub_paid, treasury_paid)
         };

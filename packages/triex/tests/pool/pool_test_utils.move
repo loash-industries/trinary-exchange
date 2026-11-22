@@ -110,6 +110,9 @@ module triex::pool_test_utils {
         seed_quote_classes<SPAM>(&mut policy, &admin_cap, test);
 
         fee_policy::share_for_testing(policy);
+        // Published beside the policy, as `fee_policy::init` does: claims and
+        // the multicoin fee sweep read hub payout addresses from it.
+        fee_policy::share_payouts_for_testing(fee_policy::create_payouts_for_testing(test.ctx()));
         destroy(admin_cap);
     }
 

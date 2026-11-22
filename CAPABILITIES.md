@@ -151,7 +151,8 @@ proceeds, and the whole of a cancel batch — which is what keeps a market maker
 pulling a book of quotes from being credited nothing at all. An operator
 reconciling payouts should expect the floored figure, not `bps × revenue`.
 
-Where the share is paid is configuration, not inference: `FeePolicy` holds an
+Where the share is paid is configuration, not inference: `OperatorPayouts`, a
+shared object published beside `FeePolicy`, holds an
 explicit `collection_id -> address`, written and re-pointed only through a
 witness minted by an admin-registered adapter package
 ([`triex_hub_operator_adapter`](packages/triex_hub_operator_adapter/)). On every
@@ -175,7 +176,7 @@ storage unit and the signer.
 
 Until the admin registers an adapter type, no registration or rotation path
 exists at all, and the first type registered is pinned for the life of the
-policy: `clear_operator_adapter` closes both paths but never unpins the type,
+`OperatorPayouts` object: `clear_operator_adapter` closes both paths but never unpins the type,
 and `set_operator_adapter` aborts (`EAdapterPinned`) for any other type, so the
 cap cannot authorize a witness of its own and register or rotate a mapping to
 itself. `pinned_operator_adapter()` shows the pin. Moving to a different adapter
@@ -221,7 +222,7 @@ to the 20% cap and the one-epoch notice described above. It cannot:
   can never reach it. (What the cap *does* keep is the sub-unit flooring
   remainder described above, which is revenue never credited to anyone else.)
 - Redirect an operator share: `claim_operator_share` and `withdraw_pool_fees` pay only
-  the address `FeePolicy` records — registered and rotated only through the pinned
+  the address `OperatorPayouts` records — registered and rotated only through the pinned
   adapter's witness, destructible but never re-pointable by the cap — and never the caller
 - Place or cancel orders on anyone's behalf
 - Mint CRED, or burn CRED it doesn't own (see below)

@@ -14,7 +14,7 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
     use sui::{clock::Clock, coin::{Self, Coin}, event, test_scenario::{Self as ts, Scenario}};
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{FeePolicy, OperatorPayouts},
         multicoin_pool::{Self, MultiCoinPool},
         multicoin_vault::OperatorShareClaimed,
         registry::{Self, Registry},
@@ -210,14 +210,14 @@ module triex_hub_operator_adapter::hub_operator_e2e_tests {
     fun claim(sc: &mut Scenario, caller: address, pool_id: ID): (u64, u64) {
         ts::next_tx(sc, caller);
         let mut pool = ts::take_shared_by_id<MultiCoinPool<HUB_USD>>(sc, pool_id);
-        let policy = ts::take_shared<FeePolicy>(sc);
+        let payouts = ts::take_shared<OperatorPayouts>(sc);
         let reg = ts::take_shared<Registry>(sc);
         let clock = ts::take_shared<Clock>(sc);
-        let (hub_paid, treasury_paid) = pool.claim_operator_share(&policy, &reg, &clock, sc.ctx());
+        let (hub_paid, treasury_paid) = pool.claim_operator_share(&payouts, &reg, &clock, sc.ctx());
         assert!(pool.operator_owed() == 0);
         ts::return_shared(clock);
         ts::return_shared(reg);
-        ts::return_shared(policy);
+        ts::return_shared(payouts);
         ts::return_shared(pool);
         (hub_paid, treasury_paid)
     }

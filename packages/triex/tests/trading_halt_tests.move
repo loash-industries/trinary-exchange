@@ -33,7 +33,7 @@ module triex::trading_halt_tests {
         coin_dec15::{Self, COIN_DEC15},
         coin_dec6::{Self, COIN_DEC6},
         constants,
-        fee_policy::{Self, FeePolicy, TradingHaltChanged},
+        fee_policy::{Self, FeePolicy, OperatorPayouts, TradingHaltChanged},
         integration_multicoin_test_utils as mc_utils,
         multicoin_pool::{Self, MultiCoinPool},
         order_info::OrderInfo,
@@ -1014,9 +1014,9 @@ module triex::trading_halt_tests {
 
         test.next_tx(OWNER);
         {
-            let mut policy = test.take_shared<FeePolicy>();
-            policy.register_operator_beneficiary_for_testing(m.collection_id, HUB);
-            return_shared(policy);
+            let mut payouts = test.take_shared<OperatorPayouts>();
+            payouts.register_operator_beneficiary_for_testing(m.collection_id, HUB);
+            return_shared(payouts);
         };
         let (proceeds, owed) = {
             test.next_tx(OWNER);
@@ -1111,11 +1111,11 @@ module triex::trading_halt_tests {
         test.next_tx(CHARLIE);
         {
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(m.pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let registry = test.take_shared_by_id<Registry>(m.registry_id);
             let clock = test.take_shared<Clock>();
             let (hub_paid, treasury_paid) = pool.claim_operator_share(
-                &policy,
+                &payouts,
                 &registry,
                 &clock,
                 test.ctx(),
@@ -1125,7 +1125,7 @@ module triex::trading_halt_tests {
             assert_eq!(pool.operator_owed(), 0);
             return_shared(clock);
             return_shared(registry);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
         };
 

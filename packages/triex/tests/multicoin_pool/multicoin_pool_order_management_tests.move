@@ -10,7 +10,7 @@ module triex::integration_multicoin_pool_order_management_tests {
     use token::cred::CRED;
     use triex::{
         constants,
-        fee_policy::FeePolicy,
+        fee_policy::{FeePolicy, OperatorPayouts},
         fill::Fill,
         integration_multicoin_test_utils as mc_utils,
         math,
@@ -2524,7 +2524,7 @@ module triex::integration_multicoin_pool_order_management_tests {
         {
             let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
             let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(pool_id);
-            let policy = test.take_shared<FeePolicy>();
+            let payouts = test.take_shared<OperatorPayouts>();
             let clock = test.take_shared<Clock>();
             let reserve_before = pool.quote_fee_reserve_balance();
             assert!(reserve_before > 0, 2);
@@ -2539,7 +2539,7 @@ module triex::integration_multicoin_pool_order_management_tests {
             assert!(sweepable == reserve_before - owed, 4);
 
             let fee_coin = pool.withdraw_pool_fees(
-                &policy,
+                &payouts,
                 &admin_cap,
                 sweepable,
                 &clock,
@@ -2553,7 +2553,7 @@ module triex::integration_multicoin_pool_order_management_tests {
 
             unit_test::destroy(fee_coin);
             return_shared(clock);
-            return_shared(policy);
+            return_shared(payouts);
             return_shared(pool);
             unit_test::destroy(admin_cap);
         };
