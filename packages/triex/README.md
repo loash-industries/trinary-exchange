@@ -155,8 +155,12 @@ Declared in [`Move.toml`](Move.toml):
 sui move build
 
 # Run the full Move test suite
-sui move test
+sui move test --package-size 16
 ```
+
+`--package-size 16` is required. The test build is larger than the Move VM's
+default 10 MB per-package arena, and without the flag every test fails with
+`PACKAGE_ARENA_LIMIT_REACHED` instead of running.
 
 Tests live under `tests/`, organized to mirror the sources: `pool/`,
 `multicoin_pool/`, `book/`, `state/`, `vault/`, plus `integration/`
@@ -196,10 +200,11 @@ Tests live under `tests/`, organized to mirror the sources: `pool/`,
   with bodies in [`benchmarks/gas_benchmark_bodies.move`](benchmarks/gas_benchmark_bodies.move).
   They are not correctness tests — each just performs a fixed amount of work, and
   is read by subtracting it from one that does strictly more. They sit outside
-  `tests/` because the test build is close to the Move VM's 10 MB per-package
-  arena limit (`PACKAGE_ARENA_LIMIT_REACHED`); the script copies them into a
-  scratch copy of the package and measures there, so `sui move test` never
-  builds them.
+  `tests/` to keep them out of the test build, which is already over the Move
+  VM's default 10 MB per-package arena limit (`PACKAGE_ARENA_LIMIT_REACHED`);
+  the script copies them into a scratch copy of the package, drops the test
+  modules they do not use, and measures there, so `sui move test` never builds
+  them.
 
   They cover the whole order lifecycle: **creating** (`bench_depth_10/40/80`,
   which also give the cost curve against book depth), **matching**
