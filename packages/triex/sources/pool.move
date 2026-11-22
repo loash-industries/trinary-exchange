@@ -1443,21 +1443,20 @@ module triex::pool {
         policy.active_schedule(self.load_inner().fee_class, ctx.epoch())
     }
 
-    /// Returns the ladder staged to take over, and the epoch it can do so from.
-    /// Equal to the active one when nothing is pending.
+    /// Returns the ladder this pool's own class has staged to take over, and the
+    /// epoch it does. Equal to the active one when nothing is pending.
     ///
-    /// Covers both ways a pool's pricing changes: a re-pricing of its class, and
-    /// a staged move to another class. For a staged move this is the destination
-    /// class's ladder, from the later of the two staged epochs — the move lands
-    /// when `apply_pool_fee_class` runs, which that epoch is the earliest for.
+    /// This is what prices the pool from the next epoch boundary: a re-pricing
+    /// of its class takes over by itself. A staged move to another class does
+    /// not. It lands only when `apply_pool_fee_class` runs, and until then this
+    /// class, re-priced or not, keeps pricing the pool. The move is reported by
+    /// `pool_fee_class_next`, and the destination's ladder by
+    /// `fee_policy::next_schedule` of that class.
     public fun pool_fee_schedule_next<BaseAsset, QuoteAsset>(
         self: &Pool<BaseAsset, QuoteAsset>,
         policy: &FeePolicy,
     ): (FeeSchedule, u64) {
-        let (class_id, class_epoch) = self.pool_fee_class_next(policy);
-        let (schedule, schedule_epoch) = policy.next_schedule(class_id);
-
-        (schedule, schedule_epoch.max(class_epoch))
+        policy.next_schedule(self.load_inner().fee_class)
     }
 
     /// Returns the (taker_fee, maker_fee) this trading account currently trades at.
