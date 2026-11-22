@@ -26,7 +26,7 @@ module triex::multicoin_pool {
         order::Order,
         order_info::{Self, OrderInfo},
         registry::{TriexAdminCap, Registry},
-        state::{Self, State},
+        state::{Self, FeeFlows, State},
         trading_account::{Self, TradingAccount, TradeProof, TradeCap, DepositCap, WithdrawCap},
         vault
     };
@@ -40,6 +40,7 @@ module triex::multicoin_pool {
     const EPoolNotRegistered: u64 = 14;
     const EQuoteNotApproved: u64 = 20;
     const ENoOperatorBeneficiary: u64 = 21;
+    const ETooManyOrders: u64 = 22;
     // qty × price (raw) would exceed u64::MAX — lower the quantity or price.
 
     // === Structs ===
@@ -872,6 +873,53 @@ module triex::multicoin_pool {
         self.load_inner_mut().vault.recognize_locked_maker_fees(retained, operator_bps);
     }
 
+    /// Remove expired orders from the book on their owners' behalf. Permissionless:
+    /// the order's owner is credited exactly as when a taker's match expires it —
+    /// principal back to their settled balance, a bid's escrow split on cancel
+    /// terms — and the caller receives nothing. `withdraw_settled_amounts_permissionless`
+    /// then moves the proceeds into the owner's trading account.
+    ///
+    /// Ids that are not on the book or have not expired (`now <= expire_timestamp`)
+    /// are skipped, never aborted on, so concurrent sweeps of the same orders both
+    /// succeed. At most `constants::max_fills()` ids per call — the budget one match
+    /// may spend. Returns how many orders were removed.
+    ///
+    /// Takes `&FeePolicy` for the hub's share of the retained escrow, resolved
+    /// once for the batch and only when something was retained; see
+    /// `cancel_order_int`.
+    /// #ref:functions
+    public fun clean_expired_orders<QuoteAsset>(
+        self: &mut MultiCoinPool<QuoteAsset>,
+        policy: &FeePolicy,
+        order_ids: vector<u128>,
+        clock: &Clock,
+        ctx: &TxContext,
+    ): u64 {
+        assert!(order_ids.length() <= constants::max_fills(), ETooManyOrders);
+        let timestamp = clock.timestamp_ms();
+        let pool_inner = self.load_inner_mut();
+        let mut fills = pool_inner.book.expire_orders(&order_ids, timestamp);
+        let removed = fills.length();
+        if (removed == 0) return 0;
+
+        let fee_flows = pool_inner.state.process_expired_fills(&mut fills, ctx);
+        pool_inner.unlock_expiry_refunds(&fee_flows, timestamp);
+        // Expired fills earn nothing, so all that is recognized is the retained
+        // share of the escrow they released.
+        let retained = fee_flows.recognized();
+        if (retained > 0) {
+            let operator_bps = policy.operator_share_bps_at(pool_inner.collection_id, ctx.epoch());
+            pool_inner.vault.recognize_locked_maker_fees(retained, operator_bps);
+        };
+
+        let pool_id = pool_inner.pool_id;
+        fills.do_ref!(
+            |fill| order_info::emit_order_expired(pool_id, ctx.sender(), fill, timestamp),
+        );
+
+        removed
+    }
+
     /// Withdraw settled amounts to the trading_account, folding this pool's
     /// pending maker turnover into its ring on the way — the client's sweep
     /// calls this for every pool with proceeds, which is every pool a maker has
@@ -1514,6 +1562,31 @@ module triex::multicoin_pool {
 
     // === Private Functions ===
 
+    /// Makers whose orders expired get the refundable share of their escrow
+    /// credited to settled balances, so it has to leave the reserve for the pool
+    /// balance that pays settlements out.
+    fun unlock_expiry_refunds<QuoteAsset>(
+        self: &mut MultiCoinPoolInner<QuoteAsset>,
+        fee_flows: &FeeFlows,
+        timestamp: u64,
+    ) {
+        let refunds = fee_flows.refunded();
+        let mut refund_idx = 0;
+        while (refund_idx < refunds.length()) {
+            let refund = &refunds[refund_idx];
+            self
+                .vault
+                .unlock_quote_fees(
+                    self.pool_id,
+                    refund.refund_order_id(),
+                    refund.refund_trading_account_id(),
+                    refund.refund_amount(),
+                    timestamp,
+                );
+            refund_idx = refund_idx + 1;
+        };
+    }
+
     fun place_order_int<QuoteAsset>(
         self: &mut MultiCoinPool<QuoteAsset>,
         policy: &FeePolicy,
@@ -1578,24 +1651,7 @@ module triex::multicoin_pool {
                     maker_fee_rate,
                     ctx,
                 );
-            // Makers whose orders expired during this match get the refundable
-            // share of their escrow credited to settled balances, so it has to
-            // leave the reserve for the pool balance that pays settlements out.
-            let refunds = fee_flows.refunded();
-            let mut refund_idx = 0;
-            while (refund_idx < refunds.length()) {
-                let refund = &refunds[refund_idx];
-                pool_inner
-                    .vault
-                    .unlock_quote_fees(
-                        pool_inner.pool_id,
-                        refund.refund_order_id(),
-                        refund.refund_trading_account_id(),
-                        refund.refund_amount(),
-                        clock.timestamp_ms(),
-                    );
-                refund_idx = refund_idx + 1;
-            };
+            pool_inner.unlock_expiry_refunds(&fee_flows, clock.timestamp_ms());
             // Bid fees ride in with the quote the user pays (fee deposit); ask
             // fees were carved out of quote proceeds and are moved to the
             // reserve after settlement below.

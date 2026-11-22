@@ -308,6 +308,19 @@ module triex::state {
         (settled, owed, fee_flows)
     }
 
+    /// Settle the fills `book::expire_orders` produced for orders retired with no
+    /// taker. They are the same expired fills a match records, so they go through
+    /// the same `process_fills`: each maker's principal (plus a bid's refundable
+    /// escrow) lands in their settled balance, the order leaves their open orders,
+    /// and the retained escrow is recognized. There is no taker to settle.
+    public(package) fun process_expired_fills(
+        self: &mut State,
+        fills: &mut vector<Fill>,
+        ctx: &TxContext,
+    ): FeeFlows {
+        self.process_fills(fills, ctx)
+    }
+
     public(package) fun withdraw_settled_amounts(
         self: &mut State,
         trading_account_id: ID,

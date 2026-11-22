@@ -214,6 +214,16 @@ module triex::big_vector {
         self.depth
     }
 
+    /// Whether `self` holds an element at key `key`. Unlike `borrow` and
+    /// `remove`, never aborts on a missing key.
+    public(package) fun contains<E: store>(self: &BigVector<E>, key: u128): bool {
+        if (self.root_id == NO_SLICE) return false;
+
+        let (_, leaf, off) = self.find_leaf(key);
+
+        off < leaf.keys.length() && leaf.keys[off] == key
+    }
+
     /// Access the element at index `ix` in `self`.
     public(package) fun borrow<E: store>(self: &BigVector<E>, ix: u128): &E {
         let (ref, offset) = self.slice_around(ix);

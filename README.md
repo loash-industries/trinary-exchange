@@ -46,9 +46,10 @@ Each package is a standard Sui Move package. From a package directory:
 # Build
 sui move build
 
-# Run the Move unit tests (triex)
+# Run the Move unit tests (triex). The test build is larger than the Move VM's
+# default 10 MB package limit, so the limit has to be raised.
 cd packages/triex
-sui move test
+sui move test --package-size 16
 
 # Format Move sources
 sui move format
