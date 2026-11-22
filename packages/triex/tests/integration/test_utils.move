@@ -161,15 +161,13 @@ module triex::integration_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
-        let gate = fee_policy::gate_for_testing(test.ctx());
         {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            trading_account.revoke_trade_cap(&gate, &trade_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
             return_shared(trading_account);
         };
-        destroy(gate);
     }
 
     public fun execute_cross_trading<BaseAsset, QuoteAsset>(

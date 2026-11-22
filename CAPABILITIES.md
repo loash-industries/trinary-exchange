@@ -75,7 +75,7 @@ pool stores only the id of the pricing class it belongs to.
 | `update_class` | Re-price an existing class for **every pool in it**: the ladder and the cancel retention together, staged for the next epoch. Direct admin control of pricing deliberately **replaces DeepBook's upstream proposal/voting system**, which is disabled in this fork (CRED carries no voting rights). |
 | `set_default_class` / `set_multicoin_default_class` | Choose the class new pools of a quote are born into. Affects pools created afterwards only. |
 | `halt_trading` / `resume_trading` | **The kill switch.** One transaction stops every new order, swap and permissionless pool creation on every pool, because they all read this object. Exits stay open; see below. Idempotent, and announced with `TradingHaltChanged`. |
-| `enable_version` / `disable_version` | **The version gate.** Allow or retire a package version, **including the one running**, on the registry and on `FeePolicy` in one call, so the two sets cannot drift. Retiring a version stops that version's code, from the next transaction, in every `TradingAccount` entry point (creation, deposits, withdrawals, cap minting and revocation, proofs), in every `FeePolicy` write except `halt_trading`, and in every new order, swap and pool creation on every pool. Its exits on a pool end when that pool's cached set is refreshed (`update_pool_allowed_versions`, permissionless). Both switches are exempt from the gate, so a retired version can always be re-enabled. See below. |
+| `enable_version` / `disable_version` | **The version gate.** Allow or retire a package version, **including the one running**, on the registry and on `FeePolicy` in one call, so the two sets cannot drift. Retiring a version stops that version's code, at once, in every `TradingAccount` entry point that creates an account, moves funds, mints a cap or makes a proof (revoking a cap stays open), in every `FeePolicy` write except `halt_trading`, and in every new order, swap and pool creation on every pool. What it can still do on a pool ends when that pool's cached set is refreshed after the disable (`update_pool_allowed_versions`, permissionless). Both switches are exempt from the gate, so a retired version can always be re-enabled. See below. |
 
 #### How high fees can be set, and how fast
 
@@ -262,23 +262,29 @@ hold the same set of allowed package versions, changed together by these two
 calls. The copy on `FeePolicy` is read by every `TradingAccount` entry point and
 by every order, swap and pool creation, so one transaction retires a version's
 code from all of them at once: no account can be created, funded, drained or
-traded from through it, no proof made, no cap minted or revoked, nothing new
-placed on any pool, and no `FeePolicy` write made except `halt_trading`. What a
-retired version keeps is a pool whose own cached set has not been refreshed:
-permissionless settlement and expired-order cleanup there (and cancels, given a
-proof from a version still allowed) until `update_pool_allowed_versions` runs
-for that pool — one call per pool, which anyone can make and which keeps
-working while the version is disabled. Resting orders are never cancelled and
-funds are never moved; they are frozen in place.
+traded from through it, no proof made, no cap minted, nothing new placed on any
+pool, and no `FeePolicy` write made except `halt_trading`. Revoking a cap stays
+open, so an owner can kill a leaked cap even during a freeze. What a retired
+version keeps is each pool whose own cached set has not been refreshed since:
+everything there that takes on no new exposure — cancels, modifications and
+settled-balance withdrawals (given a proof from a version still allowed),
+permissionless settlement, expired-order cleanup, turnover folding and the
+admin fee sweep — until `update_pool_allowed_versions` runs for that pool after
+the disable. That is one call per pool, which anyone can make and which keeps
+working while the version is disabled. The gate itself cancels no order and
+moves no funds: what it stops stays where it is.
 
-Its intended use is the last step of an upgrade: allow the new version, then
-retire the old one, which leaves the new one running. Any package that calls
-Triex keeps calling the version it was published or upgraded against, so each
-has to be upgraded to the new version before the old one is retired, or its
-users are frozen with it. The pinned hub adapter can never be relinked, which
-is why `OperatorPayouts` stays outside the gate: registration's off switch is
-`clear_operator_adapter`, which acts on the object and so on every version at
-once. Retiring the running version with no successor allowed stops every
+Its intended use is the end of an upgrade: allow the new version, retire the
+old one, which leaves the new one running, then refresh every pool once more so
+the old version loses what it kept there. Any package that calls Triex keeps
+calling the version it was published or upgraded against, so each has to be
+upgraded to the new version before the old one is retired, or its users are
+frozen with it — for good, if it can no longer be upgraded. The pinned hub
+adapter is such a package by design, which is why `OperatorPayouts` stays
+outside the gate: registration's off switch is `clear_operator_adapter`, which
+acts on the object and so on every version at once. Any other immutable package
+that owns accounts through `new_with_uid_owner_and_caps` is frozen for good once
+its version is retired. Retiring the running version with no successor allowed stops every
 account, so unlike the halt it traps funds for as long as it lasts.
 
 Both are reversible: `resume_trading` and `enable_version` restore service, and
@@ -344,9 +350,10 @@ The owner can revoke any of the three at any time with `revoke_trade_cap`
 (despite the name, it revokes all three kinds by removing the cap ID from the
 account's allow-list — the revoked cap object becomes inert).
 
-Every one of these calls, like every other account entry point that creates an
-account, moves funds or makes a proof, takes the shared `FeePolicy` and passes
-the version gate (section 1).
+Minting and using these caps passes the version gate (section 1), like every
+other account entry point that creates an account, moves funds or makes a
+proof: each takes the shared `FeePolicy`. Revoking one does not, so an owner can
+always kill a leaked cap.
 
 **Operator relevance:** these caps give the *operator qua operator* no power.
 The `TriexAdminCap` cannot mint, use, or revoke them. Trinary Exchange
@@ -371,10 +378,11 @@ and they bound every guarantee above:
   fixed supply trustless should burn the `token` package's `UpgradeCap` or
   transfer it to an immutable address. Similarly, the `triex`
   `UpgradeCap` plus the AdminCap's version gate is the intended path for
-  protocol upgrades: publish the new version → `fee_policy::enable_version`
-  from it → `update_pool_allowed_versions` on each pool → upgrade every package
-  that calls Triex to the new version → `fee_policy::disable_version` of the
-  old one.
+  protocol upgrades: bump `CURRENT_VERSION` and publish the new version →
+  `fee_policy::enable_version` from it → `update_pool_allowed_versions` on each
+  pool → upgrade every package that calls Triex to the new version →
+  `fee_policy::disable_version` of the old one → `update_pool_allowed_versions`
+  on each pool again.
 - **CRED `CoinMetadata`** — already frozen at init; not upgradeable-around,
   since the object itself is immutable.
 
@@ -392,9 +400,10 @@ With the `TriexAdminCap` (and its `UpgradeCap`s), Trinary Exchange can:
    retention up to 100%; and which quote currencies are allowed.
 3. **Control the pool set** — create fee-free pools, unregister pools for
    redeployment.
-4. **Gate protocol versions** — enable/disable package versions, the de facto
-   pause mechanism. Retiring every allowed version freezes every
-   `TradingAccount` as well, until one is enabled again.
+4. **Gate protocol versions** — enable/disable package versions: the
+   full-freeze lever (the halt is the pause that traps nothing). Retiring every
+   allowed version freezes every `TradingAccount` as well, until one is enabled
+   again.
 5. **Upgrade the code** — subject to Sui upgrade rules; this is the root of
    trust everything else rests on.
 

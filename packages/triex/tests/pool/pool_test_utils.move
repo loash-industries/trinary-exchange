@@ -970,14 +970,14 @@ module triex::pool_test_utils {
         // Alice cancels the unfilled remainder; 80% of the escrow on it leaves the
         // reserve back to her, the rest becomes revenue.
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(
                 &mut trading_account,
                 &trade_proof,
@@ -989,7 +989,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(ALICE);
         {
@@ -1077,20 +1077,20 @@ module triex::pool_test_utils {
 
         // Cancelling the ask releases no escrow.
         test.next_tx(BOB);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_bob,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, bob_order_id, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(ALICE);
         {
@@ -1156,14 +1156,14 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.modify_order(
                 &mut trading_account,
                 &trade_proof,
@@ -1176,7 +1176,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(ALICE);
         {
@@ -2632,7 +2632,7 @@ module triex::pool_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
                 pool_id,
@@ -2641,7 +2641,7 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
 
             pool.cancel_order<BaseAsset, QuoteAsset>(
                 &mut trading_account,
@@ -2654,7 +2654,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(trading_account);
         };
-        destroy(gate);
+        return_shared(policy);
     }
 
     #[test_only]
@@ -2678,7 +2678,7 @@ module triex::pool_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
                 pool_id,
@@ -2688,7 +2688,7 @@ module triex::pool_test_utils {
             );
             let trade_cap = test.take_from_sender<TradeCap>();
             let trade_proof = trading_account.generate_proof_as_trader(
-                &gate,
+                &policy,
                 &trade_cap,
                 test.ctx(),
             );
@@ -2708,7 +2708,7 @@ module triex::pool_test_utils {
             return_shared(trading_account);
             return_shared(clock);
         };
-        destroy(gate);
+        return_shared(policy);
     }
 
     fun test_place_order_edge_price(quantity: u64, price: u64) {
@@ -5976,7 +5976,7 @@ module triex::pool_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(sender);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
                 pool_id,
@@ -5985,7 +5985,7 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
 
             pool.cancel_orders<BaseAsset, QuoteAsset>(
                 &mut trading_account,
@@ -5998,7 +5998,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(trading_account);
         };
-        destroy(gate);
+        return_shared(policy);
     }
 
     public(package) fun cancel_all_orders<BaseAsset, QuoteAsset>(
@@ -6008,7 +6008,7 @@ module triex::pool_test_utils {
         test: &mut Scenario,
     ) {
         test.next_tx(owner);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(
                 pool_id,
@@ -6017,7 +6017,7 @@ module triex::pool_test_utils {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
 
             pool.cancel_all_orders<BaseAsset, QuoteAsset>(
                 &mut trading_account,
@@ -6029,7 +6029,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(trading_account);
         };
-        destroy(gate);
+        return_shared(policy);
     }
 
     fun share_clock(test: &mut Scenario) {
@@ -6309,20 +6309,20 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // Round trip cost Alice exactly the retention, nothing else.
@@ -6406,20 +6406,20 @@ module triex::pool_test_utils {
         );
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(OWNER);
         {
@@ -6610,14 +6610,14 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
             let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -6633,7 +6633,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // Exactly whole: the round trip cost nothing but gas.
@@ -6702,18 +6702,18 @@ module triex::pool_test_utils {
 
         // The refund lands in settled balances, which Alice withdraws.
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.withdraw_settled_amounts(&mut trading_account, &trade_proof);
             return_shared(trading_account);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // Expiring cost Alice the same 0.36 a cancel would have.
@@ -6768,14 +6768,14 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
             let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -6803,7 +6803,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
@@ -6950,14 +6950,14 @@ module triex::pool_test_utils {
 
         // The refund must still be payable out of what the sweep could not touch.
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(
                 &mut trading_account,
                 &trade_proof,
@@ -6969,7 +6969,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(OWNER);
         {
@@ -7165,20 +7165,20 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         test.next_tx(OWNER);
         {
@@ -7583,14 +7583,14 @@ module triex::pool_test_utils {
 
         let total_refunded;
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_all_orders(&mut trading_account, &trade_proof, &clock, test.ctx());
 
             // One refund per bid; the ask escrowed nothing and contributes none.
@@ -7617,7 +7617,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // Place three bids and an ask, then cancel the lot: Alice is out exactly
@@ -7685,14 +7685,14 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
             let refunds = event::events_by_type<vault::PoolFeesRefunded>();
@@ -7713,7 +7713,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // Alice paid 2 of 9 rather than the nominal 1.8 — dust rounds against the
@@ -7782,14 +7782,14 @@ module triex::pool_test_utils {
         let balance_before = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.modify_order(
                 &mut trading_account,
                 &trade_proof,
@@ -7822,7 +7822,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         let balance_after = asset_balance<USDC>(ALICE, trading_account_id_alice, &mut test);
         // The maker gets back the cancelled principal plus exactly 8 of the
@@ -8562,7 +8562,7 @@ module triex::pool_test_utils {
         // retention rate it snapshotted — both from placement, not from the new
         // schedule. At 0.45% the escrow would have been 0.9 and the retention 0.18.
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
@@ -8571,7 +8571,7 @@ module triex::pool_test_utils {
             );
             assert!(pool.locked_maker_fees() == placement_escrow, 0);
 
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
 
             // Split through the production helper: the refund floors, so dust
@@ -8585,7 +8585,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
@@ -8813,14 +8813,14 @@ module triex::pool_test_utils {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.modify_order(
                 &mut trading_account,
                 &trade_proof,
@@ -8836,7 +8836,7 @@ module triex::pool_test_utils {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
@@ -9207,9 +9207,9 @@ module triex::pool_test_utils {
         test.next_tx(trader);
         let mut pool = test.take_shared_by_id<Pool<BaseAsset, QuoteAsset>>(pool_id);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(trading_account_id);
-        let gate = fee_policy::gate_for_testing(test.ctx());
-        let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
-        destroy(gate);
+        let policy = test.take_shared<FeePolicy>();
+        let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
+        return_shared(policy);
         pool.withdraw_settled_amounts(&mut trading_account, &trade_proof);
         return_shared(trading_account);
         return_shared(pool);
@@ -9480,20 +9480,20 @@ module triex::pool_test_utils {
 
         // Cancelling the unfilled remainder releases the last of the escrow.
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(&mut trading_account, &trade_proof, order_id, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         withdraw_settled<SUI, USDC>(ALICE, pool_id, trading_account_id_alice, &mut test);
         withdraw_settled<SUI, USDC>(BOB, pool_id, trading_account_id_bob, &mut test);

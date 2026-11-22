@@ -49,10 +49,11 @@
 /// per-pool step. See `halt_trading` for what a halt does and does not stop.
 ///
 /// For the same reason it carries the version gate. `allowed_versions` names
-/// the package versions allowed to take on new exposure, to write this object
-/// and to use any `TradingAccount` at all, so `disable_version` retires a
-/// version's code across the exchange in one transaction rather than pool by
-/// pool and account by account. See `disable_version` for what it reaches.
+/// the package versions allowed to take on new exposure, to write this object,
+/// and to create, fund, drain or trade from a `TradingAccount`, so
+/// `disable_version` takes all of that away from a version in one transaction,
+/// on every pool and every account at once. See `disable_version` for what it
+/// reaches and what it leaves.
 module triex::fee_policy {
     use std::type_name::{Self, TypeName};
     use sui::{
@@ -463,9 +464,9 @@ module triex::fee_policy {
     /// `TradeProof`, so it does trap funds; see there. Reach for the halt first.
     ///
     /// Idempotent, so a halt can never fail because someone already halted.
-    /// Unlike every other write here it is not version-gated: it can only stop
-    /// trading, so it should work from whichever package version the
-    /// operator's tooling happens to call.
+    /// Like the two version switches, and unlike every other write here, it is
+    /// not version-gated: it can only stop trading, so it should work from
+    /// whichever package version the operator's tooling happens to call.
     public fun halt_trading(self: &mut FeePolicy, _cap: &TriexAdminCap) {
         self.set_trading_halted(true);
     }
@@ -501,32 +502,38 @@ module triex::fee_policy {
         self.allowed_versions.insert(version);
     }
 
-    /// Retire package `version`, which may be the one running. From the next
-    /// transaction on, code from that version can no longer:
+    /// Retire package `version`, which may be the one running. From the moment
+    /// this runs, later in the same transaction included, code from that
+    /// version can no longer:
     ///
     /// - take on new exposure anywhere: orders, swaps and pool creation on
     ///   every pool read this object (`assert_trading_live`);
     /// - write this object (every writer is gated except `halt_trading` and
     ///   the two version switches);
-    /// - create, fund, drain or trade from any `TradingAccount`, or mint or
-    ///   revoke its caps: every account entry point that does any of that,
-    ///   proof generation included, reads this set.
+    /// - create, fund, drain or trade from any `TradingAccount`, or mint its
+    ///   caps: every account entry point that does any of that, proof
+    ///   generation included, reads this set. Revoking a cap stays open.
     ///
-    /// What it can still reach is a pool whose cached set has not been
-    /// refreshed: cancels and settled-balance withdrawals there (given a proof
-    /// from an allowed version), and the permissionless settlement and
-    /// expired-order paths. Those end pool by pool, as each pool runs
-    /// `update_pool_allowed_versions`.
+    /// What it still reaches is a pool whose own cached set has not been
+    /// refreshed since: there, everything that takes on no new exposure.
+    /// That means cancels, modifications and settled-balance withdrawals
+    /// (given a proof from a version still allowed), permissionless
+    /// settlement, expired-order cleanup, turnover folding and the admin fee
+    /// sweep. Operator-share claims also read the registry, whose own gate
+    /// stops them whenever they have a treasury leg to pay. So retirement on a
+    /// pool is complete only once `update_pool_allowed_versions` has run for
+    /// it after this call: an upgrade ends with one more pass over every pool.
     ///
     /// Retiring an old version after an upgrade leaves the new one running.
     /// Retiring the running one is the full freeze, and unlike the halt it
     /// traps funds: no deposit, withdrawal or proof works until a version is
-    /// enabled again. So does retiring a version that another package is
-    /// still linked against: any package calling into Triex keeps calling the
-    /// version it was published or upgraded against, and has to be upgraded
-    /// to the new one before the old one is disabled. The pinned hub adapter
-    /// is the one exception that can never be relinked, which is why
-    /// `OperatorPayouts` takes no part in this gate.
+    /// enabled again. So does retiring a version another package is still
+    /// linked against: a package calling into Triex keeps calling the version
+    /// it was published or upgraded against, so upgrade it first. A package
+    /// that can no longer be upgraded is cut off for good: the pinned hub
+    /// adapter by design, or any immutable package owning accounts through
+    /// `new_with_uid_owner_and_caps`. The adapter is why `OperatorPayouts`
+    /// takes no part in this gate.
     ///
     /// Not version-gated, so it works from any version, and `enable_version`
     /// undoes it.
@@ -775,9 +782,8 @@ module triex::fee_policy {
 
     /// The version gate: aborts unless the package version running this code
     /// is allowed. Every `TradingAccount` entry point that creates an account,
-    /// moves funds, mints or revokes a cap, or produces a proof calls it, as
-    /// does every write to this object except `halt_trading` and the version
-    /// switches.
+    /// moves funds, mints a cap, or produces a proof calls it, as does every
+    /// write to this object except `halt_trading` and the version switches.
     public(package) fun assert_version_enabled(self: &FeePolicy) {
         assert!(
             self.allowed_versions.contains(&constants::current_version()),

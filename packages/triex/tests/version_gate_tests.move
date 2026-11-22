@@ -6,14 +6,17 @@
 /// in one transaction:
 ///
 /// - every `TradingAccount` entry point that creates an account, moves funds,
-///   mints or revokes a cap, or makes a proof;
+///   mints a cap, or makes a proof;
 /// - every write to `FeePolicy` except `halt_trading`;
-/// - new exposure on every pool, refreshed or not: orders, swaps and
-///   permissionless pool creation all pass `assert_trading_live`.
+/// - new exposure on every pool, refreshed or not: orders and permissionless
+///   pool creation pass `assert_trading_live`, and swaps are refused at their
+///   first account call, before they get that far.
 ///
 /// What a retired version keeps is a pool whose cached set has not been
-/// refreshed: permissionless settlement and expired-order cleanup there, until
-/// `update_pool_allowed_versions` runs for it. Views answer throughout.
+/// refreshed: everything there that takes on no new exposure — cancels with a
+/// proof from a version still allowed, permissionless settlement,
+/// expired-order cleanup — until `update_pool_allowed_versions` runs for it.
+/// Views, revocation, the halt and `OperatorPayouts` stay open throughout.
 ///
 /// A test runs one package version, so "retired" here always means the running
 /// one: these tests see the exchange through the code an upgrade has left behind.
@@ -251,12 +254,43 @@ module triex::version_gate_tests {
         abort 0
     }
 
-    #[test, expected_failure(abort_code = fee_policy::EPackageVersionDisabled)]
-    fun retiring_stops_revoke_trade_cap() {
+    #[test]
+    /// Revocation stays open: it only takes authority away, so during a full
+    /// freeze an owner can kill a leaked cap instead of racing its holder when
+    /// a version comes back.
+    fun revoking_a_cap_still_works_while_retired() {
         let mut test = begin(OWNER);
         let (policy, mut ta) = retired_account(&mut test);
-        let cap = test.take_from_sender<TradeCap>();
-        ta.revoke_trade_cap(&policy, &object::id(&cap), test.ctx());
+        let cap = test.take_from_sender<WithdrawCap>();
+        ta.revoke_trade_cap(&object::id(&cap), test.ctx());
+
+        test.return_to_sender(cap);
+        return_shared(ta);
+        return_shared(policy);
+        end(test);
+    }
+
+    #[test, expected_failure(abort_code = trading_account::EInvalidTrader)]
+    /// ...and the cap revoked during the freeze is dead once trading resumes.
+    fun a_cap_revoked_while_retired_is_refused_after_re_enabling() {
+        let mut test = begin(OWNER);
+        let account = account_fixture(&mut test);
+        retire(&mut test);
+        test.next_tx(ALICE);
+        {
+            let mut ta = test.take_shared_by_id<TradingAccount>(account);
+            let cap = test.take_from_sender<WithdrawCap>();
+            ta.revoke_trade_cap(&object::id(&cap), test.ctx());
+            test.return_to_sender(cap);
+            return_shared(ta);
+        };
+        set_version(&mut test, constants::current_version(), true);
+
+        test.next_tx(ALICE);
+        let policy = test.take_shared<FeePolicy>();
+        let mut ta = test.take_shared_by_id<TradingAccount>(account);
+        let cap = test.take_from_sender<WithdrawCap>();
+        let _coin = ta.withdraw_with_cap<SUI>(&policy, &cap, 1, test.ctx());
 
         abort 0
     }
@@ -441,7 +475,7 @@ module triex::version_gate_tests {
         destroy(coin);
         let cap = ta.mint_trade_cap(&policy, test.ctx());
         let _proof = ta.generate_proof_as_trader(&policy, &cap, test.ctx());
-        ta.revoke_trade_cap(&policy, &object::id(&cap), test.ctx());
+        ta.revoke_trade_cap(&object::id(&cap), test.ctx());
         let fresh = trading_account::new(&policy, test.ctx());
         transfer::public_share_object(fresh);
         destroy(cap);
@@ -609,6 +643,43 @@ module triex::version_gate_tests {
         abort 0
     }
 
+    // === OperatorPayouts ===
+
+    #[test]
+    /// `OperatorPayouts` takes no part in the gate: the pinned adapter keeps
+    /// calling the version it was linked against, so hub registration has to
+    /// keep working after that version is retired. Its off switch,
+    /// `clear_operator_adapter`, acts on the object instead.
+    fun operator_payouts_stay_open_while_retired() {
+        let mut test = begin(OWNER);
+        pool_test_utils::setup_test(OWNER, &mut test);
+        retire(&mut test);
+
+        test.next_tx(OWNER);
+        let mut payouts = test.take_shared<OperatorPayouts>();
+        payouts.register_operator_beneficiary_with_witness(
+            some_collection(),
+            ALICE,
+            fee_policy::test_adapter_witness(),
+        );
+        assert_eq!(payouts.operator_beneficiary(some_collection()), option::some(ALICE));
+        let previous = payouts.update_operator_beneficiary_with_witness(
+            some_collection(),
+            BOB,
+            fee_policy::test_adapter_witness(),
+        );
+        assert_eq!(previous, ALICE);
+        assert_eq!(payouts.operator_beneficiary(some_collection()), option::some(BOB));
+
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        payouts.clear_operator_adapter(&cap);
+        assert!(payouts.operator_adapter().is_none());
+
+        destroy(cap);
+        return_shared(payouts);
+        end(test);
+    }
+
     // === Pools that were never refreshed ===
     //
     // The case TRIEX-146 was filed for: after the retirement, nothing has run
@@ -671,6 +742,8 @@ module triex::version_gate_tests {
     }
 
     #[test, expected_failure(abort_code = fee_policy::EPackageVersionDisabled)]
+    /// Refused at the temporary account the swap opens, before its order would
+    /// reach `assert_trading_live`.
     fun retiring_stops_anonymous_swaps_on_an_unrefreshed_coin_pool() {
         let mut test = begin(OWNER);
         let m = coin_market(&mut test);
@@ -705,6 +778,82 @@ module triex::version_gate_tests {
         destroy(cred);
 
         abort 0
+    }
+
+    #[test, expected_failure(abort_code = fee_policy::EPackageVersionDisabled)]
+    /// Refused at its first account call, the deposit through the cap.
+    fun retiring_stops_swaps_through_a_trading_account_on_an_unrefreshed_coin_pool() {
+        let mut test = begin(OWNER);
+        let m = coin_market(&mut test);
+        create_caps(BOB, m.bob, &mut test);
+        retire(&mut test);
+
+        test.next_tx(BOB);
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
+        let policy = test.take_shared<FeePolicy>();
+        let clock = test.take_shared<Clock>();
+        let mut bob = test.take_shared_by_id<TradingAccount>(m.bob);
+        let trade_cap = test.take_from_sender<TradeCap>();
+        let deposit_cap = test.take_from_sender<DepositCap>();
+        let withdraw_cap = test.take_from_sender<WithdrawCap>();
+        let (base, quote) = pool.swap_exact_base_for_quote_with_trading_account(
+            &policy,
+            &mut bob,
+            &trade_cap,
+            &deposit_cap,
+            &withdraw_cap,
+            mint_for_testing<SUI>(QUANTITY, test.ctx()),
+            0,
+            &clock,
+            test.ctx(),
+        );
+        destroy(base);
+        destroy(quote);
+
+        abort 0
+    }
+
+    #[test]
+    /// A cancel needs a proof, and a retired version cannot make one. But on a
+    /// pool nothing has refreshed, the retired version's cancel still works
+    /// with a proof from a version that is allowed — here, one made before the
+    /// retirement in the same transaction.
+    fun a_retired_version_still_cancels_on_an_unrefreshed_pool_given_a_proof() {
+        let mut test = begin(OWNER);
+        let m = coin_market(&mut test);
+        let bid = pool_test_utils::place_limit_order<SUI, USDC>(
+            ALICE,
+            m.pool_id,
+            m.alice,
+            constants::no_restriction(),
+            constants::self_matching_allowed(),
+            PRICE,
+            QUANTITY,
+            true,
+            constants::max_u64(),
+            &mut test,
+        );
+
+        test.next_tx(ALICE);
+        let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(m.pool_id);
+        let mut policy = test.take_shared<FeePolicy>();
+        let mut registry = test.take_shared_by_id<Registry>(m.registry_id);
+        let clock = test.take_shared<Clock>();
+        let mut ta = test.take_shared_by_id<TradingAccount>(m.alice);
+        let proof = ta.generate_proof_as_owner(&policy, test.ctx());
+        let cap = registry::get_admin_cap_for_testing(test.ctx());
+        policy.disable_version(&mut registry, constants::current_version(), &cap);
+
+        pool.cancel_order(&mut ta, &proof, bid.order_id(), &clock, test.ctx());
+        assert!(!pool.account_open_orders(&ta).contains(&bid.order_id()));
+
+        destroy(cap);
+        return_shared(ta);
+        return_shared(clock);
+        return_shared(registry);
+        return_shared(policy);
+        return_shared(pool);
+        end(test);
     }
 
     /// A registry approving `COIN_DEC6` and a policy pricing it, for the
@@ -1046,6 +1195,7 @@ module triex::version_gate_tests {
     }
 
     #[test, expected_failure(abort_code = fee_policy::EPackageVersionDisabled)]
+    /// Refused at the temporary account, as on the coin pool.
     fun retiring_stops_anonymous_swaps_on_an_unrefreshed_multicoin_pool() {
         let mut test = begin(OWNER);
         let (m, _collection_cap) = multicoin_market(&mut test);
@@ -1066,6 +1216,24 @@ module triex::version_gate_tests {
         destroy(base);
         destroy(quote);
         destroy(cred);
+
+        abort 0
+    }
+
+    #[test, expected_failure(abort_code = multicoin_pool::EPackageVersionDisabled)]
+    /// As on a coin pool, refreshing a multicoin pool ends what the retired
+    /// version kept there.
+    fun refreshing_a_multicoin_pool_ends_a_retired_versions_exits() {
+        let mut test = begin(OWNER);
+        let (m, _collection_cap) = multicoin_market(&mut test);
+        retire(&mut test);
+
+        test.next_tx(CHARLIE);
+        let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(m.pool_id);
+        let registry = test.take_shared_by_id<Registry>(m.registry_id);
+        pool.update_pool_allowed_versions(&registry);
+        let mut ta = test.take_shared_by_id<TradingAccount>(m.alice);
+        pool.withdraw_settled_amounts_permissionless(&mut ta, test.ctx());
 
         abort 0
     }

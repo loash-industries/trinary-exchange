@@ -140,7 +140,8 @@ module triex::registry_kill_switch_tests {
 
         test.next_tx(ALICE);
         let pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        // Any entrypoint would do; every one routes through `load_inner`.
+        // A read that touches nothing but the pool, so it is the pool's own gate
+        // that refuses it; trading entry points would stop at `FeePolicy` first.
         pool.registered_pool();
 
         abort 0

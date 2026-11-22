@@ -235,11 +235,13 @@ module triex::multicoin_pool_coverage_tests {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(env.registry_id);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(env.pool_id);
-        registry.disable_version(constants::current_version(), &admin_cap);
+        let mut policy = test.take_shared<FeePolicy>();
+        policy.disable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_pool_allowed_versions(&registry);
-        registry.enable_version(constants::current_version(), &admin_cap);
+        policy.enable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_allowed_versions(&registry, &admin_cap);
         assert_eq!(pool.id(), env.pool_id);
+        return_shared(policy);
         return_shared(registry);
         return_shared(pool);
         destroy(admin_cap);
@@ -252,8 +254,10 @@ module triex::multicoin_pool_coverage_tests {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(env.registry_id);
         let mut pool = test.take_shared_by_id<MultiCoinPool<USDC>>(env.pool_id);
-        registry.disable_version(constants::current_version(), &admin_cap);
+        let mut policy = test.take_shared<FeePolicy>();
+        policy.disable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_pool_allowed_versions(&registry);
+        return_shared(policy);
         return_shared(registry);
         return_shared(pool);
         destroy(admin_cap);

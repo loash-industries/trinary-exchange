@@ -4,11 +4,15 @@
 /// equivocation. The `TradeCap` owner, due to it being an owned object, risks equivocation when generating
 /// a `TradeProof`. Generally, a high frequency trading engine will trade as the default owner.
 ///
-/// Every entry point that creates an account, moves funds in or out, mints or revokes a cap, or
-/// produces a `TradeProof` takes the shared `FeePolicy` for one reason: to check that the package
-/// version running it has not been retired (`fee_policy::disable_version`). An account cannot carry
-/// that gate itself, because a retired version would have to be fenced off account by account; one
-/// shared set retires it from every account at once. Views take no policy.
+/// Every entry point that creates an account, moves funds in or out, mints a cap, or produces a
+/// `TradeProof` takes the shared `FeePolicy` for one reason: to check that the package version
+/// running it has not been retired (`fee_policy::disable_version`). An account cannot carry that
+/// gate itself, because a retired version would have to be fenced off account by account; one
+/// shared set retires it from every account at once. Views take no policy, and neither does
+/// `revoke_trade_cap`, which only takes authority away.
+///
+/// The cost: every gated call reads a shared object, so even an account that is owned or wrapped
+/// rather than shared can no longer be funded or drained without consensus.
 module triex::trading_account {
     use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
     use std::type_name::{Self, TypeName};
@@ -212,6 +216,12 @@ module triex::trading_account {
     /// `mint_*_cap`, `withdraw`, ...) can never be called on this account. The returned
     /// caps are the only way to control it and cannot be revoked or replaced: store
     /// them where only the owning module can reach them.
+    ///
+    /// The owning package keeps calling the Triex version it was published or last
+    /// upgraded against, and every cap call passes the version gate. Once that version
+    /// is retired (`fee_policy::disable_version`), the account is frozen until the
+    /// package is upgraded to a version still allowed; a package that can no longer be
+    /// upgraded leaves it frozen for good.
     /// #ref:functions
     public fun new_with_uid_owner_and_caps(
         policy: &FeePolicy,
@@ -322,14 +332,16 @@ module triex::trading_account {
 
     /// Revoke a `TradeCap`. Only the owner can revoke a `TradeCap`.
     /// Can also be used to revoke `DepositCap` and `WithdrawCap`.
+    ///
+    /// Outside the version gate on purpose: revoking only takes authority away,
+    /// so an owner can kill a leaked cap even while every version is retired,
+    /// instead of racing its holder the moment one is enabled again.
     /// #ref:functions
     public fun revoke_trade_cap(
         trading_account: &mut TradingAccount,
-        policy: &FeePolicy,
         trade_cap_id: &ID,
         ctx: &TxContext,
     ) {
-        policy.assert_version_enabled();
         trading_account.validate_owner(ctx);
 
         assert!(trading_account.allow_listed.contains(trade_cap_id), ECapNotInList);

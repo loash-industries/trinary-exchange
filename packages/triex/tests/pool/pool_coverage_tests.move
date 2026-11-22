@@ -188,11 +188,13 @@ module triex::pool_coverage_tests {
         let admin_cap = registry::get_admin_cap_for_testing(test.ctx());
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
-        registry.disable_version(constants::current_version(), &admin_cap);
+        let mut policy = test.take_shared<FeePolicy>();
+        policy.disable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_allowed_versions(&registry, &admin_cap);
-        registry.enable_version(constants::current_version(), &admin_cap);
+        policy.enable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_allowed_versions(&registry, &admin_cap);
         assert_eq!(pool.id(), pool_id);
+        return_shared(policy);
         return_shared(registry);
         return_shared(pool);
         destroy(admin_cap);
@@ -209,7 +211,7 @@ module triex::pool_coverage_tests {
         let mut registry = test.take_shared_by_id<Registry>(registry_id);
         let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
         let mut policy = test.take_shared<FeePolicy>();
-        registry.disable_version(constants::current_version(), &admin_cap);
+        policy.disable_version(&mut registry, constants::current_version(), &admin_cap);
         pool.update_allowed_versions(&registry, &admin_cap);
         pool.apply_pool_fee_class(&mut policy, &admin_cap, test.ctx());
         abort 0

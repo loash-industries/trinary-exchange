@@ -123,7 +123,8 @@ allowed package versions, and the shared `FeePolicy` keeps an identical copy.
 `fee_policy::enable_version` / `disable_version` change both in one call,
 letting old package versions be retired after upgrades. The copy on
 `FeePolicy` is the exchange-wide gate: every `TradingAccount` entry point that
-creates an account, moves funds or makes a proof takes the policy to read it,
+creates an account, moves funds, mints a cap or makes a proof takes the policy
+to read it,
 and so does every order, swap and pool creation, so retiring a version stops
 all of that at once. Each pool also caches the registry's set for its own
 gate, which covers exits as well and reaches a pool when that pool is

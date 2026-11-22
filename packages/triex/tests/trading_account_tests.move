@@ -142,7 +142,7 @@ module triex::trading_account_tests {
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id,
             );
-            trading_account.revoke_trade_cap(&gate, &trade_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
         };
         destroy(gate);
 
@@ -178,7 +178,7 @@ module triex::trading_account_tests {
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            trading_account.revoke_trade_cap(&gate, &trade_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&trade_cap_id, test.ctx());
             transfer::public_share_object(trading_account);
         };
 
@@ -229,7 +229,7 @@ module triex::trading_account_tests {
             let balance = trading_account.balance<SUI>();
             assert!(balance == 100, 0);
 
-            trading_account.revoke_trade_cap(&gate, &deposit_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&deposit_cap_id, test.ctx());
             transfer::public_share_object(trading_account);
         };
 
@@ -363,7 +363,7 @@ module triex::trading_account_tests {
             let balance = trading_account.balance<SUI>();
             assert!(balance == 900, 0);
 
-            trading_account.revoke_trade_cap(&gate, &withdraw_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&withdraw_cap_id, test.ctx());
             transfer::public_share_object(trading_account);
         };
 
@@ -1195,7 +1195,7 @@ module triex::trading_account_tests {
             transfer::public_transfer(deposit_cap, BOB);
 
             // Revoke the cap
-            trading_account.revoke_trade_cap(&gate, &deposit_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&deposit_cap_id, test.ctx());
             transfer::public_share_object(trading_account);
         };
 
@@ -1268,7 +1268,7 @@ module triex::trading_account_tests {
             transfer::public_transfer(withdraw_cap, BOB);
 
             // Revoke the cap
-            trading_account.revoke_trade_cap(&gate, &withdraw_cap_id, test.ctx());
+            trading_account.revoke_trade_cap(&withdraw_cap_id, test.ctx());
             transfer::public_share_object(trading_account);
         };
 
@@ -1795,7 +1795,7 @@ module triex::trading_account_tests {
         test.next_tx(ALICE);
         let mut trading_account = test.take_shared_by_id<TradingAccount>(ta_id);
         let deposit_cap_id = object::id(&deposit_cap);
-        trading_account.revoke_trade_cap(&gate, &deposit_cap_id, test.ctx());
+        trading_account.revoke_trade_cap(&deposit_cap_id, test.ctx());
         return_shared(trading_account);
         transfer::public_transfer(deposit_cap, BOB); // Transfer cap to BOB to try using it
 
@@ -2260,7 +2260,7 @@ module triex::trading_account_tests {
             trade_cap,
         ) = trading_account::new_with_uid_owner_and_caps(&gate, &mut owner_uid, test.ctx());
 
-        trading_account.revoke_trade_cap(&gate, &object::id(&trade_cap), test.ctx());
+        trading_account.revoke_trade_cap(&object::id(&trade_cap), test.ctx());
         destroy(gate);
 
         destroy(deposit_cap);

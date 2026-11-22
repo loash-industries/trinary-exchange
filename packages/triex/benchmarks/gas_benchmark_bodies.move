@@ -418,14 +418,14 @@ module triex::gas_benchmark_bodies {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_order(
                 &mut trading_account,
                 &trade_proof,
@@ -437,7 +437,7 @@ module triex::gas_benchmark_bodies {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
@@ -814,14 +814,14 @@ module triex::gas_benchmark_bodies {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.modify_order(
                 &mut trading_account,
                 &trade_proof,
@@ -834,7 +834,7 @@ module triex::gas_benchmark_bodies {
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
@@ -883,20 +883,20 @@ module triex::gas_benchmark_bodies {
         };
 
         test.next_tx(ALICE);
-        let gate = fee_policy::gate_for_testing(test.ctx());
+        let policy = test.take_shared<FeePolicy>();
         {
             let mut pool = test.take_shared_by_id<Pool<SUI, USDC>>(pool_id);
             let clock = test.take_shared<Clock>();
             let mut trading_account = test.take_shared_by_id<TradingAccount>(
                 trading_account_id_alice,
             );
-            let trade_proof = trading_account.generate_proof_as_owner(&gate, test.ctx());
+            let trade_proof = trading_account.generate_proof_as_owner(&policy, test.ctx());
             pool.cancel_all_orders(&mut trading_account, &trade_proof, &clock, test.ctx());
             return_shared(trading_account);
             return_shared(clock);
             return_shared(pool);
         };
-        destroy(gate);
+        return_shared(policy);
 
         end(test);
     }
