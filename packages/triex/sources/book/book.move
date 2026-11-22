@@ -337,6 +337,10 @@ module triex::book {
         order_info.set_order_id(order_id);
         self.match_against_book(order_info, timestamp);
         if (order_info.assert_execution()) return;
+        // Everything past this point rests. A maker's whole remainder is converted
+        // to quote whenever a taker reaches it or it expires, so a remainder that
+        // cannot be converted must never get onto the book.
+        order_info.assert_resting_value_fits();
         self.inject_limit_order(order_info);
         order_info.set_order_inserted();
         order_info.emit_order_placed();

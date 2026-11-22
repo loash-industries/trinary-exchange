@@ -24,6 +24,11 @@ module triex::order_info {
     const EFOKOrderCannotBeFullyFilled: u64 = 6;
     const EMarketOrderCannotBePostOnly: u64 = 7;
     const ESelfMatchingCancelTaker: u64 = 8;
+    /// The quantity about to rest, valued at the order's own price, is more quote
+    /// than a `u64` can hold. Only the remainder left after matching is measured:
+    /// an order that never rests (IOC, FOK, market) is not checked, and a limit
+    /// order whose executed part brings its remainder under the bound still rests.
+    const EOrderValueOverflow: u64 = 9;
 
     // === Structs ===
     /// The result of offering one resting maker to a taker.
@@ -477,6 +482,32 @@ module triex::order_info {
             order_info.original_quantity >=
         math::min_qty_for_nonzero_quote(order_info.price, order_info.price_scaling),
             EOrderBelowMinimumSize,
+        );
+    }
+
+    /// Assert that the part of this order about to rest can be valued: its
+    /// remaining quantity, at its own price, fits in a `u64` of quote.
+    ///
+    /// Matching converts a resting maker's *entire* remainder before it knows how
+    /// much of it will cross — the `unfillable` test in `match_maker`, and the
+    /// expiry arm of `Order::generate_fill` — and `qty_to_quote` aborts when the
+    /// result does not fit. A resting bid already had to clear this, because it
+    /// locks that quote. An ask locks base only, so nothing stopped three units at
+    /// `MAX_PRICE` from resting where every taker that reached them aborted: an
+    /// order that could not be filled, expired or cleaned up, only cancelled by
+    /// its owner.
+    ///
+    /// Checked on the remainder at the moment it rests, not on the original
+    /// quantity at validation, so that it bounds exactly what the book has to live
+    /// with. An order that never rests is not constrained: an IOC or FOK taker
+    /// priced at an extreme is a common way to sweep, it settles at each maker's
+    /// price rather than its own, and those makers' values are bounded by this
+    /// same check. Once resting, a remainder only ever shrinks — by fills, or by
+    /// a modify, which can only reduce — so every later conversion of it fits.
+    public(package) fun assert_resting_value_fits(self: &OrderInfo) {
+        assert!(
+            math::qty_to_quote_fits(self.remaining_quantity(), self.price, self.price_scaling),
+            EOrderValueOverflow,
         );
     }
 

@@ -24,6 +24,25 @@ module triex::math {
         }
     }
 
+    /// Whether `qty_to_quote` can represent `base_qty` at `price`: true exactly
+    /// when that call returns, false exactly when it aborts with `EOverflow`.
+    ///
+    /// `qty_to_quote` asserts that its result fits in a `u64`, which is right for
+    /// a conversion and the wrong shape for a check. A caller that wants to
+    /// *reject* an unrepresentable order has to ask the question without
+    /// aborting, so it can answer with an error of its own. The intermediate is at
+    /// most (2^64-1)^2 < 2^128, so this is total over the whole `u64` domain.
+    public fun qty_to_quote_fits(base_qty: u64, price: u64, price_scaling: u64): bool {
+        let product = (base_qty as u128) * (price as u128);
+        let quote = if (price_scaling == FLOAT_SCALING) {
+            product / FLOAT_SCALING_U128
+        } else {
+            product
+        };
+
+        quote <= MAX_U64
+    }
+
     /// Convert a raw quote quantity to a base quantity using pool-specific price scaling.
     /// Inverse of qty_to_quote: base = quote × price_scaling / price.
     ///
